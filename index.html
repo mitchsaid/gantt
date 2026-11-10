@@ -41,6 +41,7 @@
   <aside class="panel" id="panel-plan" aria-label="Plan">
     <div class="panel-head">
       <h2>Plan</h2>
+      <button class="collapse-btn" title="Collapse or expand the Plan panel" aria-label="Collapse or expand the Plan panel"><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
       <button class="sheet-close" data-close aria-label="Close">✕</button>
     </div>
     <div class="panel-body">
@@ -50,19 +51,27 @@
         <button class="chip-btn" data-add="task">+ Task</button>
         <button class="chip-btn" data-add="milestone">+ Milestone</button>
       </div>
-      <p class="hint">Drag <span class="grip-demo">⋮⋮</span> to reorder. <kbd>Enter</kbd> adds a row, <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indents. Drag bars in the chart to move or resize them.</p>
+      <p class="hint">Drag <span class="grip-demo">⋮⋮</span> to reorder. <kbd>Enter</kbd> adds a row, <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indents — or drag a row sideways to nest it. On the chart, drag bars to move or resize them and click anything to edit it.</p>
     </div>
   </aside>
 
-  <section class="stage" id="stage">
-    <div class="canvas-wrap" id="canvas-wrap">
-      <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+  <section class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="canvas-wrap" id="canvas-wrap">
+        <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+    <div class="zoombar" role="group" aria-label="Zoom">
+      <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="zoom-val" title="Reset zoom">100%</button>
+      <button id="zoom-in" title="Zoom in (Ctrl/⌘ + scroll, or pinch)" aria-label="Zoom in">+</button>
     </div>
   </section>
 
   <aside class="panel" id="panel-design" aria-label="Design">
     <div class="panel-head">
       <h2>Design</h2>
+      <button class="collapse-btn" title="Collapse or expand the Design panel" aria-label="Collapse or expand the Design panel"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
       <button class="sheet-close" data-close aria-label="Close">✕</button>
     </div>
     <div class="panel-body" id="design"></div>

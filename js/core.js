@@ -33,7 +33,46 @@ function luminance(h) {
   const [r, g, b] = hexToRgb(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-const onColor = h => (luminance(h) > 0.33 ? '#111827' : '#ffffff');
+const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+/** readable text colour for a fill: white where it reads well, otherwise dark — whichever contrasts more */
+const onColor = h => { const w = contrast(h, '#ffffff'); return w >= 4.5 || w >= contrast(h, '#111827') ? '#ffffff' : '#111827'; };
+
+// ---------------------------------------------------------------- durations
+function addMonths(d, n) {
+  const [y, m, dd] = ymd(d);
+  const first = toDay(y, m + n, 1);
+  const [ty, tm] = ymd(first);
+  return toDay(ty, tm, Math.min(dd, ymd(toDay(ty, tm + 1, 0))[2]));
+}
+/** last day of a task that starts on `start` and runs n days / weeks / sprints / months (working weeks end on Friday) */
+function durationEnd(start, n, unit, sprintWeeks) {
+  n = Math.max(1, Math.round(n) || 1);
+  if (unit === 'days') return start + n - 1;
+  let e = unit === 'months' ? addMonths(start, n) - 1 : start + n * 7 * (unit === 'sprints' ? sprintWeeks : 1) - 1;
+  if (dow(start) < 5 && dow(e) >= 5) e -= dow(e) - 4;
+  return Math.max(e, start);
+}
+/** how many whole units a span is, or null if it is not a whole number of them */
+function durationIn(start, end, unit, sprintWeeks) {
+  const len = end - start + 1;
+  if (unit === 'days') return len;
+  const g = Math.round(len / (unit === 'months' ? 30.4 : 7 * (unit === 'sprints' ? sprintWeeks : 1)));
+  for (const c of [g, g + 1, g - 1]) if (c >= 1 && durationEnd(start, c, unit, sprintWeeks) === end) return c;
+  return null;
+}
+/** stretch or squeeze every item so the plan exactly fills [a, b] */
+function fitRows(rows, a, b) {
+  const info = derive(rows).filter(n => !n.hasKids);
+  if (!info.length || b < a) return;
+  const lo = Math.min(...info.map(n => n.start)), hi = Math.max(...info.map(n => n.end)) + 1;
+  const f = (b + 1 - a) / Math.max(1, hi - lo);
+  info.forEach(n => {
+    const r = n.row;
+    if (n.milestone) { r.start = r.end = clamp(a + Math.round((r.start + 1 - lo) * f) - 1, a, b); return; }
+    const s = a + Math.round((r.start - lo) * f);
+    r.start = s; r.end = Math.max(s, a + Math.round((r.end + 1 - lo) * f) - 1);
+  });
+}
 
 function toOklch(hex) {
   const [r, g, b] = hexToRgb(hex).map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
@@ -87,6 +126,7 @@ const DEFAULT_SETTINGS = {
   labels: 'left', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
+  rangeMode: 'auto', rangeStart: null, rangeEnd: null,
   primary: '#4f46e5', secondaryOn: true, secondary: '#ec4899', bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'regular', grid: true, stripes: false, weekends: true,
 };
@@ -428,6 +468,7 @@ function scheduleItems(items) {
     cursor = Math.max(cursor, e + 1);
     return r;
   });
+  rows.dated = known.length > 0 || items.some(i => i.end != null);
   return rows;
 }
 
@@ -500,19 +541,25 @@ function buildScene(state, opts) {
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   const isGroup = n => n.level === 0 && n.hasKids;
   const left = S.labels === 'left';
+  const lanes = S.labels === 'lanes'; // swimlanes: areas named on the left, tasks named on their bars
 
   // label column
   let labelW = 0;
   if (left) {
     info.forEach(n => { labelW = Math.max(labelW, n.level * 16 + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.level === 2 ? fs - 1 : fs, isGroup(n) ? 700 : 500)); });
     labelW = clamp(labelW, 110, W * 0.27) + 22;
+  } else if (lanes) {
+    info.forEach(n => { if (isGroup(n)) labelW = Math.max(labelW, M(n.row.name || 'Untitled', fs + 1, 700)); });
+    if (labelW) labelW = clamp(labelW, 70, W * 0.22) + 28;
   }
   const x0 = pad + labelW, x1 = W - pad;
 
   // vertical layout
   let y = pad;
   if (S.showTitle && S.title) {
-    items.push({ t: 'text', x: pad, y: y + 16, text: fitText(S.title, W - 2 * pad, 30, 700, font), size: 30, weight: 700, fill: text, anchor: 'start', role: 'title' });
+    const tt = fitText(S.title, W - 2 * pad, 30, 700, font);
+    items.push({ t: 'text', x: pad, y: y + 16, text: tt, size: 30, weight: 700, fill: text, anchor: 'start' });
+    items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, 30, 700) + 12, h: 44, hit: true, role: 'title' });
     y += 30 + 26;
   }
   const lane = S.todayLine ? 26 : 0;
@@ -528,9 +575,15 @@ function buildScene(state, opts) {
   const bodyY = y;
   y += 6;
   info.forEach((n, i) => {
-    if (isGroup(n) && i > 0) y += 10;
-    n.y = y; n.cy = y + rowH / 2;
+    if (i > 0 && (isGroup(n) || (lanes && n.level === 0 && info[i - 1].level > 0))) { y += lanes ? 18 : 10; n.sep = lanes; }
+    n.y = y; n.cy = y + rowH / 2; n.h = rowH;
+    if (lanes && isGroup(n)) { n.lane = true; return; } // no row of its own: its label spans the rows inside it
     y += rowH;
+  });
+  if (lanes) info.forEach(n => {
+    if (!n.lane) return;
+    n.h = info[blockEnd(rows, n.i) - 1].y + rowH - n.y;
+    n.cy = n.y + n.h / 2; n.dropCy = n.y - 4;
   });
   y += 6;
   const bodyEnd = y;
@@ -543,7 +596,9 @@ function buildScene(state, opts) {
   let dMin = Infinity, dMax = -Infinity;
   info.forEach(n => { dMin = Math.min(dMin, n.start); dMax = Math.max(dMax, n.end); });
   if (!isFinite(dMin)) { dMin = mondayOf(todayDay()); dMax = dMin + 27; }
-  const anchor = dMin;
+  const fixed = S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null && S.rangeEnd >= S.rangeStart;
+  if (fixed && !info.length) { dMin = S.rangeStart; dMax = S.rangeEnd; }
+  const anchor = fixed ? Math.min(S.rangeStart, dMin) : dMin;
   let rs, re, cells;
   const setRange = (a, b) => {
     cells = unitCells(S.scale, S.sprintWeeks, a, b, anchor, relative);
@@ -552,7 +607,9 @@ function buildScene(state, opts) {
   if (opts.range) { rs = opts.range[0]; re = opts.range[1]; cells = unitCells(S.scale, S.sprintWeeks, rs, re - 1, anchor, relative); rs = Math.min(rs, cells[0][0]); re = Math.max(re, cells[cells.length - 1][1]); }
   else {
     let a = dMin, b = dMax;
-    if (S.todayLine) { a = Math.min(a, todayD); b = Math.max(b, todayD); }
+    // a fixed timeline is kept as set; it only grows if an item is placed outside it
+    if (fixed) { a = Math.min(a, S.rangeStart); b = Math.max(b, S.rangeEnd); }
+    else if (S.todayLine) { a = Math.min(a, todayD); b = Math.max(b, todayD); }
     setRange(a, b);
   }
   let ppd = (x1 - x0) / (re - rs);
@@ -569,6 +626,7 @@ function buildScene(state, opts) {
       n.bx = bx; n.bw = bw; n.bh = h; n.inside = false; n.tail = [];
       let tx = n.milestone ? X(n.start + 0.5) + h * 0.5 + 8 : bx + bw + 8;
       const name = n.row.name || 'Untitled';
+      if (n.lane) { n.tailEnd = bx; return; }
       if (isGroup(n)) { n.tailEnd = left ? bx + bw : Math.max(bx + bw, bx + M(name, fs + 1, 700)); over = Math.max(over, n.tailEnd - x1); return; }
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
@@ -583,12 +641,18 @@ function buildScene(state, opts) {
         n.tail.push({ k: 'who', x: tx, w: w + 24 }); tx += w + 24 + 10;
       }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
+      n.tailStart = n.milestone ? X(n.start + 0.5) - h * 0.52 - 4 : bx;
+      if (fixed && n.tail.length && n.tailEnd > x1) { // no room on a fixed timeline: put the text before the bar instead
+        const shift = n.tailStart - 6 - (n.tailEnd - n.tail[0].x) - n.tail[0].x;
+        n.tail.forEach(t => { t.x += shift; });
+        n.tailStart = n.tail[0].x - 2; n.tailEnd = bx + bw;
+      }
       over = Math.max(over, n.tailEnd - x1);
     });
     return over;
   };
   let over = plan();
-  for (let k = 0; k < 4 && over > 1 && !opts.range; k++) {
+  for (let k = 0; k < 4 && over > 1 && !opts.range && !fixed; k++) {
     setRange(rs, re - 1 + Math.ceil((over + 4) / ppd));
     ppd = (x1 - x0) / (re - rs);
     over = plan();
@@ -598,7 +662,7 @@ function buildScene(state, opts) {
   if (!S.bgTransparent) items.unshift({ t: 'rect', x: 0, y: 0, w: W, h: H, r: 0, fill: S.bg, role: 'bg' });
 
   // ---- stripes, weekends, grid
-  if (S.stripes) info.forEach((n, i) => { if (i % 2 === 0) items.push({ t: 'rect', x: pad - 8, y: n.y, w: W - 2 * pad + 16, h: rowH, r: 4, fill: stripe }); });
+  if (S.stripes) info.filter(n => !n.lane).forEach((n, i) => { if (i % 2 === 0) items.push({ t: 'rect', x: pad - 8, y: n.y, w: W - 2 * pad + 16, h: rowH, r: 4, fill: stripe }); });
   if (S.weekends && S.scale === 'days' && ppd >= 3) {
     for (let d = rs; d < re; d++) if (dow(d) === 5) items.push({ t: 'rect', x: X(d), y: bodyY, w: Math.min(2, re - d) * ppd, h: bodyEnd - bodyY, r: 0, fill: stripe });
   }
@@ -640,12 +704,13 @@ function buildScene(state, opts) {
     return ['Q' + (m / 3 + 1)];
   };
   // sprint/relative numbering starts at the cell containing the first task
-  const firstCell = Math.max(0, cells.findIndex(c => c[1] > dMin));
+  const firstCell = Math.max(0, cells.findIndex(c => c[1] > anchor));
   const drawHeader = (top, atBottom) => {
     const unitY = atBottom ? top + 8 + tierH / 2 : top + (tiers - 1) * tierH + tierH / 2;
     const segY = atBottom ? top + 8 + tierH + tierH / 2 : top + tierH / 2;
     const lineY = atBottom ? top : top + headH - 1;
     items.push({ t: 'line', x1: x0, y1: lineY, x2: x1, y2: lineY, stroke: gridStrong, sw: 1 });
+    items.push({ t: 'rect', x: x0, y: top, w: x1 - x0, h: headH, hit: true, role: 'timeline' });
     if (!relative) segs.forEach(sg => {
       const w = X(sg.e) - X(sg.s) - 10;
       const label = M(sg.label, 12.5, 700) <= w ? sg.label : M(sg.short, 12.5, 700) <= w ? sg.short : '';
@@ -670,7 +735,7 @@ function buildScene(state, opts) {
   // ---- selection highlight & drop indicator (interactive only)
   if (opts.sel) {
     const n = info.find(n => n.row.id === opts.sel);
-    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: rowH, r: 6, fill: S.primary, opacity: 0.09, ui: true });
+    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: S.primary, opacity: 0.09, ui: true });
   }
 
   // ---- milestone guide lines
@@ -709,6 +774,13 @@ function buildScene(state, opts) {
     const name = row.name || 'Untitled';
     const size = n.level === 2 ? fs - 1 : fs;
     const group = isGroup(n);
+    if (n.sep) items.push({ t: 'line', x1: pad, y1: n.y - 9, x2: x1, y2: n.y - 9, stroke: gridStrong, sw: 1 });
+    if (n.lane) {
+      items.push({ t: 'text', x: pad, y: n.cy, text: fitText(name, x0 - 22 - pad, fs + 1, 700, font), size: fs + 1, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' });
+      items.push({ t: 'rect', x: x0 - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
+      items.push({ t: 'rect', x: pad - 10, y: n.y, w: x0 - pad, h: n.h, hit: true, id, role: 'row' });
+      return;
+    }
     if (left) {
       const lx = pad + n.level * 16;
       const weight = group ? 700 : 500;
@@ -734,7 +806,7 @@ function buildScene(state, opts) {
     if (n.milestone) {
       const cx = X(n.start + 0.5), rr = h * 0.52;
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mix(base, text, 0.3), stroke: surface });
-      items.push({ t: 'rect', x: cx - rr - 4, y: n.y, w: (n.tailEnd > cx ? n.tailEnd - cx : 0) + rr + 8, h: rowH, hit: true, id, role: 'move' });
+      items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: rowH, hit: true, id, role: 'move' });
     } else {
       const prog = S.progress ? clamp(n.progress, 0, 100) / 100 : 1;
       const pw = prog * n.bw;
@@ -742,7 +814,7 @@ function buildScene(state, opts) {
       if (pw > 0.5) items.push({ t: 'rect', x: n.bx, y: by, w: Math.min(n.bw, Math.max(pw, Math.min(2 * r, n.bw))), h, r, fill: full });
       if (n.inside) {
         const tw = M(name, size, 500);
-        const on = c => (onColor(c) === '#ffffff' ? '#ffffff' : mix(base, '#0b1020', 0.72));
+        const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 4.5 ? tint : '#0b1020'; };
         const it = { t: 'text', x: n.bx + 9, y: n.cy, text: name, size, weight: 500, fill: on(full), anchor: 'start' };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
         if (S.progress && pw < 9 + tw + 2 && on(soft) !== on(full)) {
@@ -788,9 +860,9 @@ function buildScene(state, opts) {
     items.push({ t: 'rect', x: tx - 6, y: laneY + 20, w: 12, h: bodyEnd - laneY - 20, hit: true, role: 'today' });
   }
 
-  if (opts.dropY != null) items.push({ t: 'rect', x: pad - 10, y: opts.dropY - 1.5, w: W - 2 * pad + 20, h: 3, r: 1.5, fill: S.primary, ui: true });
+  if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: S.primary, ui: true }); }
 
-  return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText };
+  return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed };
 }
 
 if (typeof module !== 'undefined') module.exports = { parseImport, parseDate, derive, normalizeLevels, areaPalette, dayToIso, toDay };

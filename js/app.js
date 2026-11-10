@@ -49,13 +49,15 @@ function sampleState() {
   const dep = (a, b) => rows.find(r => r.name === b).deps.push(id(a));
   dep('Audit & research', 'Site map & flows'); dep('Site map & flows', 'Wireframes'); dep('Visual design', 'Design sign-off');
   dep('Design sign-off', 'Component library'); dep('QA & accessibility', 'Go-live');
+  rows.forEach(r => { if (!isFinite(r.start)) { r.start = b; r.end = b + 4; } });
   return { settings: Object.assign({}, DEFAULT_SETTINGS, { title: 'Website redesign — project plan' }), rows };
 }
 function blankState(settings) {
-  const s = mondayOf(todayDay());
+  const S = Object.assign({}, settings || DEFAULT_SETTINGS, { title: 'Project plan', todayDate: null });
+  const s = S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
   return {
-    settings: Object.assign({}, settings || DEFAULT_SETTINGS, { title: 'Project plan', todayDate: null }),
-    rows: [newRow({ level: 0, name: 'Phase 1' }), newRow({ level: 1, name: 'First task', start: s, end: s + 4 }), newRow({ level: 1, name: 'Second task', start: s + 7, end: s + 11 })],
+    settings: S,
+    rows: [0, 1, 2].map(i => newRow({ level: 0, name: 'Task ' + (i + 1), start: s + i * 7, end: s + i * 7 + 4 })),
   };
 }
 function sanitize(st) {
@@ -83,12 +85,18 @@ let sel = null;
 let scene = null;
 let drag = null;
 const undoStack = [], redoStack = [];
+syncParents();
 let lastSnap = JSON.stringify(state);
 let commitTimer = null;
 
 function save() { try { localStorage.setItem(STORE_KEY, lastSnap); } catch (e) { /* storage unavailable */ } }
+/** areas keep the span of what is inside them, so they have sensible dates if they later become plain tasks */
+function syncParents() {
+  derive(state.rows).forEach(n => { if (n.hasKids && isFinite(n.start)) { n.row.start = n.start; n.row.end = n.end; } });
+}
 function commit() {
   clearTimeout(commitTimer);
+  syncParents();
   const s = JSON.stringify(state);
   if (s === lastSnap) return;
   undoStack.push(lastSnap);
@@ -197,7 +205,7 @@ function drawScene(sc, scale) {
 function renderChart() {
   const o = { sel };
   if (drag && drag.range) o.range = drag.range;
-  if (drag && drag.dropY != null) o.dropY = drag.dropY;
+  if (drag && drag.dropY != null) { o.dropY = drag.dropY; o.dropLevel = drag.dropLevel; }
   scene = buildScene(state, o);
   svg.setAttribute('viewBox', `0 0 ${scene.w} ${scene.h}`);
   svg.setAttribute('font-family', `'${scene.font}', system-ui, sans-serif`);
@@ -205,9 +213,9 @@ function renderChart() {
   const wrap = $('#canvas-wrap');
   wrap.classList.toggle('transparent', scene.transparent);
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
-  wrap.classList.toggle('compact', state.settings.width === 'compact');
+  applyZoom();
 }
-function refresh() { renderChart(); renderOutline(); syncDesign(); }
+function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); }
 
 // ---------------------------------------------------------------- fonts
 let fontToken = 0;
@@ -231,6 +239,7 @@ const nextWorkday = d => (dow(d) >= 5 ? d + (7 - dow(d)) : d);
 function select(id, opts) {
   if (sel === id) return;
   sel = id;
+  if (pop && pop.kind === 'row' && pop.id !== id) closePop();
   renderChart(); renderOutline();
   if (id && !(opts && opts.quiet)) { const el = $(`.orow[data-id="${id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
 }
@@ -240,14 +249,22 @@ function focusName(id, all) {
   inp.focus({ preventScroll: false });
   if (all) inp.select();
 }
-function moveBlock(i, k) {
+/** the level a block starting at row i would take if dropped before row k while asking for level `want` */
+function dropLevelFor(i, k, want) {
   const rows = state.rows, j = blockEnd(rows, i);
-  if (k >= i && k <= j) return false;
+  const prev = k >= i && k <= j ? rows[i - 1] : rows[k - 1];
+  return clamp(want, 0, prev ? Math.min(2, prev.level + 1) : 0);
+}
+/** move a row and everything inside it; changing its level re-levels its contents (area -> task -> subtask) */
+function moveBlock(i, k, want) {
+  const rows = state.rows, j = blockEnd(rows, i);
+  const level = dropLevelFor(i, k, want == null ? rows[i].level : want);
+  const stay = k >= i && k <= j;
+  if (stay && level === rows[i].level) return false;
   const block = rows.splice(i, j - i);
-  const at = k > i ? k - (j - i) : k;
-  const prev = rows[at - 1];
-  const delta = Math.min(block[0].level, prev ? prev.level + 1 : 0) - block[0].level;
-  block.forEach(r => { r.level += delta; });
+  const at = stay ? i : k > i ? k - (j - i) : k;
+  const delta = level - block[0].level;
+  block.forEach(r => { r.level = clamp(r.level + delta, 0, 2); });
   rows.splice(at, 0, ...block);
   normalizeLevels(rows);
   return true;
@@ -284,17 +301,18 @@ function addRow(kind, afterId, asSibling) {
     sel = area.id; commit(); refresh(); focusName(area.id, true);
     return;
   }
-  if (i < 0) { at = rows.length; level = rows.length ? 1 : 0; ref = info.length ? info[info.length - 1] : null; }
+  if (i < 0) { at = rows.length; ref = info.length ? info[info.length - 1] : null; level = ref ? Math.min(ref.level, 1) : 0; }
   else {
     const n = info[i];
     ref = n;
-    if (n.hasKids && !asSibling) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
-    else if (n.level === 0 && !asSibling) { at = i + 1; level = 1; }
+    if (n.hasKids && (n.level === 0 || !asSibling)) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
     else { at = blockEnd(rows, i); level = n.level; }
   }
+  const S0 = state.settings;
+  const emptyStart = S0.rangeMode === 'fixed' && S0.rangeStart != null ? S0.rangeStart : mondayOf(todayDay());
   const row = newRow({ level, name: '', type: kind === 'milestone' ? 'milestone' : 'task' });
-  if (kind === 'milestone') { row.start = row.end = ref ? ref.end : todayDay(); row.name = 'Milestone'; }
-  else { row.start = ref ? nextWorkday(ref.end + 1) : mondayOf(todayDay()); row.end = row.start + 4; row.name = ''; }
+  if (kind === 'milestone') { row.start = row.end = ref ? ref.end : emptyStart; row.name = 'Milestone'; }
+  else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
   rows.splice(at, 0, row);
   normalizeLevels(rows);
   sel = row.id; commit(); refresh(); focusName(row.id, true);
@@ -324,6 +342,7 @@ function detailHtml(n, info, rows) {
     html += n.milestone
       ? `<label class="field"><span>Date</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label>`
       : `<div class="two"><label class="field"><span>Start</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label><label class="field"><span>End</span><input class="inp" type="date" data-f="end" value="${dayToIso(r.end)}"></label></div>`;
+    if (!n.milestone) html += durHtml(r);
     if (!n.milestone) html += `<label class="field"><span>Progress</span><div class="range-row"><input type="range" min="0" max="100" step="5" data-f="progress" value="${r.progress}"><output>${Math.round(r.progress)}%</output></div></label>`;
   }
   if (!(n.level === 0 && n.hasKids)) html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
@@ -349,7 +368,7 @@ function renderOutline() {
     html += `<div class="orow lvl${n.level}${r.id === sel ? ' sel' : ''}" data-id="${r.id}">
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
       <span class="dot${n.milestone ? ' ms' : ''}" style="background:${color}"></span>
-      <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.level === 0 ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
+      <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.hasKids && n.level === 0 ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
       <span class="dates">${fmtRange(n)}</span></div>`;
     if (r.id === sel) html += detailHtml(n, info, rows);
   });
@@ -411,27 +430,15 @@ outline.addEventListener('input', e => {
   const r = state.rows[rowIndex(host.dataset.id)];
   if (!r) return;
   const t = e.target, f = t.dataset.f;
-  if (t.classList.contains('nm')) { r.name = t.value; renderChart(); commitSoon(); return; }
-  if (f === 'assignee') { r.assignee = t.value; renderChart(); commitSoon(); }
-  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
+  if (t.classList.contains('nm')) { r.name = t.value; renderChart(); syncPop(); commitSoon(); return; }
+  rowInput(r, t);
 });
 outline.addEventListener('change', e => {
   const host = e.target.closest('[data-id]');
   if (!host) return;
   const r = state.rows[rowIndex(host.dataset.id)];
   if (!r) return;
-  const t = e.target, f = t.dataset.f;
-  if (f === 'start' || f === 'end') {
-    const d = isoToDay(t.value);
-    if (d == null) return;
-    if (f === 'start') { const len = r.end - r.start; r.start = d; r.end = r.type === 'milestone' ? d : d + len; }
-    else { r.end = d; if (r.end < r.start) r.start = r.end; }
-    commit(); refresh();
-  } else if (f === 'dep-add' && t.value) {
-    r.deps.push(t.value);
-    if (!state.settings.deps) state.settings.deps = true;
-    commit(); refresh();
-  } else commit();
+  rowChange(r, e.target);
 });
 outline.addEventListener('keydown', e => {
   const t = e.target;
@@ -457,7 +464,8 @@ outline.addEventListener('pointerdown', e => {
   const line = document.createElement('div');
   line.className = 'drop-line'; line.hidden = true;
   outline.appendChild(line);
-  let k = i;
+  let k = i, lv = state.rows[i].level;
+  const x0 = e.clientX, lv0 = lv;
   const body = outline.closest('.panel-body');
   const move = ev => {
     const y = ev.clientY;
@@ -465,14 +473,18 @@ outline.addEventListener('pointerdown', e => {
     for (let x = 0; x < els.length; x++) { const b = els[x].getBoundingClientRect(); if (y < b.top + b.height / 2) { k = x; break; } }
     const ob = outline.getBoundingClientRect();
     const ref = k < els.length ? els[k].getBoundingClientRect().top : els[els.length - 1].getBoundingClientRect().bottom;
-    line.hidden = k >= i && k <= j;
-    line.style.top = ref - ob.top - 2 + 'px';
+    // dragging sideways changes the level: an area dropped under another becomes a task, its tasks subtasks
+    lv = dropLevelFor(i, k, lv0 + Math.round((ev.clientX - x0) / 20));
+    const stay = k >= i && k <= j;
+    line.hidden = stay && lv === lv0;
+    line.style.top = (stay ? els[i].getBoundingClientRect().top : ref) - ob.top - 2 + 'px';
+    line.style.left = 28 + lv * 14 + 'px';
     const bb = body.getBoundingClientRect();
     if (y < bb.top + 30) body.scrollTop -= 12; else if (y > bb.bottom - 30) body.scrollTop += 12;
   };
   const up = () => {
     grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
-    if (moveBlock(i, k)) { sel = id; commit(); }
+    if (moveBlock(i, k, lv)) { sel = id; commit(); }
     refresh();
   };
   grip.setPointerCapture(e.pointerId);
@@ -487,25 +499,28 @@ svg.addEventListener('pointerdown', e => {
   if (!t) { if (sel) select(null); return; }
   const role = t.dataset.role, id = t.dataset.id || null;
   const touch = e.pointerType === 'touch';
-  if (touch && role !== 'today' && (id !== sel || role === 'row')) { select(id); return; }
+  const rect = t.getBoundingClientRect();
+  if (touch && id && (id !== sel || role === 'row')) { select(id); if (role !== 'row') openPop('row', rect, id, e.clientX); return; }
   e.preventDefault();
   if (document.activeElement && document.activeElement !== document.body) { commit(); document.activeElement.blur(); }
   try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   const box = svg.getBoundingClientRect();
   const n = id ? scene.info.find(x => x.row.id === id) : null;
-  drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false };
-  if (role !== 'row') drag.range = scene.range.slice();
+  drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect };
+  if (role !== 'row' && role !== 'title' && role !== 'timeline') drag.range = scene.range.slice();
   if (role === 'move') { const i = n.i; drag.block = state.rows.slice(i, blockEnd(state.rows, i)).map(r => ({ r, s: r.start, e: r.end })); }
   else if (role === 'resize-l' || role === 'resize-r') drag.orig = { s: n.row.start, e: n.row.end };
   else if (role === 'progress') { drag.bx = n.bx; drag.bw = n.bw; }
   else if (role === 'today') drag.orig = state.settings.todayDate != null ? state.settings.todayDate : todayDay();
-  else if (role === 'row') drag.i = n.i;
+  else if (role === 'row') { drag.i = n.i; drag.lv0 = n.level; }
 });
 svg.addEventListener('pointermove', e => {
   if (!drag) return;
   const dx = (e.clientX - drag.x) * drag.k, dy = (e.clientY - drag.y) * drag.k;
   if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  if (drag.role === 'title' || drag.role === 'timeline') return;
   drag.moved = true;
+  closePop();
   svg.classList.add('dragging');
   const dd = Math.round(dx / drag.ppd);
   const row = drag.id ? state.rows[rowIndex(drag.id)] : null;
@@ -517,10 +532,13 @@ svg.addEventListener('pointermove', e => {
   else if (drag.role === 'row') {
     const y = (e.clientY - drag.top) * drag.k, info = scene.info;
     let k = info.length;
-    for (let x = 0; x < info.length; x++) if (y < info[x].cy) { k = x; break; }
+    for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
     drag.k2 = k;
     const j = blockEnd(state.rows, drag.i);
-    drag.dropY = k >= drag.i && k <= j ? null : k < info.length ? info[k].y - (info[k].level === 0 && info[k].hasKids && k > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+    const stay = k >= drag.i && k <= j;
+    drag.dropLevel = dropLevelFor(drag.i, k, drag.lv0 + Math.round(dx / 24));
+    const at = stay ? drag.i : k;
+    drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
   }
   if (sel !== drag.id && drag.id) sel = drag.id;
   renderChart();
@@ -532,30 +550,42 @@ function endDrag() {
   drag = null;
   svg.classList.remove('dragging');
   if (d.moved) {
-    if (d.role === 'row' && d.k2 != null) moveBlock(d.i, d.k2);
+    if (d.role === 'row' && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
     commit(); refresh();
     if (d.id) { const el = $(`.orow[data-id="${d.id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
-  } else if (d.id) { if (sel === d.id) renderChart(); else select(d.id); }
+  } else if (d.role === 'title') editTitle(d.rect);
+  else if (d.role === 'timeline') openPop('timeline', d.rect, null, d.x - 60);
+  else if (d.role === 'today') openPop('today', d.rect, null, d.x - 60);
+  else if (d.id) {
+    // the chart re-renders on selection, so double-clicks are detected here rather than via dblclick
+    const now = Date.now(), dbl = lastClick.id === d.id && now - lastClick.t < 450;
+    lastClick = { id: d.id, t: now };
+    if (sel !== d.id) select(d.id);
+    if (d.role === 'row') { if (dbl) editRowName(d.id, d.rect); }
+    else { openPop('row', d.rect, d.id, d.x - 60); if (dbl) { const inp = $('#pop-name'); if (inp) inp.select(); } }
+  }
 }
+let lastClick = { id: null, t: 0 };
 svg.addEventListener('pointerup', endDrag);
 svg.addEventListener('pointercancel', endDrag);
-svg.addEventListener('dblclick', e => {
-  const t = e.target.closest('[data-id]');
-  if (t) { if (!$('#panel-plan').classList.contains('open')) openSheet('panel-plan'); focusName(t.dataset.id, true); }
-});
 
 // ---------------------------------------------------------------- design panel
 const DESIGN = [
   ['Chart', [
-    { k: 'title', type: 'text', label: 'Title', ph: 'No title' },
+    { k: 'showTitle', type: 'toggle', label: 'Show title' },
+    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
     { k: 'width', type: 'seg', label: 'Format', opts: [['wide', 'Slide'], ['compact', 'Report']] },
-    { k: 'labels', type: 'seg', label: 'Task names', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: 'labels', type: 'seg', label: 'Names', col: true, opts: [['left', 'On the left'], ['bars', 'On the bars'], ['lanes', 'Swimlanes']] },
   ]],
   ['Timeline', [
     { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
-    { k: 'sprintWeeks', type: 'seg', label: 'Sprint length', sub: true, num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']], when: s => s.scale === 'sprints' },
+    { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']] },
     { k: 'dateMode', type: 'seg', label: 'Labels', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
+    { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
+    { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
+    { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
+    { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', when: s => s.rangeMode === 'fixed' },
   ]],
   ['Show', [
     { k: 'progress', type: 'toggle', label: 'Progress in bars' },
@@ -599,6 +629,7 @@ function buildDesign() {
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
+      else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
       else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"></label>`;
     });
@@ -619,9 +650,14 @@ function syncDesign() {
   });
 }
 function setSetting(k, v, soon) {
+  const S = state.settings;
+  if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
+  if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
+  if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
   state.settings[k] = v;
   if (k === 'font') ensureFont();
-  renderChart(); syncDesign();
+  renderChart(); syncDesign(); syncPop();
+  if (k === 'sprintWeeks') renderOutline();
   if (k === 'primary' || k === 'secondary' || k === 'secondaryOn') renderOutline();
   if (soon) commitSoon(); else commit();
 }
@@ -634,6 +670,7 @@ designEl.addEventListener('click', e => {
     commit(); refresh();
     return;
   }
+  if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
   const b = e.target.closest('.seg[data-k] button');
   if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : b.dataset.v); }
 });
@@ -643,7 +680,7 @@ designEl.addEventListener('input', e => {
   if (t.type === 'checkbox') setSetting(k, t.checked);
   else if (t.type === 'color') setSetting(k, t.value, true);
   else if (t.dataset.hex != null) { let v = t.value.trim(); if (v && v[0] !== '#') v = '#' + v; if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) setSetting(k, rgbToHex(hexToRgb(v)), true); }
-  else if (t.type === 'date') { const d = isoToDay(t.value); if (d != null) setSetting(k, d === todayDay() ? null : d, true); }
+  else if (t.type === 'date') { const d = isoToDay(t.value); if (d != null) setSetting(k, k === 'todayDate' && d === todayDay() ? null : d, true); }
   else if (t.tagName === 'SELECT') setSetting(k, t.value);
   else setSetting(k, t.value, true);
 });
@@ -706,9 +743,12 @@ $('#imp-go').addEventListener('click', () => {
   else if ($('#imp-replace').checked) state.rows = pending.rows;
   else state.rows = state.rows.concat(pending.rows);
   normalizeLevels(state.rows);
+  const S = state.settings;
+  const spread = pending.rows && pending.rows.dated === false && $('#imp-replace').checked && S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null;
+  if (spread) fitRows(state.rows, S.rangeStart, S.rangeEnd);
   sel = null; pending = null;
   commit(); ensureFont(); refresh(); closeModal();
-  toast('Imported — drag the bars to fine-tune dates');
+  toast(spread ? 'Imported and spread across your timeline' : 'Imported — drag the bars to fine-tune dates');
 });
 function openModal() { modal.hidden = false; $('#imp-text').value = ''; previewImport(null); setTimeout(() => $('#imp-text').focus(), 30); }
 function closeModal() { modal.hidden = true; }
@@ -840,6 +880,7 @@ document.addEventListener('keydown', e => {
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === 'Escape') {
     if (!modal.hidden) closeModal();
+    else if (pop) closePop();
     else if (!exportMenu.hidden) exportMenu.hidden = true;
     else if (inField) e.target.blur();
     else if (sel) select(null);
@@ -858,6 +899,230 @@ document.addEventListener('keydown', e => {
   }
 });
 window.addEventListener('beforeunload', commit);
+
+// ---------------------------------------------------------------- durations & timeline
+const UI_KEY = 'gantt:ui';
+const ui = Object.assign({ durUnit: 'weeks', hidePlan: false, hideDesign: false }, (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })());
+const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* storage unavailable */ } };
+const DUR_UNITS = [['days', 'days'], ['weeks', 'weeks'], ['sprints', 'sprints'], ['months', 'months']];
+
+/** number + unit that describes a span, preferring the unit the user last picked */
+function spanUnits(start, end) {
+  const sw = state.settings.sprintWeeks;
+  for (const u of [ui.durUnit, 'weeks', 'months']) { const n = durationIn(start, end, u, sw); if (n != null) return [n, u]; }
+  return [end - start + 1, 'days'];
+}
+function durControl(start, end, fn, fu) {
+  const [n, u] = spanUnits(start, end);
+  return `<div class="dur"><input class="inp" type="number" min="1" step="1" inputmode="numeric" data-f="${fn}" value="${n}" aria-label="Length"><select class="inp" data-f="${fu}" aria-label="Unit">${DUR_UNITS.map(o => `<option value="${o[0]}"${o[0] === u ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></div>`;
+}
+const durHtml = r => `<div class="field"><span>Duration</span>${durControl(r.start, r.end, 'dur-n', 'dur-u')}</div>`;
+/** read the number + unit pair next to a field and turn it into an end date */
+function durFromFields(t, start, fn, fu) {
+  const box = t.closest('.dur');
+  const unit = $(`[data-f="${fu}"]`, box).value;
+  ui.durUnit = unit; saveUi();
+  return durationEnd(start, +$(`[data-f="${fn}"]`, box).value || 1, unit, state.settings.sprintWeeks);
+}
+
+function rowInput(r, t) {
+  const f = t.dataset.f;
+  if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
+  else if (f === 'assignee') { r.assignee = t.value; renderChart(); commitSoon(); }
+  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
+}
+function rowChange(r, t) {
+  const f = t.dataset.f;
+  if (f === 'start' || f === 'end') {
+    const d = isoToDay(t.value);
+    if (d == null) return;
+    if (f === 'start') { const len = r.end - r.start; r.start = d; r.end = r.type === 'milestone' ? d : d + len; }
+    else { r.end = d; if (r.end < r.start) r.start = r.end; }
+    commit(); refresh();
+  } else if (f === 'dur-n' || f === 'dur-u') {
+    r.end = durFromFields(t, r.start, 'dur-n', 'dur-u');
+    commit(); refresh();
+  } else if (f === 'dep-add' && t.value) {
+    r.deps.push(t.value);
+    if (!state.settings.deps) state.settings.deps = true;
+    commit(); refresh();
+  } else commit();
+}
+/** the span the plan currently occupies (used when switching to a fixed timeline) */
+function autoSpan() {
+  const info = derive(state.rows);
+  if (!info.length) { const s = mondayOf(todayDay()); return [s, s + 12 * 7 - 1]; }
+  return [Math.min(...info.map(n => n.start)), Math.max(...info.map(n => n.end))];
+}
+function fitPlan() {
+  const S = state.settings;
+  if (S.rangeMode !== 'fixed' || S.rangeStart == null || !state.rows.length) return;
+  fitRows(state.rows, S.rangeStart, S.rangeEnd);
+  commit(); refresh();
+  toast('Tasks spread across the timeline — Undo to revert');
+}
+
+// ---------------------------------------------------------------- popover: edit things where they are
+const popEl = document.createElement('div');
+popEl.className = 'pop'; popEl.hidden = true;
+document.body.appendChild(popEl);
+let pop = null;
+function popHtml() {
+  const S = state.settings;
+  const date = (label, f, v) => `<label class="field"><span>${label}</span><input class="inp" type="date" data-f="${f}" value="${dayToIso(v)}"></label>`;
+  if (pop.kind === 'row') {
+    const n = derive(state.rows).find(x => x.row.id === pop.id);
+    if (!n) return '';
+    const r = n.row;
+    let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">`;
+    if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
+    else if (n.milestone) h += date('Date', 'start', r.start);
+    else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
+    return h;
+  }
+  if (pop.kind === 'today') return `<h4>“We are here” line</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}<label class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="No label"></label>`;
+  const fixed = S.rangeMode === 'fixed' && S.rangeStart != null;
+  const [a, b] = fixed ? [S.rangeStart, S.rangeEnd] : autoSpan();
+  return `<h4>Overall timeline</h4>
+    <div class="seg" data-f="rangeMode"><button data-v="auto" class="${fixed ? '' : 'on'}">Fit to tasks</button><button data-v="fixed" class="${fixed ? 'on' : ''}">Fixed</button></div>
+    <div class="two">${date('From', 'rangeStart', a)}${date('To', 'rangeEnd', b)}</div>
+    <div class="field"><span>Length</span>${durControl(a, b, 'len-n', 'len-u')}</div>
+    <button class="btn ghost wide" data-act="fit"${fixed && state.rows.length ? '' : ' disabled'}>Spread tasks across it</button>`;
+}
+function openPop(kind, rect, id, x) {
+  pop = { kind, id: id || null };
+  popEl.innerHTML = popHtml();
+  popEl.hidden = false;
+  const w = popEl.offsetWidth, h = popEl.offsetHeight;
+  let top = rect.bottom + 8;
+  if (kind === 'today') top = rect.top + 30;
+  if (top + h > innerHeight - 8) top = Math.max(8, rect.top - h - 8);
+  popEl.style.top = top + 'px';
+  popEl.style.left = clamp(x != null ? Math.max(x, rect.left) : rect.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
+}
+function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; }
+function syncPop() {
+  if (!pop) return;
+  const html = popHtml();
+  if (!html) { closePop(); return; }
+  const act = document.activeElement;
+  if (!popEl.contains(act)) { popEl.innerHTML = html; return; }
+  // keep the field being typed in; refresh the others from a fresh copy
+  const fresh = document.createElement('div');
+  fresh.innerHTML = html;
+  $$('[data-f]', popEl).forEach(el => {
+    const src = $(`[data-f="${el.dataset.f}"]`, fresh);
+    if (!src || el === act) return;
+    if (el.classList.contains('seg')) el.innerHTML = src.innerHTML; else el.value = src.value;
+  });
+  const fit = $('[data-act="fit"]', popEl), fit2 = $('[data-act="fit"]', fresh);
+  if (fit && fit2) fit.disabled = fit2.disabled;
+}
+document.addEventListener('pointerdown', e => { if (pop && !popEl.contains(e.target)) closePop(); }, true);
+popEl.addEventListener('input', e => {
+  const t = e.target, f = t.dataset.f;
+  if (!pop || !f) return;
+  if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowInput(r, t); }
+  else if (f === 'todayLabel') setSetting('todayLabel', t.value, true);
+});
+popEl.addEventListener('change', e => {
+  const t = e.target, f = t.dataset.f;
+  if (!pop || !f) return;
+  if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowChange(r, t); return; }
+  const S = state.settings;
+  if (f === 'todayDate') { const d = isoToDay(t.value); if (d != null) setSetting('todayDate', d === todayDay() ? null : d); }
+  else if (f === 'rangeStart' || f === 'rangeEnd' || f === 'len-n' || f === 'len-u') {
+    if (S.rangeMode !== 'fixed' || S.rangeStart == null) { [S.rangeStart, S.rangeEnd] = autoSpan(); S.rangeMode = 'fixed'; }
+    if (f[0] === 'l') setSetting('rangeEnd', durFromFields(t, S.rangeStart, 'len-n', 'len-u'));
+    else { const d = isoToDay(t.value); if (d != null) setSetting(f, d); }
+  } else commit();
+});
+popEl.addEventListener('click', e => {
+  if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
+  const b = e.target.closest('.seg[data-f="rangeMode"] button');
+  if (b) setSetting('rangeMode', b.dataset.v);
+});
+popEl.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.target.blur(); if (e.target.dataset.f === 'name') closePop(); } });
+
+// ---------------------------------------------------------------- inline text editing on the chart
+function inlineEdit(rect, value, fontPx, weight, onInput) {
+  closePop();
+  const inp = document.createElement('input');
+  inp.className = 'inline-edit';
+  inp.value = value;
+  Object.assign(inp.style, { left: rect.left + 'px', top: rect.top + 'px', width: Math.max(rect.width, 180) + 'px', height: rect.height + 'px', fontSize: fontPx + 'px', fontWeight: weight, fontFamily: `'${state.settings.font}', system-ui, sans-serif` });
+  document.body.appendChild(inp);
+  let done = false;
+  const finish = revert => {
+    if (done) return;
+    done = true;
+    if (revert) onInput(value);
+    inp.remove(); commit(); refresh();
+  };
+  inp.addEventListener('input', () => onInput(inp.value));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(false); else if (e.key === 'Escape') { e.stopPropagation(); finish(true); } });
+  inp.addEventListener('blur', () => finish(false));
+  inp.focus(); inp.select();
+}
+function editTitle(rect) {
+  const s = svg.getBoundingClientRect().width / scene.w;
+  inlineEdit({ left: rect.left, top: rect.top, width: Math.max(rect.width + 80, 420 * s), height: rect.height }, state.settings.title, Math.max(13, 30 * s), 700, v => { state.settings.title = v; renderChart(); syncDesign(); });
+}
+function editRowName(id, rect) {
+  const n = scene.info.find(x => x.row.id === id);
+  if (!n) return;
+  const s = svg.getBoundingClientRect().width / scene.w, indent = (10 + n.level * 16) * s - 7;
+  const group = n.level === 0 && n.hasKids;
+  inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.level === 2 ? scene.fs - 1 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
+}
+
+// ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
+const stage = $('#stage'), wrapEl = $('#canvas-wrap');
+let zoom = 1;
+function applyZoom() {
+  wrapEl.style.width = zoom * 100 + '%';
+  wrapEl.style.maxWidth = (state.settings.width === 'compact' ? 960 : 1280) * zoom + 'px';
+  $('#zoom-val').textContent = Math.round(zoom * 100) + '%';
+}
+function setZoom(z, cx, cy) {
+  z = clamp(z, 0.4, 6);
+  if (Math.abs(z - zoom) < 0.001) return;
+  closePop();
+  const sb = stage.getBoundingClientRect();
+  if (cx == null) { cx = sb.left + sb.width / 2; cy = sb.top + sb.height / 2; }
+  const a = wrapEl.getBoundingClientRect();
+  const fx = (cx - a.left) / a.width, fy = (cy - a.top) / a.height;
+  zoom = z;
+  applyZoom();
+  const b = wrapEl.getBoundingClientRect();
+  stage.scrollLeft += b.left + fx * b.width - cx;
+  stage.scrollTop += b.top + fy * b.height - cy;
+}
+stage.addEventListener('wheel', e => {
+  if (!e.ctrlKey && !e.metaKey) return; // plain scrolling pans
+  e.preventDefault();
+  const d = clamp(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY, -30, 30);
+  setZoom(zoom * Math.exp(-d * 0.008), e.clientX, e.clientY);
+}, { passive: false });
+let gestureZoom = 1;
+stage.addEventListener('gesturestart', e => { e.preventDefault(); gestureZoom = zoom; });
+stage.addEventListener('gesturechange', e => { e.preventDefault(); setZoom(gestureZoom * e.scale, e.clientX, e.clientY); });
+$('#zoom-in').addEventListener('click', () => setZoom(zoom * 1.25));
+$('#zoom-out').addEventListener('click', () => setZoom(zoom / 1.25));
+$('#zoom-val').addEventListener('click', () => setZoom(1));
+
+// ---------------------------------------------------------------- collapsible panels
+function syncPanels() {
+  $('#panel-plan').classList.toggle('collapsed', !!ui.hidePlan);
+  $('#panel-design').classList.toggle('collapsed', !!ui.hideDesign);
+}
+$$('.panel').forEach(p => {
+  const key = p.id === 'panel-plan' ? 'hidePlan' : 'hideDesign';
+  const toggle = () => { ui[key] = !ui[key]; saveUi(); syncPanels(); };
+  $('.collapse-btn', p).addEventListener('click', e => { e.stopPropagation(); toggle(); });
+  p.addEventListener('click', () => { if (p.classList.contains('collapsed') && matchMedia('(min-width: 861px)').matches) toggle(); });
+});
+syncPanels();
 
 // ---------------------------------------------------------------- go
 buildDesign();
