@@ -594,10 +594,11 @@ const DESIGN = [
     { k: 'showTitle', type: 'toggle', label: 'Show title' },
     { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
     { k: 'width', type: 'seg', label: 'Format', opts: [['wide', 'Slide'], ['compact', 'Report']] },
+    { k: 'pack', type: 'seg', label: 'Rows', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
   ]],
   ['Labels', [
-    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
-    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.taskLabels === 'bars' },
+    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']], when: s => !s.pack },
+    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
     { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.level === 0 && n.hasKids) },
   ]],
   ['Timeline', [
@@ -695,7 +696,7 @@ designEl.addEventListener('click', e => {
   }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
   const b = e.target.closest('.seg[data-k] button');
-  if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : b.dataset.v); }
+  if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : designCtl[k].bool ? b.dataset.v === 'true' : b.dataset.v); }
 });
 designEl.addEventListener('input', e => {
   const t = e.target, k = t.dataset.k;

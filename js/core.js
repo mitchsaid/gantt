@@ -123,7 +123,7 @@ function areaPalette(primary, secondary, n) {
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, width: 'wide',
-  taskLabels: 'left', areaLabels: 'row', barText: 'auto', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null,
@@ -518,6 +518,24 @@ function buildScene(state, opts) {
   opts = opts || {};
   const S = state.settings, rows = state.rows, font = S.font;
   const info = derive(rows);
+  // visual rows: normally one per item; when packing, sibling tasks that don't overlap in time share a row
+  const pack = !!S.pack;
+  let vrows = 0, run = null;
+  // rough days-per-pixel, so a short bar or a milestone keeps enough of the row free for its name
+  const spanDays = info.length ? Math.max(...info.map(n => n.end)) - Math.min(...info.map(n => n.start)) + 1 : 1;
+  const dpp = spanDays / ((S.width === 'compact' ? 960 : 1280) * 0.8);
+  const holdsUntil = n => { const need = ((n.row.name || 'Untitled').length * 8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
+  info.forEach(n => {
+    n.fit = null;
+    if (pack && !n.hasKids && run && run.parent === n.parent && run.level === n.level) {
+      let t = run.ends.findIndex(e => e < n.start);
+      if (t < 0) { t = run.ends.length; run.rows.push(vrows++); }
+      run.ends[t] = holdsUntil(n); n.vrow = run.rows[t];
+    } else {
+      n.vrow = vrows++;
+      run = pack && !n.hasKids ? { parent: n.parent, level: n.level, ends: [holdsUntil(n)], rows: [n.vrow] } : null;
+    }
+  });
   const W = S.width === 'compact' ? 960 : 1280;
   const pad = 40;
   const items = [];
@@ -540,20 +558,21 @@ function buildScene(state, opts) {
     // auto: size rows so the chart fills a slide (16:9) — few items get tall bars, long plans stay compact
     const grp = n => n.level === 0 && n.hasKids;
     const side = S.areaLabels === 'side' && info.some(grp);
-    let nRows = 0, gaps = 0;
+    let gaps = 0;
+    const used = new Set();
     info.forEach((n, i) => {
       if (i > 0 && (grp(n) || (side && n.level === 0 && info[i - 1].level > 0))) gaps += side ? 18 : 10;
-      if (!(side && grp(n))) nRows++;
+      if (!(side && grp(n))) used.add(n.vrow);
     });
     const hh = (S.dateMode === 'relative' ? 1 : 2) * 26 + 8;
     const fixedH = 2 * pad + (S.showTitle && S.title ? 56 : 0) + (S.todayLine ? 26 : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
-    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, nRows)), 32, 68);
+    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, used.size)), 38, 68);
   }
   const fs = Math.round((rowH <= 38 ? 12.5 + (rowH - 30) * 0.1875 : Math.min(17, 14 + (rowH - 38) * 0.1)) * 2) / 2;
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   const isGroup = n => n.level === 0 && n.hasKids;
-  const left = S.taskLabels === 'left'; // task names in a column on the left, otherwise on the bars
+  const left = S.taskLabels === 'left' && !pack; // task names in a column on the left, otherwise on the bars
   const lanes = S.areaLabels === 'side' && info.some(isGroup); // areas named down the side, spanning their rows
 
   // label columns: areas (when at the side), then tasks (when on the left)
@@ -589,15 +608,18 @@ function buildScene(state, opts) {
   if (showTop) y += headH;
   const bodyY = y;
   y += 6;
+  const rowY = {};
   info.forEach((n, i) => {
+    n.h = rowH;
+    if (rowY[n.vrow] != null) { n.y = rowY[n.vrow]; n.cy = n.y + rowH / 2; return; } // shares a row with an earlier task
     if (i > 0 && (isGroup(n) || (lanes && n.level === 0 && info[i - 1].level > 0))) { y += lanes ? 18 : 10; n.sep = lanes; }
-    n.y = y; n.cy = y + rowH / 2; n.h = rowH;
+    n.y = rowY[n.vrow] = y; n.cy = y + rowH / 2;
     if (lanes && isGroup(n)) { n.lane = true; return; } // no row of its own: its label spans the rows inside it
     y += rowH;
   });
   if (lanes) info.forEach(n => {
     if (!n.lane) return;
-    n.h = info[blockEnd(rows, n.i) - 1].y + rowH - n.y;
+    n.h = Math.max(...info.slice(n.i + 1, blockEnd(rows, n.i)).map(c => c.y)) + rowH - n.y;
     n.cy = n.y + n.h / 2; n.dropCy = n.y - 4;
   });
   y += 6;
@@ -634,7 +656,18 @@ function buildScene(state, opts) {
   const showAssignee = n => S.assignees && n.row.assignee && !isGroup(n) && (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.level === 2 : n.level < 2));
   const plan = () => {
     let over = 0;
+    const room = {};
+    if (pack) {
+      const byRow = {};
+      info.forEach(n => { (byRow[n.vrow] = byRow[n.vrow] || []).push(n); });
+      Object.values(byRow).forEach(list => list.sort((a, b) => a.start - b.start).forEach((n, k) => {
+        const nx = list[k + 1];
+        room[n.row.id] = nx ? (nx.milestone ? X(nx.start + 0.5) - barH * 0.52 : X(nx.start)) - 8 : Infinity;
+      }));
+    }
     info.forEach(n => {
+      const lim = pack ? room[n.row.id] : Infinity;
+      n.fit = null;
       const size = n.level === 2 ? fs - 1 : fs;
       const h = n.level === 2 ? subH : barH;
       const bx = X(n.start), bw = Math.max(X(n.end + 1) - bx, 4);
@@ -646,12 +679,13 @@ function buildScene(state, opts) {
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         if (!n.milestone && w + 18 <= bw) n.inside = true;
-        else { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
+        else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
+        else { n.inside = true; n.fit = Math.max(0, bw - 14); } // no room beside it: shorten the name to fit the bar
       } else if (n.milestone && !relative) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
         n.tail.push({ k: 'date', x: tx, w, text: t }); tx += w + 12;
       }
-      if (showAssignee(n)) {
+      if (showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + 24 <= lim) {
         const w = M(n.row.assignee, size - 1.5, 500);
         n.tail.push({ k: 'who', x: tx, w: w + 24 }); tx += w + 24 + 10;
       }
@@ -677,7 +711,7 @@ function buildScene(state, opts) {
   if (!S.bgTransparent) items.unshift({ t: 'rect', x: 0, y: 0, w: W, h: H, r: 0, fill: S.bg, role: 'bg' });
 
   // ---- stripes, weekends, grid
-  if (S.stripes) info.filter(n => !n.lane).forEach((n, i) => { if (i % 2 === 0) items.push({ t: 'rect', x: pad - 8, y: n.y, w: W - 2 * pad + 16, h: rowH, r: 4, fill: stripe }); });
+  if (S.stripes) info.filter((n, i) => !n.lane && info.findIndex(o => o.vrow === n.vrow) === i).forEach((n, i) => { if (i % 2 === 0) items.push({ t: 'rect', x: pad - 8, y: n.y, w: W - 2 * pad + 16, h: rowH, r: 4, fill: stripe }); });
   if (S.weekends && S.scale === 'days' && ppd >= 3) {
     for (let d = rs; d < re; d++) if (dow(d) === 5) items.push({ t: 'rect', x: X(d), y: bodyY, w: Math.min(2, re - d) * ppd, h: bodyEnd - bodyY, r: 0, fill: stripe });
   }
@@ -829,12 +863,13 @@ function buildScene(state, opts) {
       const pw = prog * n.bw;
       if (S.progress) items.push({ t: 'rect', x: n.bx, y: by, w: n.bw, h, r, fill: soft });
       if (pw > 0.5) items.push({ t: 'rect', x: n.bx, y: by, w: Math.min(n.bw, Math.max(pw, Math.min(2 * r, n.bw))), h, r, fill: full });
-      if (n.inside) {
-        const tw = M(name, size, 500);
+      const shown = n.fit != null ? fitText(name, n.fit, size, 500, font) : name;
+      if (n.inside && shown) {
+        const tw = M(shown, size, 500);
         const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
         // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
         const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : on(full);
-        const it = { t: 'text', x: n.bx + 9, y: n.cy, text: name, size, weight: 500, fill: onFull, anchor: 'start' };
+        const it = { t: 'text', x: n.bx + (n.fit != null ? 7 : 9), y: n.cy, text: shown, size, weight: 500, fill: onFull, anchor: 'start' };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
         if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
           if (pw <= 9) it.fill = on(soft);
