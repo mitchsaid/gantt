@@ -62,6 +62,8 @@ function blankState(settings) {
 }
 function sanitize(st) {
   if (!st || !Array.isArray(st.rows)) return null;
+  // plans saved before automatic row height existed move from the old default to it
+  if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
   const old = st.settings.labels; // earlier versions had one combined setting
   if (old) { st.settings.taskLabels = old === 'left' ? 'left' : 'bars'; st.settings.areaLabels = old === 'lanes' ? 'side' : 'row'; delete st.settings.labels; }
@@ -629,7 +631,7 @@ const DESIGN = [
   ['Style', [
     { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
     { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
-    { k: 'density', type: 'seg', label: 'Row height', opts: [['compact', 'Compact'], ['regular', 'Regular'], ['roomy', 'Roomy']] },
+    { k: 'density', type: 'seg', label: 'Row height', col: true, opts: [['auto', 'Auto'], ['compact', 'Compact'], ['regular', 'Regular'], ['roomy', 'Roomy']] },
     { k: 'grid', type: 'toggle', label: 'Gridlines' },
     { k: 'stripes', type: 'toggle', label: 'Row stripes' },
     { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },

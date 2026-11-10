@@ -128,7 +128,7 @@ const DEFAULT_SETTINGS = {
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null,
   primary: '#4f46e5', secondaryOn: true, secondary: '#ec4899', bg: '#ffffff', bgTransparent: false, textMode: 'auto',
-  font: 'Inter', corners: 'rounded', density: 'regular', grid: true, stripes: false, weekends: true,
+  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, grid: true, stripes: false, weekends: true,
 };
 
 function newRow(p) {
@@ -535,8 +535,21 @@ function buildScene(state, opts) {
   const accent = S.secondaryOn ? S.secondary : text;
 
   // metrics
-  const rowH = { compact: 30, regular: 38, roomy: 48 }[S.density] || 38;
-  const fs = { compact: 12.5, regular: 14, roomy: 15 }[S.density] || 14;
+  let rowH = { compact: 30, regular: 38, roomy: 48 }[S.density];
+  if (!rowH) {
+    // auto: size rows so the chart fills a slide (16:9) — few items get tall bars, long plans stay compact
+    const grp = n => n.level === 0 && n.hasKids;
+    const side = S.areaLabels === 'side' && info.some(grp);
+    let nRows = 0, gaps = 0;
+    info.forEach((n, i) => {
+      if (i > 0 && (grp(n) || (side && n.level === 0 && info[i - 1].level > 0))) gaps += side ? 18 : 10;
+      if (!(side && grp(n))) nRows++;
+    });
+    const hh = (S.dateMode === 'relative' ? 1 : 2) * 26 + 8;
+    const fixedH = 2 * pad + (S.showTitle && S.title ? 56 : 0) + (S.todayLine ? 26 : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
+    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, nRows)), 32, 68);
+  }
+  const fs = Math.round((rowH <= 38 ? 12.5 + (rowH - 30) * 0.1875 : Math.min(17, 14 + (rowH - 38) * 0.1)) * 2) / 2;
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   const isGroup = n => n.level === 0 && n.hasKids;
