@@ -57,8 +57,16 @@
 
   <section class="stage-wrap">
     <div class="stage" id="stage">
-      <div class="canvas-wrap" id="canvas-wrap">
-        <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="chart-col" id="chart-col">
+        <div class="canvas-wrap" id="canvas-wrap">
+          <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="chart-add" role="group" aria-label="Add to the plan">
+          <button class="chip-btn" data-add="task" data-chart>+ Task</button>
+          <button class="chip-btn" data-add="milestone" data-chart>+ Milestone</button>
+          <button class="chip-btn" data-add="area" data-chart>+ Area</button>
+          <span class="chart-add-note" id="chart-add-note"></span>
+        </div>
       </div>
     </div>
     <div class="zoombar" role="group" aria-label="Zoom">

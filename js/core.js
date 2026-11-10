@@ -123,7 +123,7 @@ function areaPalette(primary, secondary, n) {
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, width: 'wide',
-  labels: 'left', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null,
@@ -540,19 +540,21 @@ function buildScene(state, opts) {
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   const isGroup = n => n.level === 0 && n.hasKids;
-  const left = S.labels === 'left';
-  const lanes = S.labels === 'lanes'; // swimlanes: areas named on the left, tasks named on their bars
+  const left = S.taskLabels === 'left'; // task names in a column on the left, otherwise on the bars
+  const lanes = S.areaLabels === 'side' && info.some(isGroup); // areas named down the side, spanning their rows
 
-  // label column
-  let labelW = 0;
-  if (left) {
-    info.forEach(n => { labelW = Math.max(labelW, n.level * 16 + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.level === 2 ? fs - 1 : fs, isGroup(n) ? 700 : 500)); });
-    labelW = clamp(labelW, 110, W * 0.27) + 22;
-  } else if (lanes) {
-    info.forEach(n => { if (isGroup(n)) labelW = Math.max(labelW, M(n.row.name || 'Untitled', fs + 1, 700)); });
-    if (labelW) labelW = clamp(labelW, 70, W * 0.22) + 28;
+  // label columns: areas (when at the side), then tasks (when on the left)
+  let labelW = 0, laneW = 0;
+  const indentOf = n => (lanes ? Math.max(0, n.level - 1) : n.level) * 16;
+  if (lanes) {
+    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(n.row.name || 'Untitled', fs + 1, 700)); });
+    laneW = clamp(laneW, 70, W * 0.2) + 28;
   }
-  const x0 = pad + labelW, x1 = W - pad;
+  if (left) {
+    info.forEach(n => { if (!(lanes && isGroup(n))) labelW = Math.max(labelW, indentOf(n) + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.level === 2 ? fs - 1 : fs, isGroup(n) ? 700 : 500)); });
+    labelW = clamp(labelW, 110, W * 0.27) + 22;
+  }
+  const x0 = pad + laneW + labelW, x1 = W - pad;
 
   // vertical layout
   let y = pad;
@@ -776,17 +778,19 @@ function buildScene(state, opts) {
     const group = isGroup(n);
     if (n.sep) items.push({ t: 'line', x1: pad, y1: n.y - 9, x2: x1, y2: n.y - 9, stroke: gridStrong, sw: 1 });
     if (n.lane) {
-      items.push({ t: 'text', x: pad, y: n.cy, text: fitText(name, x0 - 22 - pad, fs + 1, 700, font), size: fs + 1, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' });
-      items.push({ t: 'rect', x: x0 - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
-      items.push({ t: 'rect', x: pad - 10, y: n.y, w: x0 - pad, h: n.h, hit: true, id, role: 'row' });
+      n.lx = pad;
+      items.push({ t: 'text', x: pad, y: n.cy, text: fitText(name, laneW - 22, fs + 1, 700, font), size: fs + 1, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' });
+      items.push({ t: 'rect', x: pad + laneW - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
+      items.push({ t: 'rect', x: pad - 10, y: n.y, w: laneW - 4, h: n.h, hit: true, id, role: 'row' });
       return;
     }
     if (left) {
-      const lx = pad + n.level * 16;
+      const lx = pad + laneW + indentOf(n);
+      n.lx = lx;
       const weight = group ? 700 : 500;
       const lsize = group ? fs + 1 : size;
       items.push({ t: 'text', x: lx, y: n.cy, text: fitText(name, x0 - 14 - lx, lsize, weight, font), size: lsize, weight, fill: group ? mix(base, text, 0.25) : n.level === 2 ? muted : text, anchor: 'start' });
-      items.push({ t: 'rect', x: pad - 10, y: n.y, w: x0 - pad, h: rowH, hit: true, id, role: 'row' });
+      items.push({ t: 'rect', x: pad + laneW - (lanes ? 4 : 10), y: n.y, w: x0 - pad - laneW - (lanes ? 6 : 0), h: rowH, hit: true, id, role: 'row' });
     }
     if (group) {
       const strong = mix(base, text, 0.2);
@@ -814,7 +818,7 @@ function buildScene(state, opts) {
       if (pw > 0.5) items.push({ t: 'rect', x: n.bx, y: by, w: Math.min(n.bw, Math.max(pw, Math.min(2 * r, n.bw))), h, r, fill: full });
       if (n.inside) {
         const tw = M(name, size, 500);
-        const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 4.5 ? tint : '#0b1020'; };
+        const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
         const it = { t: 'text', x: n.bx + 9, y: n.cy, text: name, size, weight: 500, fill: on(full), anchor: 'start' };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
         if (S.progress && pw < 9 + tw + 2 && on(soft) !== on(full)) {

@@ -63,6 +63,8 @@ function blankState(settings) {
 function sanitize(st) {
   if (!st || !Array.isArray(st.rows)) return null;
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  const old = st.settings.labels; // earlier versions had one combined setting
+  if (old) { st.settings.taskLabels = old === 'left' ? 'left' : 'bars'; st.settings.areaLabels = old === 'lanes' ? 'side' : 'row'; delete st.settings.labels; }
   st.rows = st.rows.filter(r => r && typeof r === 'object').map(r => {
     const row = newRow(r);
     row.start = Number.isFinite(+row.start) ? Math.round(+row.start) : todayDay();
@@ -215,7 +217,11 @@ function renderChart() {
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
   applyZoom();
 }
-function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); }
+function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
+function syncAddNote() {
+  const r = sel && state.rows[rowIndex(sel)];
+  $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : state.rows.length ? 'Adds at the end — select a row to add after it' : '';
+}
 
 // ---------------------------------------------------------------- fonts
 let fontToken = 0;
@@ -240,7 +246,7 @@ function select(id, opts) {
   if (sel === id) return;
   sel = id;
   if (pop && pop.kind === 'row' && pop.id !== id) closePop();
-  renderChart(); renderOutline();
+  renderChart(); renderOutline(); syncAddNote();
   if (id && !(opts && opts.quiet)) { const el = $(`.orow[data-id="${id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
 }
 function focusName(id, all) {
@@ -288,7 +294,8 @@ function deleteRow(id) {
   sel = rows.length ? rows[Math.min(i, rows.length - 1)].id : null;
   commit(); refresh();
 }
-function addRow(kind, afterId, asSibling) {
+function addRow(kind, afterId, asSibling, onChart) {
+  const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
   const info = derive(rows);
   let i = afterId ? rowIndex(afterId) : -1;
@@ -298,7 +305,7 @@ function addRow(kind, afterId, asSibling) {
     const s = nextWorkday(ref + 1);
     const area = newRow({ level: 0, name: 'New area' });
     rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + 4 }));
-    sel = area.id; commit(); refresh(); focusName(area.id, true);
+    sel = area.id; commit(); refresh(); show(area.id);
     return;
   }
   if (i < 0) { at = rows.length; ref = info.length ? info[info.length - 1] : null; level = ref ? Math.min(ref.level, 1) : 0; }
@@ -315,7 +322,17 @@ function addRow(kind, afterId, asSibling) {
   else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
   rows.splice(at, 0, row);
   normalizeLevels(rows);
-  sel = row.id; commit(); refresh(); focusName(row.id, true);
+  sel = row.id; commit(); refresh(); show(row.id);
+}
+/** after adding from the chart, name the new row right where it appeared */
+function editOnChart(id) {
+  const label = $(`#chart [data-role="row"][data-id="${id}"]`), bar = $(`#chart [data-role="move"][data-id="${id}"]`);
+  const el = label || bar;
+  if (!el) return;
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const rect = el.getBoundingClientRect();
+  if (label) editRowName(id, rect);
+  else { openPop('row', rect, id); const inp = $('#pop-name'); if (inp) { inp.focus(); inp.select(); } }
 }
 function duplicateRow(id) {
   const rows = state.rows, i = rowIndex(id);
@@ -490,7 +507,7 @@ outline.addEventListener('pointerdown', e => {
   grip.setPointerCapture(e.pointerId);
   grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
 });
-$$('[data-add]').forEach(b => b.addEventListener('click', () => addRow(b.dataset.add, sel, true)));
+$$('[data-add]').forEach(b => b.addEventListener('click', () => addRow(b.dataset.add, sel, true, b.dataset.chart != null)));
 
 // ---------------------------------------------------------------- chart interactions
 svg.addEventListener('pointerdown', e => {
@@ -575,12 +592,15 @@ const DESIGN = [
     { k: 'showTitle', type: 'toggle', label: 'Show title' },
     { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
     { k: 'width', type: 'seg', label: 'Format', opts: [['wide', 'Slide'], ['compact', 'Report']] },
-    { k: 'labels', type: 'seg', label: 'Names', col: true, opts: [['left', 'On the left'], ['bars', 'On the bars'], ['lanes', 'Swimlanes']] },
+  ]],
+  ['Labels', [
+    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.level === 0 && n.hasKids) },
   ]],
   ['Timeline', [
     { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
     { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']] },
-    { k: 'dateMode', type: 'seg', label: 'Labels', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
+    { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
     { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
     { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
@@ -873,7 +893,7 @@ function openSheet(id) { $$('.panel').forEach(p => p.classList.toggle('open', p.
 function closeSheets() { $$('.panel').forEach(p => p.classList.remove('open')); syncTabs(); }
 $$('[data-sheet]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.sheet)));
 $$('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
-$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg)) { closeSheets(); if (sel) select(null); } });
+$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add')) { closeSheets(); if (sel) select(null); } });
 
 document.addEventListener('keydown', e => {
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
@@ -1071,13 +1091,13 @@ function editTitle(rect) {
 function editRowName(id, rect) {
   const n = scene.info.find(x => x.row.id === id);
   if (!n) return;
-  const s = svg.getBoundingClientRect().width / scene.w, indent = (10 + n.level * 16) * s - 7;
+  const box = svg.getBoundingClientRect(), s = box.width / scene.w, indent = box.left + (n.lx || 0) * s - 7 - rect.left;
   const group = n.level === 0 && n.hasKids;
   inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.level === 2 ? scene.fs - 1 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
 }
 
 // ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
-const stage = $('#stage'), wrapEl = $('#canvas-wrap');
+const stage = $('#stage'), wrapEl = $('#chart-col');
 let zoom = 1;
 function applyZoom() {
   wrapEl.style.width = zoom * 100 + '%';
