@@ -123,7 +123,7 @@ function areaPalette(primary, secondary, n) {
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, width: 'wide',
-  taskLabels: 'left', areaLabels: 'row', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', barText: 'auto', scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null,
@@ -832,9 +832,11 @@ function buildScene(state, opts) {
       if (n.inside) {
         const tw = M(name, size, 500);
         const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
-        const it = { t: 'text', x: n.bx + 9, y: n.cy, text: name, size, weight: 500, fill: on(full), anchor: 'start' };
+        // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
+        const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : on(full);
+        const it = { t: 'text', x: n.bx + 9, y: n.cy, text: name, size, weight: 500, fill: onFull, anchor: 'start' };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
-        if (S.progress && pw < 9 + tw + 2 && on(soft) !== on(full)) {
+        if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
           if (pw <= 9) it.fill = on(soft);
           else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= 9 + tw * 0.5 ? it.fill : it.fill2; }
         }

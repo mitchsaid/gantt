@@ -597,6 +597,7 @@ const DESIGN = [
   ]],
   ['Labels', [
     { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.taskLabels === 'bars' },
     { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.level === 0 && n.hasKids) },
   ]],
   ['Timeline', [
