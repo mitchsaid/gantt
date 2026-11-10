@@ -527,13 +527,16 @@ function buildScene(state, opts) {
   const holdsUntil = n => { const need = ((n.row.name || 'Untitled').length * 8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
   info.forEach(n => {
     n.fit = null;
+    const mark = tr => { tr.end = n.milestone ? holdsUntil(n) : n.end; tr.hold = holdsUntil(n); };
     if (pack && !n.hasKids && run && run.parent === n.parent && run.level === n.level) {
-      let t = run.ends.findIndex(e => e < n.start);
-      if (t < 0) { t = run.ends.length; run.rows.push(vrows++); }
-      run.ends[t] = holdsUntil(n); n.vrow = run.rows[t];
+      // first choice: continue the row of the task listed just before it; otherwise the first row with room
+      let t = run.tr[run.last].end < n.start ? run.last : run.tr.findIndex(x => x.hold < n.start);
+      if (t < 0) { t = run.tr.length; run.tr.push({ row: vrows++ }); }
+      mark(run.tr[t]); n.vrow = run.tr[t].row; run.last = t;
     } else {
       n.vrow = vrows++;
-      run = pack && !n.hasKids ? { parent: n.parent, level: n.level, ends: [holdsUntil(n)], rows: [n.vrow] } : null;
+      run = pack && !n.hasKids ? { parent: n.parent, level: n.level, tr: [{ row: n.vrow }], last: 0 } : null;
+      if (run) mark(run.tr[0]);
     }
   });
   const W = S.width === 'compact' ? 960 : 1280;
@@ -782,6 +785,7 @@ function buildScene(state, opts) {
   if (showBottom) drawHeader(headBotY, true);
 
   // ---- selection highlight & drop indicator (interactive only)
+  if (opts.rowHi != null) items.push({ t: 'rect', x: pad - 10, y: opts.rowHi, w: W - 2 * pad + 20, h: rowH, r: 6, fill: S.primary, opacity: 0.2, ui: true });
   if (opts.sel) {
     const n = info.find(n => n.row.id === opts.sel);
     if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: S.primary, opacity: 0.09, ui: true });
@@ -860,9 +864,11 @@ function buildScene(state, opts) {
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: rowH, hit: true, id, role: 'move' });
     } else {
       const prog = S.progress ? clamp(n.progress, 0, 100) / 100 : 1;
-      const pw = prog * n.bw;
-      if (S.progress) items.push({ t: 'rect', x: n.bx, y: by, w: n.bw, h, r, fill: soft });
-      if (pw > 0.5) items.push({ t: 'rect', x: n.bx, y: by, w: Math.min(n.bw, Math.max(pw, Math.min(2 * r, n.bw))), h, r, fill: full });
+      const inset = n.bw > 10 ? 1.5 : 0; // a sliver of space each side, so bars that meet still read as separate
+      const gx = n.bx + inset, gw = n.bw - 2 * inset;
+      const pw = prog * gw;
+      if (S.progress) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: soft });
+      if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: full });
       const shown = n.fit != null ? fitText(name, n.fit, size, 500, font) : name;
       if (n.inside && shown) {
         const tw = M(shown, size, 500);

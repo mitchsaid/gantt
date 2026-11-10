@@ -210,6 +210,7 @@ function renderChart() {
   const o = { sel };
   if (drag && drag.range) o.range = drag.range;
   if (drag && drag.dropY != null) { o.dropY = drag.dropY; o.dropLevel = drag.dropLevel; }
+  if (drag && drag.toRow != null) o.rowHi = drag.toRowY;
   scene = buildScene(state, o);
   svg.setAttribute('viewBox', `0 0 ${scene.w} ${scene.h}`);
   svg.setAttribute('font-family', `'${scene.font}', system-ui, sans-serif`);
@@ -543,7 +544,15 @@ svg.addEventListener('pointermove', e => {
   svg.classList.add('dragging');
   const dd = Math.round(dx / drag.ppd);
   const row = drag.id ? state.rows[rowIndex(drag.id)] : null;
-  if (drag.role === 'move') drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
+  if (drag.role === 'move') {
+    drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
+    // with tasks in sequence, dragging up or down picks which row the task continues
+    if (state.settings.pack && drag.block.length === 1) {
+      const y = (e.clientY - drag.top) * drag.k, me = scene.info.find(n => n.row.id === drag.id);
+      const over = scene.info.find(n => !n.lane && !n.hasKids && n.vrow !== me.vrow && n.parent === me.parent && y >= n.y && y < n.y + scene.rowH);
+      drag.toRow = over ? over.vrow : null; drag.toRowY = over ? over.y : null;
+    }
+  }
   else if (drag.role === 'resize-l') row.start = Math.min(drag.orig.s + dd, drag.orig.e);
   else if (drag.role === 'resize-r') row.end = Math.max(drag.orig.e + dd, drag.orig.s);
   else if (drag.role === 'progress') row.progress = clamp(Math.round((((e.clientX - drag.left) * drag.k - drag.bx) / drag.bw) * 20) * 5, 0, 100);
@@ -570,6 +579,13 @@ function endDrag() {
   svg.classList.remove('dragging');
   if (d.moved) {
     if (d.role === 'row' && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
+    if (d.role === 'move' && d.toRow != null) {
+      // list it straight after the task it should follow on that row (or before the row's first task)
+      const me = scene.info.find(n => n.row.id === d.id);
+      const mates = scene.info.filter(n => n.vrow === d.toRow && n !== me).sort((a, b) => a.start - b.start);
+      const before = mates.filter(n => n.end < me.start).pop();
+      if (mates.length) moveBlock(me.i, before ? before.i + 1 : mates[0].i, mates[0].level);
+    }
     commit(); refresh();
     if (d.id) { const el = $(`.orow[data-id="${d.id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
   } else if (d.role === 'title') editTitle(d.rect);
