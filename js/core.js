@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v63 · 11 Nov';
+const APP_VERSION = 'v64 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -234,14 +234,14 @@ function parseColor(s) {
 }
 const validPalette = p => !!(p && Array.isArray(p.colors) && p.colors.length > 0 && p.colors.length <= 16 && p.colors.every(c => /^#[0-9a-f]{6}$/i.test(c)));
 
-// Palettes are categorical, like the ones in popular Gantt and mind-map tools: each colour a clearly different hue (about 0.13+ apart
+// Palettes are categorical, like the ones in popular Gantt and diagramming tools: each colour a clearly different hue (about 0.13+ apart
 // in OKLab, where ~0.05 is "different side by side"), not a blend from one shade into the next. The label-contrast limit pins lightness,
 // so the distinction comes from spreading hue. The last colour is kept for milestones, so it is a calm neutral where it can be.
 // `loose` keeps each colour's own darkness (only capping it for label contrast); `auto` keeps colours exactly and picks labels per bar.
 const PRESETS = [
   { id: 'bold', name: 'Bold', text: 'light', loose: true, colors: ['#1d6fdc', '#cd4102', '#098436', '#8f2fd3', '#b01e5b', '#8a6a00', '#334155'] },
   { id: 'spectrum', name: 'Spectrum', text: 'light', loose: true, colors: ['#00747d', '#d31c37', '#305cea', '#875c04', '#823c96', '#02850a', '#334155'] },
-  { id: 'mindmap', name: 'Mind map', text: 'light', loose: true, colors: ['#dc1d5b', '#2563eb', '#008437', '#c04f07', '#7c3aed', '#067d92', '#334155'] },
+  { id: 'vivid', name: 'Vivid', text: 'light', loose: true, colors: ['#dc1d5b', '#2563eb', '#008437', '#c04f07', '#7c3aed', '#067d92', '#334155'] },
   { id: 'cbsafe', name: 'Colour-blind safe', text: 'auto', colors: ['#0072b2', '#d55e00', '#009e73', '#cc79a7', '#e69f00', '#56b4e9', '#444444'] },
   { id: 'corporate', name: 'Corporate', text: 'light', loose: true, colors: ['#1e40af', '#0f766e', '#b45309', '#7c3aed', '#be123c', '#475569', '#0f172a'] },
   { id: 'earth', name: 'Earth', text: 'light', loose: true, colors: ['#8e3b12', '#3f7d20', '#1d5c63', '#b3265c', '#a16207'] },
