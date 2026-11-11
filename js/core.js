@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v20 · 11 Nov';
+const APP_VERSION = 'v21 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -230,10 +230,11 @@ const PRESETS = [
 ].map(p => Object.assign({}, p, { colors: fixPalette(p.colors, p.text, false, p.loose) }));
 const paletteOf = S => (validPalette(S && S.palette) ? S.palette : PRESETS[0]);
 /** which palette slot a row uses: its own choice, else its parent's, else its area's turn */
-function colorIndexOf(info, n) {
+function colorIndexOf(info, n) { // a palette slot (number) or, if set by hand, any colour (a '#rrggbb' string)
   for (let q = n; q; q = q.parent >= 0 ? info[q.parent] : null) if (q.row.color != null) return q.row.color;
   return n.rootIdx;
 }
+function rowBaseColor(info, n, palette) { const c = colorIndexOf(info, n); return typeof c === 'string' ? c : palette[c % palette.length]; }
 
 // ---------------------------------------------------------------- canvas
 // The chart is drawn at 96 px per inch, so sizes are real: a 16px label is 12pt on the slide or page it ends up on.
@@ -686,7 +687,7 @@ function buildScene(state, opts) {
   const faint = mix(text, surface, 0.62);
   const grid = mix(text, surface, 0.9), gridStrong = mix(text, surface, 0.8), stripe = mix(text, surface, 0.96);
   const pal = paletteOf(S), palette = pal.colors;
-  const baseOf = n => palette[colorIndexOf(info, n) % palette.length];
+  const baseOf = n => rowBaseColor(info, n, palette);
   const hi = palette[0]; // the colour used for selection and drop highlights
   const accent = mix(palette[Math.min(1, palette.length - 1)], text, 0.12); // the "we are here" line
 
@@ -1108,7 +1109,9 @@ function buildScene(state, opts) {
       const lsz = n.shrink || size;
       const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
       // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
-      const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
+      let onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
+      // a colour chosen by hand may not suit the palette's label colour: switch to whichever reads better
+      if (typeof colorIndexOf(info, n) === 'string' && S.barText !== 'light' && S.barText !== 'dark' && contrast(full, onFull) < 4.5) onFull = contrast(full, '#ffffff') >= contrast(full, '#0b1020') ? '#ffffff' : '#0b1020';
       if (n.inside && n.lines && n.lines.length > 1) {
         n.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: n.bx + (n.ip || 10), y: n.cy + (li - (n.lines.length - 1) / 2) * lsz * 1.15, text: ln, size: lsz, weight: 500, fill: onFull, anchor: 'start' }));
       } else {

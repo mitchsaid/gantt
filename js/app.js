@@ -74,7 +74,10 @@ function sanitize(st) {
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
     row.type = row.type === 'milestone' ? 'milestone' : 'task';
-    if (row.color != null) { const c = Math.round(+row.color); if (Number.isFinite(c) && c >= 0) row.color = c; else delete row.color; }
+    if (row.color != null) { // a palette slot, or a colour chosen by hand
+      const hex = typeof row.color === 'string' ? parseColor(row.color) : null, c = Math.round(+row.color);
+      if (hex) row.color = hex; else if (typeof row.color !== 'string' && Number.isFinite(c) && c >= 0) row.color = c; else delete row.color;
+    }
     return row;
   });
   normalizeLevels(st.rows);
@@ -462,7 +465,7 @@ function renderOutline() {
   const picked = new Set(selIds());
   let html = '';
   info.forEach(n => {
-    const r = n.row, c = palette[colorIndexOf(info, n) % palette.length];
+    const r = n.row, c = rowBaseColor(info, n, palette);
     const color = n.level === 2 ? mix(c, '#ffffff', 0.45) : c;
     html += `<div class="orow lvl${n.level}${picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}">
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
@@ -512,7 +515,7 @@ outline.addEventListener('click', e => {
     return;
   }
   const sw = e.target.closest('.sw');
-  if (sw) { setRowColor(id, sw.dataset.color); return; }
+  if (sw) { if (sw.dataset.color != null) setRowColor(id, sw.dataset.color); return; }
   const segBtn = e.target.closest('.seg[data-f="type"] button');
   if (segBtn) {
     if (!segBtn.classList.contains('on')) setType(id, segBtn.dataset.v);
@@ -1146,6 +1149,19 @@ function durFromFields(t, start, fn, fu) {
 function rowInput(r, t) {
   const f = t.dataset.f;
   if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
+  else if (f === 'color-custom' || f === 'color-hex') { // a colour from outside the palette
+    const hex = parseColor(t.value);
+    if (!hex) return;
+    r.color = hex; renderChart();
+    const box = t.closest('.swatches'), dot = $(`.orow[data-id="${r.id}"] .dot`);
+    if (dot) dot.style.background = hex;
+    if (box) { // keep the other controls in step without rebuilding the one being used
+      $$('.sw', box).forEach(b => b.classList.remove('on'));
+      const cs = $('.sw.custom', box); cs.classList.add('on'); cs.style.background = hex;
+      if (f === 'color-custom') $('.sw-hex', box).value = hex; else $('input[type="color"]', box).value = hex;
+    }
+    commitSoon();
+  }
   else if (f === 'assignee') { r.assignee = t.value; renderChart(); commitSoon(); }
   else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
 }
@@ -1262,7 +1278,7 @@ popEl.addEventListener('change', e => {
 });
 popEl.addEventListener('click', e => {
   const sw = e.target.closest('.sw');
-  if (sw && pop && pop.kind === 'row') { setRowColor(pop.id, sw.dataset.color); return; }
+  if (sw && pop && pop.kind === 'row') { if (sw.dataset.color != null) setRowColor(pop.id, sw.dataset.color); return; }
   if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }
   if (e.target.closest('[data-act="paste-cancel"]')) { closePop(); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
@@ -1598,7 +1614,8 @@ function applySeed(hex) {
 }
 function colorHtml(r) {
   const cols = paletteOf(state.settings).colors;
-  return `<div class="field"><span>Colour</span><div class="swatches"><button class="sw auto${r.color == null ? ' on' : ''}" data-color="auto" title="Automatic — follows its area">Auto</button>${cols.map((c, i) => `<button class="sw${r.color === i ? ' on' : ''}" data-color="${i}" style="background:${c}" aria-label="Colour ${i + 1}"></button>`).join('')}</div></div>`;
+  const custom = typeof r.color === 'string';
+  return `<div class="field"><span>Colour</span><div class="swatches"><button class="sw auto${r.color == null ? ' on' : ''}" data-color="auto" title="Automatic — follows its area">Auto</button>${cols.map((c, i) => `<button class="sw${r.color === i ? ' on' : ''}" data-color="${i}" style="background:${c}" aria-label="Colour ${i + 1}"></button>`).join('')}<label class="sw custom${custom ? ' on' : ''}" title="Any colour"${custom ? ` style="background:${r.color}"` : ''}><input type="color" data-f="color-custom" value="${custom ? r.color : cols[0]}" aria-label="Pick any colour"></label><input class="inp sw-hex" data-f="color-hex" placeholder="#hex" value="${custom ? r.color : ''}" maxlength="22" spellcheck="false" autocomplete="off" aria-label="Colour as hex"></div></div>`;
 }
 /** colour one item (and what is inside it) from the palette, without touching anything else */
 function setRowColor(id, v) {
