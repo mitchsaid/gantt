@@ -1063,12 +1063,27 @@ function syncDesign() {
     else inp.value = S[k] == null ? '' : S[k];
   });
 }
+/** if the marker's date was never chosen and today falls outside the timeline, put it mid-way through what is shown, where progress reads sensibly */
+function ensureMarkerInView() {
+  const S = state.settings;
+  if (S.todayDate != null) return; // the user has already chosen a date
+  const info = derive(state.rows);
+  if (!info.length) return;
+  let lo = Math.min(...info.map(n => n.start)), hi = Math.max(...info.map(n => n.end));
+  if (S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null) { lo = S.rangeStart; hi = S.rangeEnd; }
+  const t = todayDay();
+  if (t >= lo && t <= hi) return;
+  let d = Math.round((lo + hi) / 2);
+  d -= Math.max(0, dow(d) - 4); // not on a weekend
+  S.todayDate = d;
+  toast(`Date marker placed at ${shortDate(d)} — drag it to where the plan really stands`);
+}
 function setSetting(k, v, soon) {
   const S = state.settings;
   if (k === 'progressMode') { // Off / typed per bar / read off the date marker
     S.progress = v !== 'off';
     if (v !== 'off') S.progressSource = v;
-    if (v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
+    if (v === 'marker') { S.todayLine = true; ensureMarkerInView(); } // progress up to the marker needs the marker, and somewhere sensible to put it
     refresh(); commit();
     return;
   }
