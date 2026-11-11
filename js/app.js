@@ -750,12 +750,12 @@ function reorderGroup(y) {
   for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
   const want = pointerLevel(y, drag.lv0), plan = planGroupMove(k, want, true);
   drag.k2 = k; drag.gwant = want; drag.dropLevel = plan.level;
-  drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].isArea && k > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].isArea && k > 0 ? 5 : 0) : info[info.length - 1].y + info[info.length - 1].h;
   drag.dropBox = null;
   const pi = plan.parentId ? state.rows.findIndex(r => r.id === plan.parentId) : -1;
   if (plan.changed && pi >= 0 && pi !== info[drag.i].parent) {
     const blk = info.slice(pi, blockEnd(state.rows, pi));
-    drag.dropBox = { id: plan.parentId, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.lane ? n.y + n.h : n.y + scene.rowH))) };
+    drag.dropBox = { id: plan.parentId, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.y + n.h))) };
   }
 }
 function reorderTarget(dx, y) {
@@ -767,13 +767,13 @@ function reorderTarget(dx, y) {
   const stay = k >= drag.i && k <= j;
   drag.dropLevel = dropLevelFor(drag.i, k, pointerLevel(y, drag.lv0), true);
   const at = stay ? drag.i : k;
-  drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].isArea && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].isArea && at > 0 ? 5 : 0) : info[info.length - 1].y + info[info.length - 1].h;
   // dropping somewhere new inside an area: outline that area
   const pi = dropParentIndex(drag.i, k, drag.dropLevel);
   drag.dropBox = null;
   if (pi >= 0 && drag.dropY != null && pi !== info[drag.i].parent) {
     const blk = info.slice(pi, blockEnd(state.rows, pi));
-    drag.dropBox = { id: state.rows[pi].id, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.lane ? n.y + n.h : n.y + scene.rowH))) };
+    drag.dropBox = { id: state.rows[pi].id, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.y + n.h))) };
   }
 }
 svg.addEventListener('pointermove', e => {
@@ -798,7 +798,7 @@ svg.addEventListener('pointermove', e => {
       // or — over a row that belongs to another area — moves it into that area
       if (pack && drag.block.length === 1) {
         const me = scene.info.find(n => n.row.id === drag.id);
-        const at = scene.info.filter(n => !n.lane && n.vrow !== me.vrow && py >= n.y && py < n.y + scene.rowH);
+        const at = scene.info.filter(n => !n.lane && n.vrow !== me.vrow && py >= n.y && py < n.y + n.h);
         const over = at.find(n => !n.hasKids && n.parent === me.parent);
         drag.toRow = over ? over.vrow : null; drag.toRowY = over ? over.y : null;
         drag.reorder = !over && at.length > 0 && at.every(n => n.parent !== me.parent || n.hasKids);
@@ -1495,7 +1495,7 @@ function editRowName(id, rect) {
   if (!n) return;
   const box = svg.getBoundingClientRect(), s = box.width / scene.w, indent = box.left + (n.lx || 0) * s - 7 - rect.left;
   const group = n.isArea;
-  inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.sub ? scene.fs - 1 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
+  inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.sub ? scene.fs - 1.5 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
 }
 
 // ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
