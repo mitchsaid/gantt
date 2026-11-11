@@ -1696,7 +1696,7 @@ outline.addEventListener('paste', e => {
 });
 function pasteHtml() {
   return `<h4>Add several items</h4>
-    <textarea class="inp paste-area" id="pop-paste" data-f="paste" rows="8" spellcheck="false" placeholder="One item per line.&#10;Indent a line to make it a subtask.&#10;Add dates, a duration (2w) or an owner after a comma.">${esc(pop.text || '')}</textarea>
+    <textarea class="inp paste-area" id="pop-paste" data-f="paste" rows="8" spellcheck="false" placeholder="One item per line, or a comma-separated list.&#10;Indent a line to make it a subtask, or write Phase: a, b, c&#10;or Area &gt; Task. Add dates, a duration (2w) or an owner after a comma.">${esc(pop.text || '')}</textarea>
     <p class="note" id="paste-note"></p>
     <div class="pop-btns"><button class="btn ghost" data-act="paste-cancel">Cancel</button><button class="btn primary" data-act="paste-add" disabled>Add</button></div>`;
 }

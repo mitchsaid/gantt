@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=52">
+<link rel="stylesheet" href="css/style.css?v=53">
 </head>
 <body>
 <header class="topbar">
@@ -107,7 +107,7 @@
       <h2 id="imp-title">Import tasks</h2>
       <button class="icon-btn" data-close-modal aria-label="Close">✕</button>
     </div>
-    <p class="modal-sub">Paste a list from anywhere — an outline, bullets, a numbered list, or rows copied from a spreadsheet. Indentation becomes areas, tasks and subtasks. Dates, durations, owners and % are picked up if present.</p>
+    <p class="modal-sub">Paste a list from anywhere — an outline, bullets, a numbered list, rows from a spreadsheet, or just names separated by commas or semicolons. Structure is read from indentation, <code>Phase: a, b, c</code>, <code>Area &gt; Task &gt; Subtask</code> or numbering. Dates, durations, owners and % are picked up if present.</p>
     <textarea id="imp-text" spellcheck="false" placeholder="Discovery&#10;    Stakeholder interviews, 3 Mar, 14 Mar, Priya&#10;    Research synthesis, 1w&#10;Design&#10;    Wireframes&#10;        Homepage&#10;        Checkout&#10;    Design sign-off&#10;Build&#10;    …"></textarea>
     <div class="imp-row">
       <label class="file-btn btn ghost"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Upload a sheet</span><input type="file" id="imp-file" accept=".xlsx,.xls,.csv,.tsv,.txt,.md,.ods,.json" hidden></label>
@@ -125,7 +125,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=52"></script>
-<script src="js/app.js?v=52"></script>
+<script src="js/core.js?v=53"></script>
+<script src="js/app.js?v=53"></script>
 </body>
 </html>

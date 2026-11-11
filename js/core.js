@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v52 · 11 Nov';
+const APP_VERSION = 'v53 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -459,9 +459,89 @@ function headerKey(cell) {
 const MILESTONE_RE = /\b(milestone|kick[- ]?off|go[- ]?live|sign[- ]?off|deadline|demo day)\b/i;
 const BULLET_RE = /^([-*+•◦▪▫‣⁃·–—○●■□➤➔→✓✔☐☑]|\(?\d+(?:\.\d+)*[.)]|\d+(?:\.\d+)+|\(?[a-zA-Z][.)])\s+/;
 
+/** is this cell a date, duration or percentage (so a comma-separated line is columns, not a list of names)? */
+const isTypedCell = c => parseDate(c) != null || parseDuration(c) != null || parsePercent(c) != null;
+/** "a, b, and c" / "a; b" / "a | b" / "a • b" as a list of short names, or null if it doesn't look like one */
+function splitList(s, minItems) {
+  if (s.includes('"')) return null;
+  let parts;
+  if (s.includes(';')) parts = s.split(/\s*;\s*/);
+  else if (/\s[|•·]\s/.test(s)) parts = s.split(/\s+[|•·]\s+/);
+  else parts = s.split(/\s*,\s*/);
+  parts = parts.map(p => p.trim().replace(/\.$/, '')).filter(Boolean);
+  if (parts.length) parts[parts.length - 1] = parts[parts.length - 1].replace(/^(?:and|&)\s+/i, '');
+  const semi = s.includes(';') || /\s[|•·]\s/.test(s);
+  if (parts.length < (semi ? Math.max(2, minItems - 1) : minItems) || parts.length > 60) return null;
+  if (parts.some(p => p.length > 80 || isTypedCell(p))) return null; // dates and durations mean columns, not names
+  return parts;
+}
+const PATH_RE = /\s+(?:>|›|»|\/)\s+/;
+/** chains like ["Design", "Wireframes"] become indented lines, sharing the parents they have in common */
+function pathLines(chains) {
+  const out = []; let prev = [];
+  chains.forEach(arr => {
+    arr = arr.slice(0, 3);
+    let i = 0;
+    while (i < arr.length - 1 && i < prev.length && arr[i] === prev[i]) i++;
+    for (let k = i; k < arr.length; k++) out.push('\t'.repeat(k) + arr[k]);
+    prev = arr;
+  });
+  return out;
+}
+/**
+ * Rewrite common shapes that aren't indented — "a, b, c" on one line, "Phase: a, b, c", "Design > Wireframes",
+ * "Design: wireframes" repeated per line — as the indented lines the rest of the parser understands.
+ */
+function expandPaste(text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  if (!lines.length) return String(text);
+  const structured = lines.some(l => /\t/.test(l) || /^\s{2,}\S/.test(l) || /^\s*\|.*\|\s*$/.test(l) || /^#{1,6}\s/.test(l)) || lines.filter(l => BULLET_RE.test(l.trim())).length >= Math.ceil(lines.length / 2);
+  if (structured) return lines.join('\n');
+  // one line: a list of names, optionally under a label
+  if (lines.length === 1) {
+    const one = lines[0].trim();
+    let m = /^([^:;,|]{1,40}):\s+(.+)$/.exec(one);
+    const kids = m && splitList(m[2], 2);
+    if (kids) return [m[1].trim()].concat(kids.map(k => '\t' + k)).join('\n');
+    if (PATH_RE.test(one) && !/\d[/]\d/.test(one)) return pathLines([one.split(PATH_RE).map(p => p.trim())]).join('\n');
+    const parts = splitList(one, 3);
+    return parts ? parts.join('\n') : one;
+  }
+  // several lines: "Label: a, b, c" on each, "A > B > C" paths, or "Area: task" with repeated areas
+  let out = lines.slice();
+  if (lines.some(l => /^([^:;,|]{1,40}):\s+(.+)$/.test(l.trim()) && splitList(/^([^:;,|]{1,40}):\s+(.+)$/.exec(l.trim())[2], 2))) {
+    out = [];
+    lines.forEach(l => {
+      const m = /^([^:;,|]{1,40}):\s+(.+)$/.exec(l.trim()), kids = m && splitList(m[2], 2);
+      if (kids) out.push(m[1].trim(), ...kids.map(k => '\t' + k)); else out.push(l.trim());
+    });
+    return out.join('\n');
+  }
+  const pathy = lines.filter(l => PATH_RE.test(l.trim()) && !/\d[/]\d/.test(l)).length;
+  if (pathy >= 2 && pathy >= lines.length * 0.5) return pathLines(lines.map(l => l.trim().split(PATH_RE).map(p => p.trim()))).join('\n');
+  const pre = lines.map(l => /^([^:]{1,40}):\s+(\S.*)$/.exec(l.trim()));
+  const named = pre.filter(m => m && !isTypedCell(m[2]) && !/^(https?|mailto)$/i.test(m[1]));
+  if (lines.length >= 3 && named.length >= lines.length * 0.5) {
+    const count = {}; named.forEach(m => { count[m[1]] = (count[m[1]] || 0) + 1; });
+    if (Object.values(count).some(c => c >= 2)) return pathLines(lines.map((l, i) => (pre[i] && named.includes(pre[i]) ? [pre[i][1].trim(), pre[i][2].trim()] : [l.trim()]))).join('\n');
+  }
+  return lines.join('\n');
+}
+/** a date or "date – date" at the end of a name: "Brochure 3 Mar – 14 Mar", "Launch (12 Dec)" */
+const DATE_TOKEN = '(?:\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}|\\d{1,2}[/.-]\\d{1,2}(?:[/.-]\\d{2,4})?|\\d{1,2}(?:st|nd|rd|th)?\\s+[A-Za-z]{3,9}\\.?(?:\\s+\\d{4})?|[A-Za-z]{3,9}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?)';
+const TRAIL_DATES = new RegExp('(?:^|[\\s(:\\-–—,])(' + DATE_TOKEN + ')(?:\\s*(?:–|—|->|→|-|to|until|thru)\\s*(' + DATE_TOKEN + '))?\\s*\\)?\\s*$', 'i');
+function trailingDates(name, dmy) {
+  const m = TRAIL_DATES.exec(name);
+  if (!m) return null;
+  const a = parseDate(m[1], dmy), b = m[2] ? parseDate(m[2], dmy) : null;
+  if (a == null || (m[2] && b == null)) return null;
+  const rest = name.slice(0, m.index).replace(/[\s(:\-–—,]+$/, '').replace(/\s+(?:by|due|on|from|until|before)$/i, '').trim();
+  return rest ? { name: rest, start: a, end: b } : null;
+}
+
 /** Turn pasted text into lines of { w: indent width, cells: [...] , hints }. */
 function textToLines(text) {
-  let raw = String(text).replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim());
+  let raw = expandPaste(text).replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim());
   // markdown tables
   if (raw.filter(l => /^\s*\|.*\|\s*$/.test(l)).length >= raw.length * 0.6) {
     raw = raw.filter(l => !/^\s*\|?[\s:|-]+\|?\s*$/.test(l)).map(l => l.trim().replace(/^\||\|$/g, '').split('|').map(s => s.trim()).join('\t'));
@@ -476,6 +556,13 @@ function textToLines(text) {
       if (!withD.length) continue;
       const header = splitCsv(inner(raw[0]), d).filter(headerKey).length >= 2;
       if (header || withD.some(l => splitCsv(inner(l), d).slice(1).some(typed))) { delim = d; always = header || withD.length >= raw.length * 0.8; break; }
+    }
+  }
+  if (!delim && raw.length >= 2) { // no dates or header, but every line splits into the same few short columns ("Write spec, Ana")
+    for (const d of [',', ';', '|']) {
+      const rows = raw.map(l => splitCsv(inner(l), d));
+      const n = rows[0].length;
+      if (n >= 2 && n <= 6 && rows.every(r => r.length === n && r.every(c => c) && r.slice(1).every(c => c.length <= 30 && c.split(/\s+/).length <= 4))) { delim = d; always = true; break; }
     }
   }
   return raw.map(l => {
@@ -636,6 +723,7 @@ function parseImport(input) {
       let m;
       if (!it.assignee && (m = /\s+@([\w.-]+(?: [A-Z][\w.-]*)?)$/.exec(it.name))) { it.assignee = m[1]; it.name = it.name.slice(0, m.index); }
       if (!it.dur && (m = /\s*[-–(,]\s*(\d+(?:\.\d+)?\s*(?:d|days?|w|wks?|weeks?|months?))\)?$/i.exec(it.name))) { it.dur = parseDuration(m[1]); it.name = it.name.slice(0, m.index); }
+      if (!dates.length && (m = trailingDates(it.name, dmy))) { it.name = m.name; dates.push(m.start); if (m.end != null) dates.push(m.end); }
       if (l.done) it.progress = 100;
       if (dates.length) it.start = dates[0];
       if (dates.length > 1) it.end = dates[1];
@@ -1386,4 +1474,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
