@@ -401,7 +401,8 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   else {
     const n = info[i];
     ref = n;
-    if (asChild && !n.milestone && n.level < 2) { // a subtask: inside this item, after what it already holds
+    // a top-level item with nothing inside is a task, not an area: giving it a subtask would silently turn it into one, so it gets a sibling instead
+    if (asChild && !n.milestone && n.level < 2 && (n.level > 0 || n.hasKids)) { // a subtask: inside this item, after what it already holds
       at = blockEnd(rows, i); level = n.level + 1;
       if (n.hasKids) ref = info[at - 1]; else childOf = n; // a task that had no items inside keeps its own dates through its first one
     }
