@@ -236,6 +236,12 @@ function renderChart() {
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
   applyZoom();
   placeSelBar();
+  const co = $('#chart-out');
+  if (co) {
+    const out = outsideRows();
+    co.hidden = !out.length;
+    if (out.length) co.innerHTML = `⚠ ${out.length} ${out.length === 1 ? 'item is' : 'items are'} outside the timeline <button class="link-btn" data-act="pull">Fit them in…</button>`;
+  }
   const warn = $('#chart-warn');
   if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Chart'; }
 }
@@ -245,6 +251,8 @@ function syncAddNote() {
   $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : state.rows.length ? 'Adds at the end — select a row to add after it' : '';
   syncSelBar();
 }
+
+$('#chart-out').addEventListener('click', e => { if (e.target.closest('[data-act="pull"]')) outsideDialog(); });
 
 // ---------------------------------------------------------------- fonts
 let fontToken = 0;
@@ -900,6 +908,8 @@ const DESIGN = [
     { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
     { k: '_len', type: 'dur', label: 'Or length from start', sub: true, col: true, when: s => s.rangeMode === 'fixed' },
     { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', when: s => s.rangeMode === 'fixed' },
+    { k: '_outInfo', type: 'info', id: 'out-info', when: s => outsideRows().length > 0 },
+    { k: '_pull', type: 'button', label: 'Fit the items outside it…', sub: true, act: 'pull', when: s => outsideRows().length > 0 },
     { type: 'head', label: 'Header' },
     { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
@@ -1068,6 +1078,8 @@ function syncDesign() {
     const ci = $('#canvas-info'), ti = $('#text-info');
     if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
     syncDaysOff();
+    const oi = $('#out-info');
+    if (oi) { const out = outsideRows(), early = out.filter(n => n.start < S.rangeStart).length, late = out.filter(n => n.end > S.rangeEnd).length; oi.textContent = `${out.length} ${out.length === 1 ? 'item sits' : 'items sit'} outside the timeline (${early} earlier, ${late} later).`; }
     const bi = $('#base-info');
     if (bi && S.showChanges) { const c = scene.info.filter(n => n.changed && !n.isArea).length; bi.textContent = `${S.baselineDate != null ? 'Baseline from ' + shortDate(S.baselineDate) + ' · ' : ''}${c} ${c === 1 ? 'item has' : 'items have'} changed.`; }
     if (ti) ti.textContent = `Names ${f(scene.fs * 0.75)} pt · dates ${f(scene.hs2 * 0.75)} pt, on a ${f(cv.w)} in wide canvas.`;
@@ -1134,6 +1146,7 @@ designEl.addEventListener('click', e => {
   const sb = e.target.closest('[data-scheme]');
   if (sb) { const seed = paletteOf(state.settings).seed; if (seed) applyPalette(suggestPalettes(seed)[+sb.dataset.scheme]); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
+  if (e.target.closest('[data-act="pull"]')) { outsideDialog(); return; }
   if (e.target.closest('[data-act="baseline"]')) { baselineDialog(); return; }
   const b = e.target.closest('.seg[data-k] button');
   if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : designCtl[k].bool ? b.dataset.v === 'true' : b.dataset.v); }
@@ -1468,6 +1481,36 @@ function autoSpan() {
   const info = derive(state.rows);
   if (!info.length) { const s = mondayOf(todayDay()); return [s, s + 12 * 7 - 1]; }
   return [Math.min(...info.map(n => n.start)), Math.max(...info.map(n => n.end))];
+}
+/** items that lie wholly or partly outside a fixed timeline */
+function outsideRows() {
+  const S = state.settings;
+  if (S.rangeMode !== 'fixed' || S.rangeStart == null || S.rangeEnd == null) return [];
+  return derive(state.rows).filter(n => !n.hasKids && (n.start < S.rangeStart || n.end > S.rangeEnd));
+}
+/** move just the items outside the fixed timeline to its nearest edge, keeping each one's length (shortened only if longer than the timeline) */
+function pullIn() {
+  const S = state.settings, lo = S.rangeStart, hi = S.rangeEnd, out = outsideRows();
+  if (!out.length) return;
+  out.forEach(n => {
+    const r = n.row;
+    if (n.milestone) { r.start = r.end = clamp(r.start, lo, hi); return; }
+    const dur = r.end - r.start;
+    if (dur >= hi - lo) { r.start = lo; r.end = hi; }
+    else if (r.start < lo) { r.start = lo; r.end = lo + dur; }
+    else { r.end = hi; r.start = hi - dur; }
+  });
+  commit(); refresh();
+  toast(`${out.length} ${out.length === 1 ? 'item' : 'items'} moved inside the timeline — Undo to revert`);
+}
+function outsideDialog() {
+  const n = outsideRows().length;
+  if (!n) return;
+  dialog(`Fit ${n === 1 ? 'the item' : n + ' items'} inside the timeline?`, 'Items before or after the fixed timeline can be moved to just inside its edges (keeping their length), leaving everything else alone, or every item can be spread across it.', [
+    ['Move only those in', 'primary', pullIn],
+    ['Spread all across it', 'ghost', fitPlan],
+    ['Cancel', 'ghost', null],
+  ]);
 }
 function fitPlan() {
   const S = state.settings;
