@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v42 · 11 Nov';
+const APP_VERSION = 'v43 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -302,9 +302,11 @@ function newRow(p) {
 
 /** Make levels valid: first row is level 0, no row is more than one level deeper than the one above. */
 function normalizeLevels(rows) {
-  let prev = -1;
+  let prev = -1, cap = 2;
   for (const r of rows) {
     r.level = clamp(Math.round(r.level) || 0, 0, Math.min(2, prev + 1));
+    if (r.level === 0) cap = r.keepTask ? 1 : 2; // a top-level task that holds subtasks (rather than an area) has only one level inside it
+    if (r.level > cap) r.level = cap;
     prev = r.level;
   }
   return rows;
@@ -323,9 +325,11 @@ function derive(rows) {
     n.rootIdx = Math.max(0, rootCount);
     stack.push(n);
   });
+  info.forEach(n => { n.hasKids = n.kids.length > 0; });
+  // an area is a top-level item with items inside, unless it was made a task (keepTask) that holds subtasks
+  info.forEach(n => { n.isArea = n.level === 0 && n.hasKids && !n.row.keepTask; n.sub = n.level === 2 || (n.level === 1 && n.parent >= 0 && !info[n.parent].isArea); });
   for (let i = info.length - 1; i >= 0; i--) {
     const n = info[i];
-    n.hasKids = n.kids.length > 0;
     n.milestone = !n.hasKids && n.row.type === 'milestone';
     if (n.milestone) { n.end = n.start; n.progress = null; }
     if (n.hasKids) {
@@ -732,7 +736,7 @@ function buildScene(state, opts) {
   const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
   let rowH = 0;
   { // the baseline (Auto): size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
-    const grp = n => n.level === 0 && n.hasKids;
+    const grp = n => n.isArea;
     const side = S.areaLabels === 'side' && info.some(grp);
     let gaps = 0;
     const used = new Set();
@@ -764,7 +768,7 @@ function buildScene(state, opts) {
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   // room between a bar's edge and the name inside it: it grows with the text, and with how round the ends are (a pill's curve eats into the space)
   const padFor = h => Math.round(Math.max(10, fs * 0.62) + (S.corners === 'pill' ? radius(h) * 0.45 : S.corners === 'rounded' ? radius(h) * 0.25 : 0));
-  const isGroup = n => n.level === 0 && n.hasKids;
+  const isGroup = n => n.isArea;
   const left = S.taskLabels === 'left' && !pack; // task names in a column on the left, otherwise on the bars
   const lanes = S.areaLabels === 'side' && info.some(isGroup); // areas named down the side, spanning their rows
 
@@ -776,7 +780,7 @@ function buildScene(state, opts) {
     laneW = clamp(laneW, 70, W * 0.2) + 28;
   }
   if (left) {
-    info.forEach(n => { if (!(lanes && isGroup(n))) labelW = Math.max(labelW, indentOf(n) + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.level === 2 ? fs - 1 : fs, isGroup(n) ? 700 : 500)); });
+    info.forEach(n => { if (!(lanes && isGroup(n))) labelW = Math.max(labelW, indentOf(n) + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.sub ? fs - 1 : fs, isGroup(n) ? 700 : 500)); });
     labelW = clamp(labelW, 110, W * 0.27) + 22;
   }
   const x0 = pad + laneW + labelW, x1 = W - pad;
@@ -899,7 +903,7 @@ function buildScene(state, opts) {
   };
 
   // what goes to the right of each bar (labels that don't fit, owners)
-  const showAssignee = n => S.assignees && n.row.assignee && (isGroup(n) ? S.assigneeAreas !== false : (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.level === 2 : n.level < 2)));
+  const showAssignee = n => S.assignees && n.row.assignee && (isGroup(n) ? S.assigneeAreas !== false : (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.sub : !n.sub)));
   const plan = () => {
     let over = 0;
     const room = {};
@@ -914,8 +918,8 @@ function buildScene(state, opts) {
     info.forEach(n => {
       const lim = pack ? room[n.row.id] : Infinity;
       n.fit = null; n.who = null; n.areaWho = null; n.lines = null; n.shrink = null;
-      const size = n.level === 2 ? fs - 1 : fs;
-      const h = n.milestone ? Math.min(n.level === 2 ? subH : barH, msCap) : n.level === 2 ? subH : barH;
+      const size = n.sub ? fs - 1 : fs;
+      const h = n.milestone ? Math.min(n.sub ? subH : barH, msCap) : n.sub ? subH : barH;
       const bx = X(n.start), bw = Math.max(X(n.end + 1) - bx, 4);
       n.bx = bx; n.bw = bw; n.bh = h; n.inside = false; n.tail = [];
       let tx = n.milestone ? msX(n) + h * 0.5 + 8 : bx + bw + 8;
@@ -1125,7 +1129,7 @@ function buildScene(state, opts) {
     const row = n.row, id = row.id;
     const base = baseOf(n);
     const name = row.name || 'Untitled';
-    const size = n.level === 2 ? fs - 1 : fs;
+    const size = n.sub ? fs - 1 : fs;
     const group = isGroup(n);
     if (n.sep) items.push({ t: 'line', x1: pad, y1: n.y - 9, x2: x1, y2: n.y - 9, stroke: gridStrong, sw: 1 });
     if (n.lane) {
@@ -1151,7 +1155,7 @@ function buildScene(state, opts) {
       const weight = group ? 700 : 500;
       const lsize = group ? fs + 1 : size;
       const lf = labelFit(name, x0 - 14 - lx, lsize, weight, barMid * 2 >= lsize * 2 + 4);
-      lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: lx, y: n.cy + (li - (lf.lines.length - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight, fill: group ? mix(base, text, 0.25) : n.level === 2 ? muted : text, anchor: 'start' }));
+      lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: lx, y: n.cy + (li - (lf.lines.length - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight, fill: group ? mix(base, text, 0.25) : n.sub ? muted : text, anchor: 'start' }));
       items.push({ t: 'rect', x: pad + laneW - (lanes ? 4 : 10), y: n.y, w: x0 - pad - laneW - (lanes ? 6 : 0), h: rowH, hit: true, id, role: 'row' });
     }
     if (group) {
@@ -1177,8 +1181,8 @@ function buildScene(state, opts) {
     }
     // subtask bars are a lighter tint, but never so light that the label colour has to change
     const subFill = pal.text === 'light' ? lightenFor(base, TEXT_LIGHT, 4.5) : pal.text === 'dark' ? mix(base, '#ffffff', 0.35) : mix(base, surface, 0.42);
-    const full = n.level === 2 ? subFill : base;
-    const soft = n.level === 2 ? mix(base, surface, 0.8) : mix(base, surface, 0.62);
+    const full = n.sub ? subFill : base;
+    const soft = n.sub ? mix(base, surface, 0.8) : mix(base, surface, 0.62);
     const h = n.bh, by = n.cy - h / 2, r = radius(h);
     if (n.milestone) {
       const cx = msX(n), rr = h * 0.52;

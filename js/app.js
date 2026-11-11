@@ -301,22 +301,41 @@ function moveBlock(i, k, want) {
   const level = dropLevelFor(i, k, want == null ? rows[i].level : want);
   const stay = k >= i && k <= j;
   if (stay && level === rows[i].level) return false;
+  const leaves = leafTasks(rows);
   const block = rows.splice(i, j - i);
   const at = stay ? i : k > i ? k - (j - i) : k;
   const delta = level - block[0].level;
   block.forEach(r => { r.level = clamp(r.level + delta, 0, 2); });
   rows.splice(at, 0, ...block);
   normalizeLevels(rows);
+  keepAsTasks(rows, leaves);
+  return true;
+}
+/** top-level tasks that hold nothing yet: if a move gives one something to hold it stays a task (with subtasks) rather than silently becoming an area */
+function leafTasks(rows) { return new Set(derive(rows).filter(n => n.level === 0 && !n.hasKids && !n.milestone).map(n => n.row.id)); }
+function keepAsTasks(rows, leaves) {
+  rows.forEach((r, i) => {
+    if (!leaves.has(r.id) || i + 1 >= rows.length || rows[i + 1].level < 1) return;
+    const j = blockEnd(rows, i);
+    if (rows.slice(i + 1, j).every(x => x.level === 1)) r.keepTask = true; // deeper than one level can only be an area
+  });
+}
+function canIndent(rows, i) {
+  const r = rows[i];
+  if (i === 0 || r.level >= 2 || rows[i - 1].level < r.level) return false;
+  let q = i - 1; while (q > 0 && rows[q].level > 0) q--;
+  if (rows[q].keepTask && (r.level >= 1 || blockEnd(rows, i) > i + 1)) return false; // a task holds only subtasks, one level
   return true;
 }
 function shiftLevel(id, d) {
   const rows = state.rows, i = rowIndex(id);
   if (i < 0) return;
-  if (d > 0 && (i === 0 || rows[i].level >= 2 || rows[i - 1].level < rows[i].level)) return;
+  if (d > 0 && !canIndent(rows, i)) return;
   if (d < 0 && rows[i].level === 0) return;
-  const j = blockEnd(rows, i);
+  const j = blockEnd(rows, i), leaves = leafTasks(rows);
   for (let k = i; k < j; k++) rows[k].level = clamp(rows[k].level + d, 0, 2);
   normalizeLevels(rows);
+  keepAsTasks(rows, leaves);
   commit(); refresh();
 }
 function deleteRow(id, keepInside) {
@@ -350,7 +369,7 @@ function askDelete(id) {
   const n = derive(state.rows)[rowIndex(id)];
   if (!n) return;
   if (!n.hasKids) { deleteRow(id); return; }
-  const count = blockEnd(state.rows, n.i) - n.i - 1, area = n.level === 0;
+  const count = blockEnd(state.rows, n.i) - n.i - 1, area = n.isArea;
   const inside = area ? (count === 1 ? 'task' : 'tasks') : (count === 1 ? 'subtask' : 'subtasks');
   dialog(`Delete “${n.row.name || 'Untitled'}”?`, `This ${area ? 'area' : 'task'} contains ${count} ${count === 1 ? 'item' : 'items'}. You can remove just the ${area ? 'area' : 'task'} and keep what is inside it.`, [
     [`Delete with its ${inside}`, 'danger', () => deleteRow(id)],
@@ -363,9 +382,11 @@ function setType(id, to) {
   const rows = state.rows, i = rowIndex(id);
   if (i < 0) return;
   const info = derive(rows), n = info[i], r = n.row, j = blockEnd(rows, i);
-  const isArea = n.level === 0 && n.hasKids;
+  const isArea = n.isArea;
   if (to === 'area') {
     if (isArea) return;
+    if (n.level === 0 && n.hasKids) { delete r.keepTask; commit(); refresh(); return; } // a top-level task with subtasks becomes an area as it is
+    delete r.keepTask;
     const d = r.level;
     for (let k = i; k < j; k++) rows[k].level -= d; // to the top level, taking its subtasks along
     r.type = 'task';
@@ -402,11 +423,11 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
     const n = info[i];
     ref = n;
     // a top-level item with nothing inside is a task, not an area: giving it a subtask would silently turn it into one, so it gets a sibling instead
-    if (asChild && !n.milestone && n.level < 2 && (n.level > 0 || n.hasKids)) { // a subtask: inside this item, after what it already holds
+    if (asChild && !n.milestone && !n.sub) { // a subtask: inside this item, after what it already holds
       at = blockEnd(rows, i); level = n.level + 1;
       if (n.hasKids) ref = info[at - 1]; else childOf = n; // a task that had no items inside keeps its own dates through its first one
     }
-    else if (n.hasKids && (n.level === 0 || !asSibling)) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
+    else if (n.hasKids && (n.isArea || !asSibling)) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
     else { at = blockEnd(rows, i); level = n.level; }
   }
   const S0 = state.settings;
@@ -416,6 +437,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   else if (childOf) { row.start = childOf.start; row.end = childOf.end; row.name = ''; }
   else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
   rows.splice(at, 0, row);
+  if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
   normalizeLevels(rows);
   sel = row.id; commit(); refresh(); show(row.id);
 }
@@ -448,7 +470,7 @@ function detailHtml(n, info, rows) {
   const r = n.row;
   let html = '';
   html += `<div class="detail" data-id="${r.id}">`;
-  const isArea = n.level === 0 && n.hasKids, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
+  const isArea = n.isArea, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
   html += `<div class="seg" data-f="type">${[['area', 'Area'], ['task', 'Task'], ['milestone', 'Milestone']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !isArea ? ' disabled title="Remove its subtasks first"' : ''}>${o[1]}</button>`).join('')}</div>`;
   if (n.hasKids) html += `<p class="note">${fmtRange(n)}${n.progress == null ? '' : ' · ' + Math.round(n.progress) + '%'} — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
   else {
@@ -462,11 +484,11 @@ function detailHtml(n, info, rows) {
   html += colorHtml(r);
   html += assigneeHtml(r);
   if (!n.hasKids) {
-    const others = info.filter(o => o.row.id !== r.id && !(o.level === 0 && o.hasKids) && !r.deps.includes(o.row.id));
+    const others = info.filter(o => o.row.id !== r.id && !o.isArea && !r.deps.includes(o.row.id));
     html += `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
       <select class="inp" data-f="dep-add"><option value="">Add a dependency…</option>${others.map(o => `<option value="${o.row.id}">${'  '.repeat(o.level)}${esc(o.row.name || 'Untitled')}</option>`).join('')}</select></div>`;
   }
-  html += `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${n.i === 0 || n.level >= 2 || rows[n.i - 1].level < n.level ? 'disabled' : ''}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div></div>`;
+  html += `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${canIndent(rows, n.i) ? '' : 'disabled'}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div></div>`;
   return html;
 }
 function renderOutline() {
@@ -480,11 +502,11 @@ function renderOutline() {
   let html = '';
   info.forEach(n => {
     const r = n.row, c = rowBaseColor(info, n, palette);
-    const color = n.level === 2 ? mix(c, '#ffffff', 0.45) : c;
+    const color = n.sub ? mix(c, '#ffffff', 0.45) : c;
     html += `<div class="orow lvl${n.level}${picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}">
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
       <span class="dot${n.milestone ? ' ms' : ''}" style="background:${color}"></span>
-      <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.hasKids && n.level === 0 ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
+      <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.isArea ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
       <span class="dates">${fmtRange(n)}</span>
       <button class="more${r.id === detailId ? ' on' : ''}" data-act="toggle" title="${r.id === detailId ? 'Hide details' : 'Edit details'}" aria-label="Edit details" aria-expanded="${r.id === detailId}"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>`;
     if (r.id === detailId) html += detailHtml(n, info, rows);
@@ -679,7 +701,7 @@ function pointerLevel(y, fallback) {
   let under = null;
   for (const n of scene.info) if (!n.lane && n.y <= y + 0.5) under = n; // the last row that starts above the pointer
   if (!under) return fallback;
-  if (under.level === 0 && under.hasKids && y >= under.cy) return 1; // the lower half of an area's own heading row counts as inside it
+  if (under.isArea && y >= under.cy) return 1; // the lower half of an area's own heading row counts as inside it
   return under.level;
 }
 /** where the selected items (each with what is inside it) would land if dropped before row k, at the level `want` asks for */
@@ -728,7 +750,7 @@ function reorderGroup(y) {
   for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
   const want = pointerLevel(y, drag.lv0), plan = planGroupMove(k, want, true);
   drag.k2 = k; drag.gwant = want; drag.dropLevel = plan.level;
-  drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].level === 0 && info[k].hasKids && k > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].isArea && k > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
   drag.dropBox = null;
   const pi = plan.parentId ? state.rows.findIndex(r => r.id === plan.parentId) : -1;
   if (plan.changed && pi >= 0 && pi !== info[drag.i].parent) {
@@ -745,7 +767,7 @@ function reorderTarget(dx, y) {
   const stay = k >= drag.i && k <= j;
   drag.dropLevel = dropLevelFor(drag.i, k, pointerLevel(y, drag.lv0), true);
   const at = stay ? drag.i : k;
-  drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].isArea && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
   // dropping somewhere new inside an area: outline that area
   const pi = dropParentIndex(drag.i, k, drag.dropLevel);
   drag.dropBox = null;
@@ -846,7 +868,7 @@ const DESIGN = [
     { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
     { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
-    { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.level === 0 && n.hasKids) },
+    { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
   ]],
   ['Timeline', [
     { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
@@ -1019,7 +1041,7 @@ function previewImport(rows, note) {
   $('#imp-go').disabled = !pending;
   if (!pending) { box.innerHTML = note ? `<div class="sum">${esc(note)}</div>` : ''; return; }
   const info = derive(rows);
-  const areas = info.filter(n => n.level === 0 && n.hasKids).length, ms = info.filter(n => n.milestone).length;
+  const areas = info.filter(n => n.isArea).length, ms = info.filter(n => n.milestone).length;
   const tasks = info.length - areas - ms;
   const parts = [areas && `${areas} area${areas > 1 ? 's' : ''}`, `${tasks} task${tasks === 1 ? '' : 's'}`, ms && `${ms} milestone${ms > 1 ? 's' : ''}`].filter(Boolean);
   box.innerHTML = `<div class="sum">${note ? esc(note) + ' — ' : ''}Found ${parts.join(', ')}</div>` + info.map(n => `<div class="pr l${n.level}"><span>${n.milestone ? '◆ ' : ''}${esc(n.row.name)}</span><span>${esc(n.row.assignee)}</span><span>${fmtRange(n)}</span></div>`).join('');
@@ -1267,9 +1289,9 @@ function ensureAssigneeShown(r) {
   const wasOff = !S.assignees;
   let changed = false;
   if (wasOff) { S.assignees = true; changed = true; }
-  if (n.level === 0 && n.hasKids) { if (S.assigneeAreas === false) { S.assigneeAreas = true; changed = true; } }
-  else if (S.assigneeLevel === 'tasks' && n.level === 2) { S.assigneeLevel = 'all'; changed = true; }
-  else if (S.assigneeLevel === 'subtasks' && n.level < 2) { S.assigneeLevel = 'all'; changed = true; }
+  if (n.isArea) { if (S.assigneeAreas === false) { S.assigneeAreas = true; changed = true; } }
+  else if (S.assigneeLevel === 'tasks' && n.sub) { S.assigneeLevel = 'all'; changed = true; }
+  else if (S.assigneeLevel === 'subtasks' && !n.sub) { S.assigneeLevel = 'all'; changed = true; }
   if (changed) { syncDesign(); if (wasOff) toast('Assignees are now shown on the chart'); }
 }
 function rowInput(r, t) {
@@ -1472,8 +1494,8 @@ function editRowName(id, rect) {
   const n = scene.info.find(x => x.row.id === id);
   if (!n) return;
   const box = svg.getBoundingClientRect(), s = box.width / scene.w, indent = box.left + (n.lx || 0) * s - 7 - rect.left;
-  const group = n.level === 0 && n.hasKids;
-  inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.level === 2 ? scene.fs - 1 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
+  const group = n.isArea;
+  inlineEdit({ left: rect.left + indent, top: rect.top + 2, width: rect.width - indent + 40, height: rect.height - 4 }, n.row.name, Math.max(12, (group ? scene.fs + 1 : n.sub ? scene.fs - 1 : scene.fs) * s), group ? 700 : 500, v => { n.row.name = v; renderChart(); renderOutline(); });
 }
 
 // ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
@@ -1584,7 +1606,7 @@ function pastePlace(parsed, afterId, hole) {
     return { at, level: 0, ref: info[at - 1] };
   }
   const at = blockEnd(rows, i);
-  return { at, level: n.hasKids && n.level === 0 ? 1 : n.level, ref: info[at - 1] };
+  return { at, level: n.isArea ? 1 : n.level, ref: info[at - 1] };
 }
 function insertParsed(parsed, afterId, replaceId, selectAll) {
   const rows = state.rows, ri = replaceId ? rowIndex(replaceId) : -1;
