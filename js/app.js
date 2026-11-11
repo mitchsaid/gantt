@@ -468,6 +468,7 @@ function fmtRange(n) {
 }
 function detailHtml(n, info, rows) {
   const r = n.row;
+  { const S = state.settings; if (S.progress && S.progressSource === 'marker' && S.todayLine) applyDateProgress(info, S.todayDate != null ? S.todayDate : todayDay()); } // percentages shown here follow the marker too
   let html = '';
   html += `<div class="detail" data-id="${r.id}">`;
   const isArea = n.isArea, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
@@ -907,6 +908,8 @@ const DESIGN = [
     { k: 'areaLabels', type: 'seg', label: 'Area names', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
     { type: 'head', label: 'Extras' },
     { k: 'progress', type: 'toggle', label: 'Progress in bars' },
+    { k: 'progressSource', type: 'seg', label: 'Progress from', sub: true, col: true, opts: [['manual', 'Set per bar'], ['marker', 'Date marker']], when: s => s.progress },
+    { k: '_markerNote', type: 'note', label: 'Turn on the date marker (Timeline → Markers) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
     { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
     { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
@@ -1020,6 +1023,7 @@ function setSetting(k, v, soon) {
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
   if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
   if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
+  if (k === 'progressSource' && v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
   state.settings[k] = v;
   if (k === 'font') ensureFont();
   renderChart(); syncDesign(); syncPop();
@@ -1870,6 +1874,7 @@ function clearAssignee(id) {
 }
 /** progress for one bar: a slider, and a way to switch progress off for just this bar */
 function progressHtml(r) {
+  if (state.settings.progress && state.settings.progressSource === 'marker' && state.settings.todayLine) return `<div class="field"><span>Progress</span><p class="note">Follows the date marker, so it moves when the marker does. Change this under Design → Tasks → Progress from.</p></div>`;
   const off = r.progress == null;
   return `<div class="field"><span>Progress</span><div class="range-row${off ? ' off' : ''}"><input type="range" min="0" max="100" step="5" data-f="progress" value="${off ? 0 : r.progress}"><output>${off ? 'Off' : Math.round(r.progress) + '%'}</output><button class="x-btn" data-act="progress-clear" title="Don’t show progress on this bar" aria-label="Don’t show progress on this bar"${off ? ' disabled' : ''}>✕</button></div></div>`;
 }
@@ -1887,7 +1892,7 @@ function setRowProgress(id, v) {
 /** progress is a chart-wide layer, so clearing the last bar that uses it offers to switch it off everywhere */
 function progressInUse() { return derive(state.rows).some(n => !n.hasKids && !n.milestone && n.row.progress > 0); }
 function offerProgressReset() {
-  if (!state.settings.progress || progressInUse()) return;
+  if (!state.settings.progress || state.settings.progressSource === 'marker' || progressInUse()) return;
   dialog('Turn progress off everywhere?', 'No bar shows any progress now. You can switch progress off for the whole chart, so existing and new bars go back to plain colours, or keep it on to start tracking again.', [
     ['Turn off everywhere', 'primary', () => {
       state.rows.forEach(r => { if (r.progress == null) r.progress = 0; }); // so switching it on again later starts every bar fresh

@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v48 · 11 Nov';
+const APP_VERSION = 'v49 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  progress: false, todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -347,6 +347,21 @@ function derive(rows) {
     if (n.end < n.start) n.end = n.start;
   }
   return info;
+}
+/** progress implied by a date instead of typed in: how much of each bar lies before it (the marker line sits mid-day); parents roll up as usual */
+function applyDateProgress(info, day) {
+  info.forEach(n => {
+    if (n.hasKids) return;
+    if (n.milestone || n.row.progress == null) { n.progress = null; return; } // bars with progress switched off stay untracked
+    n.progress = clamp((day + 0.5 - n.start) / (n.end + 1 - n.start), 0, 1) * 100;
+  });
+  for (let i = info.length - 1; i >= 0; i--) {
+    const n = info[i];
+    if (!n.hasKids) continue;
+    let w = 0, pw = 0;
+    n.kids.forEach(k => { const c = info[k]; if (!c.milestone && c.progress != null) { const d = c.weight || (c.end - c.start + 1); w += d; pw += d * c.progress; } });
+    n.progress = w ? pw / w : null;
+  }
 }
 /** index range [i, j) of a row and all its descendants */
 function blockEnd(rows, i) {
@@ -838,6 +853,8 @@ function buildScene(state, opts) {
 
   // time range
   const todayD = S.todayDate != null ? S.todayDate : todayDay();
+  const byMarker = !!(S.progress && S.progressSource === 'marker' && S.todayLine); // progress read off the date marker, not set per bar
+  if (byMarker) applyDateProgress(info, todayD);
   let dMin = Infinity, dMax = -Infinity;
   info.forEach(n => { dMin = Math.min(dMin, n.start); dMax = Math.max(dMax, n.end); });
   if (!isFinite(dMin)) { dMin = mondayOf(todayDay()); dMax = dMin + 27; }
@@ -1253,7 +1270,7 @@ function buildScene(state, opts) {
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
-        if (tracked) {
+        if (tracked && !byMarker) {
           items.push({ t: 'rect', x: n.bx + pw - 8, y: n.y + 2, w: 16, h: n.h - 4, hit: true, id, role: 'progress' });
           if (opts.sel === id) items.push({ t: 'rect', x: n.bx + pw - 3, y: by - 3, w: 6, h: h + 6, r: 3, fill: '#ffffff', stroke: mix(base, '#000000', 0.35), sw: 1.5, ui: true, pass: true });
         }
@@ -1299,4 +1316,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
