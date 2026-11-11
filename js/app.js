@@ -73,7 +73,7 @@ function sanitize(st) {
     const row = newRow(r);
     row.start = Number.isFinite(+row.start) ? Math.round(+row.start) : todayDay();
     row.end = Number.isFinite(+row.end) ? Math.max(row.start, Math.round(+row.end)) : row.start;
-    row.progress = clamp(+row.progress || 0, 0, 100);
+    row.progress = row.progress == null ? null : clamp(+row.progress || 0, 0, 100); // null: not tracked for this bar
     row.name = String(row.name || ''); row.assignee = String(row.assignee || '');
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
@@ -443,13 +443,13 @@ function detailHtml(n, info, rows) {
   html += `<div class="detail" data-id="${r.id}">`;
   const isArea = n.level === 0 && n.hasKids, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
   html += `<div class="seg" data-f="type">${[['area', 'Area'], ['task', 'Task'], ['milestone', 'Milestone']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !isArea ? ' disabled title="Remove its subtasks first"' : ''}>${o[1]}</button>`).join('')}</div>`;
-  if (n.hasKids) html += `<p class="note">${fmtRange(n)} · ${Math.round(n.progress)}% — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
+  if (n.hasKids) html += `<p class="note">${fmtRange(n)}${n.progress == null ? '' : ' · ' + Math.round(n.progress) + '%'} — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
   else {
     html += n.milestone
       ? `<label class="field"><span>Date</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label>`
       : `<div class="two"><label class="field"><span>Start</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label><label class="field"><span>End</span><input class="inp" type="date" data-f="end" value="${dayToIso(r.end)}"></label></div>`;
     if (!n.milestone) html += durHtml(r);
-    if (!n.milestone) html += `<label class="field"><span>Progress</span><div class="range-row"><input type="range" min="0" max="100" step="5" data-f="progress" value="${r.progress}"><output>${Math.round(r.progress)}%</output></div></label>`;
+    if (!n.milestone) html += progressHtml(r);
   }
   if (n.milestone) html += msHtml(r);
   html += colorHtml(r);
@@ -514,6 +514,7 @@ outline.addEventListener('click', e => {
   if (act) {
     const a = act.dataset.act;
     if (a === 'toggle') { detailId = detailId === id ? null : id; renderOutline(); const d = $(`.detail[data-id="${id}"]`); if (d && detailId) d.scrollIntoView({ block: 'nearest' }); }
+    else if (a === 'progress-clear') setRowProgress(id, null);
     else if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
     else if (a === 'del') askDelete(id);
@@ -841,7 +842,7 @@ const DESIGN = [
   ]],
   ['Timeline', [
     { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
-    { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']] },
+    { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']], when: s => s.scale === 'sprints' },
     { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
     { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
@@ -859,6 +860,7 @@ const DESIGN = [
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under bars'], ['beside', 'Beside bars']], when: s => s.assignees },
+    { k: 'assigneeAvatar', type: 'toggle', label: 'Show initials avatar', sub: true, when: s => s.assignees },
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
@@ -1229,7 +1231,7 @@ function spanUnits(start, end) {
 }
 function durControl(start, end, fn, fu) {
   const [n, u] = spanUnits(start, end);
-  return `<div class="dur"><input class="inp" type="number" min="1" step="1" inputmode="numeric" data-f="${fn}" value="${n}" aria-label="Length"><select class="inp" data-f="${fu}" aria-label="Unit">${DUR_UNITS.map(o => `<option value="${o[0]}"${o[0] === u ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></div>`;
+  return `<div class="dur"><input class="inp" type="number" min="1" step="1" inputmode="numeric" data-f="${fn}" value="${n}" aria-label="Length"><select class="inp" data-f="${fu}" aria-label="Unit">${DUR_UNITS.map(o => `<option value="${o[0]}"${o[0] === u ? ' selected' : ''}>${o[0] === 'sprints' ? `sprints (${state.settings.sprintWeeks} wk)` : o[1]}</option>`).join('')}</select></div>`;
 }
 const durHtml = r => `<div class="field"><span>Duration</span>${durControl(r.start, r.end, 'dur-n', 'dur-u')}</div>`;
 /** read the number + unit pair next to a field and turn it into an end date */
@@ -1240,6 +1242,18 @@ function durFromFields(t, start, fn, fu) {
   return durationEnd(start, +$(`[data-f="${fn}"]`, box).value || 1, unit, state.settings.sprintWeeks);
 }
 
+/** naming an owner should make the owner visible: switch assignees on, at the level (area / task / subtask) this item is */
+function ensureAssigneeShown(r) {
+  const S = state.settings, n = derive(state.rows).find(x => x.row.id === r.id);
+  if (!n) return;
+  const wasOff = !S.assignees;
+  let changed = false;
+  if (wasOff) { S.assignees = true; changed = true; }
+  if (n.level === 0 && n.hasKids) { if (S.assigneeAreas === false) { S.assigneeAreas = true; changed = true; } }
+  else if (S.assigneeLevel === 'tasks' && n.level === 2) { S.assigneeLevel = 'all'; changed = true; }
+  else if (S.assigneeLevel === 'subtasks' && n.level < 2) { S.assigneeLevel = 'all'; changed = true; }
+  if (changed) { syncDesign(); if (wasOff) toast('Assignees are now shown on the chart'); }
+}
 function rowInput(r, t) {
   const f = t.dataset.f;
   if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
@@ -1256,8 +1270,8 @@ function rowInput(r, t) {
     }
     commitSoon();
   }
-  else if (f === 'assignee') { r.assignee = t.value; renderChart(); commitSoon(); }
-  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
+  else if (f === 'assignee') { r.assignee = t.value; if (t.value.trim()) ensureAssigneeShown(r); renderChart(); commitSoon(); }
+  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; const rr = t.closest('.range-row'); if (rr) { rr.classList.remove('off'); const x = $('.x-btn', rr); if (x) x.disabled = false; } if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
@@ -1307,6 +1321,8 @@ function popHtml() {
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
+    if (!n.hasKids && !n.milestone) h += progressHtml(r);
+    h += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
     return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
   }
   if (pop.kind === 'today') return `<h4>“We are here” line</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}<label class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="No label"></label>`;
@@ -1373,6 +1389,7 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  if (e.target.closest('[data-act="progress-clear"]') && pop && pop.kind === 'row') { setRowProgress(pop.id, null); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
   const sw = e.target.closest('.sw');
@@ -1709,6 +1726,21 @@ function applySeed(hex) {
   state.settings.palette = list.find(p => p.id === key) || list[0];
   renderChart(); renderOutline(); syncDesign(); syncPop();
   commitSoon();
+}
+/** progress for one bar: a slider, and a way to switch progress off for just this bar */
+function progressHtml(r) {
+  const off = r.progress == null;
+  return `<div class="field"><span>Progress</span><div class="range-row${off ? ' off' : ''}"><input type="range" min="0" max="100" step="5" data-f="progress" value="${off ? 0 : r.progress}"><output>${off ? 'Off' : Math.round(r.progress) + '%'}</output><button class="x-btn" data-act="progress-clear" title="Don’t show progress on this bar" aria-label="Don’t show progress on this bar"${off ? ' disabled' : ''}>✕</button></div></div>`;
+}
+function setRowProgress(id, v) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  r.progress = v;
+  commit(); refresh();
+  if (pop && pop.kind === 'row' && pop.id === id) { // a focused popover isn't rebuilt, so bring its progress row up to date
+    const rr = $('.range-row', popEl);
+    if (rr) { rr.classList.toggle('off', v == null); $('input', rr).value = v == null ? 0 : v; $('output', rr).textContent = v == null ? 'Off' : Math.round(v) + '%'; $('.x-btn', rr).disabled = v == null; }
+  }
 }
 /** where this one milestone sits within its day (otherwise it follows the chart's setting) */
 function msHtml(r) {

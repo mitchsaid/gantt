@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v29 · 11 Nov';
+const APP_VERSION = 'v32 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -262,7 +262,7 @@ const DEFAULT_SETTINGS = {
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
-  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, stripes: false, weekends: true,
+  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, stripes: false, weekends: true,
 };
 
 function newRow(p) {
@@ -281,7 +281,7 @@ function normalizeLevels(rows) {
 
 /** Per-row derived info: children, rolled-up dates and progress, top-level index. */
 function derive(rows) {
-  const info = rows.map((row, i) => ({ row, i, level: row.level, kids: [], parent: -1, root: i, start: row.start, end: row.end, progress: row.progress || 0 }));
+  const info = rows.map((row, i) => ({ row, i, level: row.level, kids: [], parent: -1, root: i, start: row.start, end: row.end, progress: row.progress == null ? null : row.progress || 0 })); // null = progress isn't tracked for this bar
   const stack = [];
   let rootCount = -1;
   info.forEach(n => {
@@ -295,15 +295,15 @@ function derive(rows) {
     const n = info[i];
     n.hasKids = n.kids.length > 0;
     n.milestone = !n.hasKids && n.row.type === 'milestone';
-    if (n.milestone) { n.end = n.start; n.progress = 0; }
+    if (n.milestone) { n.end = n.start; n.progress = null; }
     if (n.hasKids) {
       let s = Infinity, e = -Infinity, w = 0, pw = 0;
       n.kids.forEach(k => {
         const c = info[k];
         s = Math.min(s, c.start); e = Math.max(e, c.end);
-        if (!c.milestone) { const d = c.weight || (c.end - c.start + 1); w += d; pw += d * c.progress; }
+        if (!c.milestone && c.progress != null) { const d = c.weight || (c.end - c.start + 1); w += d; pw += d * c.progress; }
       });
-      n.start = s; n.end = e; n.weight = w; n.progress = w ? pw / w : 0;
+      n.start = s; n.end = e; n.weight = w; n.progress = w ? pw / w : null;
     }
     if (n.end < n.start) n.end = n.start;
   }
@@ -695,7 +695,8 @@ function buildScene(state, opts) {
   const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
   const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, 14.5, 20) * 2) / 2);
   const tierOf = f => Math.round(26 * f / 14);
-  const subLineOf = f => (S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? Math.round(15 * f / 14) : 0); // owners under the bars take a line of their own
+  const avOn = S.assigneeAvatar !== false; // the little initials circle beside an owner's name
+  const subLineOf = f => (S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? Math.round((avOn ? 18 : 14) * f / 14) : 0); // owners under the bars take a line of their own
   const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
   let rowH = 0;
   { // the baseline (Auto): size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
@@ -722,7 +723,7 @@ function buildScene(state, opts) {
   rowH = Math.round(clamp(rowH * ({ compact: 0.78, roomy: 1.3 }[S.density] || 1), 26, 120));
   const fs = fsOf(rowH);
   const kk = fs / 14; // whatever was sized for 14px text scales with it
-  const subLine = subLineOf(fs), dd = Math.round(18 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
+  const subLine = subLineOf(fs), dd = Math.round(18 * kk), dU = Math.round(16 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
   rowH = Math.max(rowH, Math.ceil(fs * 2.2)); // and no row is too tight for its text
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
@@ -895,14 +896,14 @@ function buildScene(state, opts) {
           if (!left) { // heading above its line: the owner follows the name
             const x = bx + M(name, fs + 1, 700) + 14;
             n.areaWho = { x, text: who, size: cs };
-            n.tailEnd = Math.max(n.tailEnd, x + dd + 6 + M(who, cs, 500));
+            n.tailEnd = Math.max(n.tailEnd, x + (avOn ? dd + 6 : 0) + M(who, cs, 500));
           } else if (subLine) { // under its summary bar, like a task
             const ws = Math.max(10, fs - 2.5);
             n.who = { x: bx + 2, text: who, size: ws, area: true };
-            n.tailEnd = Math.max(n.tailEnd, bx + 2 + M(who, ws, 500));
+            n.tailEnd = Math.max(n.tailEnd, bx + 2 + (avOn ? dU + 6 : 0) + M(who, ws, 500));
           } else {
             n.areaWho = { x: bx + bw + 8, text: who, size: cs };
-            n.tailEnd = bx + bw + 8 + dd + 6 + M(who, cs, 500);
+            n.tailEnd = bx + bw + 8 + (avOn ? dd + 6 : 0) + M(who, cs, 500);
           }
         }
         over = Math.max(over, n.tailEnd - x1);
@@ -926,13 +927,13 @@ function buildScene(state, opts) {
       n.who = null;
       if (subLine && showAssignee(n)) {
         const ws = Math.max(10, size - 2.5), wx = n.milestone ? msX(n) - h * 0.5 : bx + 2;
-        const maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity);
+        const av = avOn ? dU + 6 : 0, maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity) - av;
         const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
-        if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + M(t, ws, 500) - x1); }
+        if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + av + M(t, ws, 500) - x1); }
       }
-      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + dd + 6 <= lim) {
+      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + (avOn ? dd + 6 : 0) <= lim) {
         const w = M(n.row.assignee, size - 1.5, 500);
-        n.tail.push({ k: 'who', x: tx, w: w + dd + 6 }); tx += w + dd + 6 + 10;
+        n.tail.push({ k: 'who', x: tx, w: w + (avOn ? dd + 6 : 0) }); tx += w + (avOn ? dd + 6 : 0) + 10;
       }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
       n.tailStart = n.milestone ? msX(n) - h * 0.52 - 4 : bx;
@@ -1077,6 +1078,16 @@ function buildScene(state, opts) {
     }));
   }
 
+  // an owner under a bar: a gap, then (optionally) the initials circle and the name
+  const drawWho = (w, bottom, base) => {
+    const cy = bottom + Math.round(6 * kk) + (avOn ? dU : w.size) / 2;
+    if (avOn) {
+      items.push({ t: 'rect', x: w.x, y: cy - dU / 2, w: dU, h: dU, r: dU / 2, fill: mix(base, surface, 0.78) });
+      items.push({ t: 'text', x: w.x + dU / 2, y: cy, text: initials(w.full || w.text).slice(0, 2), size: 7 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+    }
+    items.push({ t: 'text', x: w.x + (avOn ? dU + 6 : 0), y: cy, text: w.text, size: w.size, weight: 500, fill: muted, anchor: 'start' });
+  };
+
   // ---- rows
   info.forEach(n => {
     const row = n.row, id = row.id;
@@ -1115,12 +1126,14 @@ function buildScene(state, opts) {
       }
       if (n.areaWho) {
         const a = n.areaWho, d = dd, ay = left ? n.cy : n.cy - 4;
-        items.push({ t: 'rect', x: a.x, y: ay - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-        items.push({ t: 'text', x: a.x + d / 2, y: ay, text: initials(a.text).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-        items.push({ t: 'text', x: a.x + d + 6, y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
+        if (avOn) {
+          items.push({ t: 'rect', x: a.x, y: ay - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
+          items.push({ t: 'text', x: a.x + d / 2, y: ay, text: initials(a.text).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+        }
+        items.push({ t: 'text', x: a.x + (avOn ? d + 6 : 0), y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: Math.max(n.bw, left ? 0 : n.tailEnd - n.bx), h: rowH - 4, hit: true, id, role: 'move' });
-      if (n.who) items.push({ t: 'text', x: n.who.x, y: n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2 + 8, text: n.who.text, size: n.who.size, weight: 500, fill: muted, anchor: 'start' });
+      if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2, base);
       return;
     }
     // subtask bars are a lighter tint, but never so light that the label colour has to change
@@ -1133,11 +1146,12 @@ function buildScene(state, opts) {
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mix(base, text, 0.3), stroke: surface });
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: rowH, hit: true, id, role: 'move' });
     } else {
-      const prog = S.progress ? clamp(n.progress, 0, 100) / 100 : 1;
+      const tracked = S.progress && n.progress != null; // bars with progress switched off stay plain
+      const prog = tracked ? clamp(n.progress, 0, 100) / 100 : 1;
       const inset = n.bw > 10 ? 1.5 : 0; // a sliver of space each side, so bars that meet still read as separate
       const gx = n.bx + inset, gw = n.bw - 2 * inset;
       const pw = prog * gw;
-      if (S.progress) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: soft });
+      if (tracked) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: soft });
       if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: full });
       const lsz = n.shrink || size;
       const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
@@ -1153,7 +1167,7 @@ function buildScene(state, opts) {
           const tw = M(shown, lsz, 500);
           const it = { t: 'text', x: n.bx + (n.fit != null ? 0.8 : 1) * (n.ip || 10), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
           // a label that straddles the progress edge is drawn in two colours, split at that edge
-          if (S.progress && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
+          if (tracked && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
             if (pw <= (n.ip || 10)) it.fill = on(soft);
             else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= (n.ip || 10) + tw * 0.5 ? it.fill : it.fill2; }
           }
@@ -1162,7 +1176,7 @@ function buildScene(state, opts) {
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: rowH - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
-        if (S.progress) {
+        if (tracked) {
           items.push({ t: 'rect', x: n.bx + pw - 8, y: n.y + 2, w: 16, h: rowH - 4, hit: true, id, role: 'progress' });
           if (opts.sel === id) items.push({ t: 'rect', x: n.bx + pw - 3, y: by - 3, w: 6, h: h + 6, r: 3, fill: '#ffffff', stroke: mix(base, '#000000', 0.35), sw: 1.5, ui: true, pass: true });
         }
@@ -1175,12 +1189,14 @@ function buildScene(state, opts) {
       else if (t.k === 'date') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       else {
         const d = dd;
-        items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-        items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-        items.push({ t: 'text', x: t.x + d + 6, y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
+        if (avOn) {
+          items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
+          items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+        }
+        items.push({ t: 'text', x: t.x + (avOn ? d + 6 : 0), y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
     });
-    if (n.who) items.push({ t: 'text', x: n.who.x, y: n.cy + n.bh / 2 + subLine / 2 + 1, text: n.who.text, size: n.who.size, weight: 500, fill: muted, anchor: 'start' });
+    if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
   });
 
   // ---- "we are here" line
