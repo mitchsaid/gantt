@@ -711,6 +711,19 @@ function pointerLevel(y, fallback) {
   if (under.isArea && y >= under.cy) return 1; // the lower half of an area's own heading row counts as inside it
   return under.level;
 }
+/** dragging an area: it can only land between areas, so take the boundary nearest the pointer — never a spot inside another area */
+function areaDropIndex(y) {
+  const info = scene.info, tops = [];
+  info.forEach((n, i) => { if (n.level === 0) tops.push(i); });
+  if (!tops.length) return info.length;
+  for (let t = 0; t < tops.length; t++) {
+    const s = tops[t], e = t + 1 < tops.length ? tops[t + 1] : info.length, blk = info.slice(s, e);
+    const y0 = Math.min(...blk.map(n => n.y)), y1 = Math.max(...blk.map(n => n.y + n.h));
+    if (y < y0) return s;
+    if (y <= y1) return y < (y0 + y1) / 2 ? s : e;
+  }
+  return info.length;
+}
 /** where the selected items (each with what is inside it) would land if dropped before row k, at the level `want` asks for */
 function planGroupMove(k, want, existingOnly) {
   const rows = state.rows, blocks = selectedBlocks(), inSel = new Set(blocks.map(r => r.id));
@@ -753,9 +766,11 @@ function applyGroupMove(plan) {
 /** dragging several selected bars up or down the chart: show where they would all land */
 function reorderGroup(y) {
   const info = scene.info;
+  const areaSel = selectedBlocks().some(r => { const n = info.find(x => x.row.id === r.id); return n && n.isArea; }); // areas move between areas, never into one
   let k = info.length;
-  for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
-  const want = pointerLevel(y, drag.lv0), plan = planGroupMove(k, want, true);
+  if (areaSel) k = areaDropIndex(y);
+  else for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
+  const want = areaSel ? 0 : pointerLevel(y, drag.lv0), plan = planGroupMove(k, want, true);
   drag.k2 = k; drag.gwant = want; drag.dropLevel = plan.level;
   drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].isArea && k > 0 ? 5 : 0) : info[info.length - 1].y + info[info.length - 1].h;
   drag.dropBox = null;
@@ -767,12 +782,14 @@ function reorderGroup(y) {
 }
 function reorderTarget(dx, y) {
   const info = scene.info;
+  const areaDrag = !!(info[drag.i] && info[drag.i].isArea); // an area moves between areas, never into one
   let k = info.length;
-  for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
+  if (areaDrag) k = areaDropIndex(y);
+  else for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
   drag.k2 = k;
   const j = blockEnd(state.rows, drag.i);
   const stay = k >= drag.i && k <= j;
-  drag.dropLevel = dropLevelFor(drag.i, k, pointerLevel(y, drag.lv0), true);
+  drag.dropLevel = dropLevelFor(drag.i, k, areaDrag ? 0 : pointerLevel(y, drag.lv0), true);
   const at = stay ? drag.i : k;
   drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].isArea && at > 0 ? 5 : 0) : info[info.length - 1].y + info[info.length - 1].h;
   // dropping somewhere new inside an area: outline that area
