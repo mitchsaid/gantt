@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v17 · 11 Nov';
+const APP_VERSION = 'v18 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -183,7 +183,9 @@ function genericGradient(L, C, H, mode) {
   const He = 250 * D2R, Le = mode === 'light' ? 0.4 : 0.86, Ce = 0.045;
   const dh = ((((He - H) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI; // signed shortest turn, in (-π, π]
   const lim = toneLimit(Math.max(C, 0.05), H, mode), L1 = mode === 'light' ? Math.min(L, lim) : Math.max(L, lim);
-  return [0, 1, 2, 3, 4, 5].map(i => { const t = i / 5; return okHex(L1 + (Le - L1) * t, C + (Ce - C) * Math.pow(t, 1.6), H + dh * t); }); // chroma holds, then fades at the end
+  // colours already near the slate end would just darken; give them a bulge of hue on the way (toward the other side of the wheel)
+  const swing = C < 0.04 ? 0 : Math.max(0, 80 - Math.abs(dh) / D2R) * 1.1 * D2R * (dh > 0 ? -1 : 1); // (greys stay grey)
+  return [0, 1, 2, 3, 4, 5].map(i => { const t = i / 5; return okHex(L1 + (Le - L1) * t, C + (Ce - C) * Math.pow(t, 1.6), H + dh * t + swing * Math.sin(Math.PI * t)); }); // chroma holds, then fades at the end
 }
 /** a handful of matching palettes built from one colour; the first is the one to apply by default */
 function suggestPalettes(seed) {
