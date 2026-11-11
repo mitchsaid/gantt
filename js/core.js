@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v35 · 11 Nov';
+const APP_VERSION = 'v36 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -174,7 +174,7 @@ const SCHEMES = [
   ['generic', 'Generic gradient', 'generic'],
   ['gradient', 'Matching gradient', [0, 40, 80, 120, 160, 200]],
   ['analogous', 'Analogous', [0, 28, -28, 56, -56]],
-  ['mono', 'Monochrome', null],
+  ['mono', 'Shades', null],
   ['complement', 'Complementary', [0, 180, 18, 198, -18]],
   ['triad', 'Triadic', [0, 120, 240, 30, 150, 270]],
 ];
@@ -196,10 +196,30 @@ function suggestPalettes(seed) {
   return SCHEMES.map(([key, name, hues]) => {
     let colors;
     if (hues === 'generic') colors = fixPalette(genericGradient(L, C, H, mode), mode, true, true);
-    else if (!hues) { // shades of the one colour, stepping toward the tone limit (or away from it, for a dark seed)
+    else if (!hues) { // shades: your colour first, then lighter and darker versions of it, arranged so neighbouring bars differ as much as possible
       const lim = toneLimit(C, H, mode), L1 = mode === 'light' ? Math.min(L, lim) : Math.max(L, lim);
-      const end = mode === 'light' ? (L1 > lim - 0.08 ? L1 - 0.15 : lim) : (L1 < lim + 0.1 ? Math.min(0.95, L1 + 0.14) : L1 - 0.05);
-      colors = [0, 1, 2, 3, 4].map(i => okHex(L1 + (end - L1) * (i / 4), i === 0 ? C : Math.max(C, 0.03), H));
+      const upLimit = mode === 'light' ? lim : 0.9, downLimit = mode === 'light' ? 0.32 : lim; // lighter / darker, while labels stay readable
+      const roomUp = Math.max(0, upLimit - L1), roomDown = Math.max(0, L1 - downLimit), room = roomUp + roomDown || 1;
+      const spread = Math.min(room, 0.3), upSpan = spread * roomUp / room, downSpan = spread - upSpan;
+      let nUp = Math.round(5 * roomUp / room);
+      if (upSpan < 0.025) nUp = 0; else if (downSpan < 0.025) nUp = 5;
+      const nDown = 5 - nUp, toBlue = ((((250 * D2R - H) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+      const drift = C < 0.03 ? 0 : clamp(toBlue, -14 * D2R, 14 * D2R); // shades turn a touch bluer as they deepen, warmer as they lighten
+      const levels = [L1];
+      for (let k = 1; k <= nUp; k++) levels.push(L1 + upSpan * k / nUp);
+      for (let k = 1; k <= nDown; k++) levels.push(L1 - downSpan * k / nDown);
+      colors = fixPalette(levels.map(l => okHex(l, C, H + drift * clamp((L1 - l) / 0.3, -1, 1))), mode, true, true);
+      // the order that keeps the smallest gap between neighbours as large as possible (your colour stays first)
+      const lab = hex => { const [a, c, h] = toOklch(hex); return [a, c * Math.cos(h), c * Math.sin(h)]; };
+      const dist = (a, b) => { const x = lab(a), y = lab(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+      let best = null, bestMin = -1;
+      const rest = colors.slice(1);
+      const walk = (order, left) => {
+        if (!left.length) { const seq = [colors[0], ...order]; let m = Infinity; for (let q = 1; q < seq.length; q++) m = Math.min(m, dist(seq[q - 1], seq[q])); if (m > bestMin) { bestMin = m; best = seq; } return; }
+        left.forEach((c, q) => walk(order.concat(c), left.filter((_, w) => w !== q)));
+      };
+      walk([], rest);
+      colors = best;
     } else colors = fixPalette(hues.map(d => okHex(L, Cb, H + d * D2R)), mode, true);
     colors[0] = fixPalette([seed], mode, true)[0]; // the colour you pasted stays first, only nudged if its label would be hard to read
     return { id: 'seed-' + key, name, text: mode, seed, colors };
