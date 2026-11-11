@@ -7,16 +7,6 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const STORE_KEY = 'gantt:v1';
 
 const FONTS = ['Inter', 'DM Sans', 'Manrope', 'Plus Jakarta Sans', 'Poppins', 'Montserrat', 'Work Sans', 'IBM Plex Sans', 'Space Grotesk', 'Lora', 'Source Serif 4', 'Playfair Display', 'Roboto Slab', 'JetBrains Mono'];
-const THEMES = [
-  { name: 'Indigo & pink', p: '#4f46e5', s: '#ec4899', bg: '#ffffff' },
-  { name: 'Blue & teal', p: '#2563eb', s: '#14b8a6', bg: '#ffffff' },
-  { name: 'Emerald', p: '#059669', s: null, bg: '#ffffff' },
-  { name: 'Orange & rose', p: '#f97316', s: '#e11d48', bg: '#ffffff' },
-  { name: 'Slate', p: '#334155', s: null, bg: '#ffffff' },
-  { name: 'Violet & sky', p: '#7c3aed', s: '#0ea5e9', bg: '#ffffff' },
-  { name: 'Navy & gold', p: '#1e3a5f', s: '#c9971c', bg: '#fbf7ef' },
-  { name: 'Midnight', p: '#818cf8', s: '#34d399', bg: '#0f172a' },
-];
 
 // ---------------------------------------------------------------- state
 function sampleState() {
@@ -62,11 +52,17 @@ function blankState(settings) {
 }
 function sanitize(st) {
   if (!st || !Array.isArray(st.rows)) return null;
+  const had = validPalette(st.settings && st.settings.palette), old = st.settings || {};
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
-  const old = st.settings.labels; // earlier versions had one combined setting
-  if (old) { st.settings.taskLabels = old === 'left' ? 'left' : 'bars'; st.settings.areaLabels = old === 'lanes' ? 'side' : 'row'; delete st.settings.labels; }
+  if (!had) { // plans saved with a primary / secondary colour become a palette
+    const p = parseColor(old.primary), same = !p || (p === '#4f46e5' && old.secondaryOn !== false && (!old.secondary || old.secondary === '#ec4899'));
+    st.settings.palette = same ? PRESETS[0] : { id: 'custom', name: 'Custom', text: 'auto', seed: p, colors: areaPalette(p, old.secondaryOn === false ? null : parseColor(old.secondary), 6) };
+  }
+  if (!['light', 'dark', 'auto'].includes(st.settings.palette.text)) st.settings.palette = Object.assign({}, st.settings.palette, { text: 'auto' });
+  const oldLabels = st.settings.labels; // earlier versions had one combined setting
+  if (oldLabels) { st.settings.taskLabels = oldLabels === 'left' ? 'left' : 'bars'; st.settings.areaLabels = oldLabels === 'lanes' ? 'side' : 'row'; delete st.settings.labels; }
   st.rows = st.rows.filter(r => r && typeof r === 'object').map(r => {
     const row = newRow(r);
     row.start = Number.isFinite(+row.start) ? Math.round(+row.start) : todayDay();
@@ -76,6 +72,7 @@ function sanitize(st) {
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
     row.type = row.type === 'milestone' ? 'milestone' : 'task';
+    if (row.color != null) { const c = Math.round(+row.color); if (Number.isFinite(c) && c >= 0) row.color = c; else delete row.color; }
     return row;
   });
   normalizeLevels(st.rows);
@@ -264,7 +261,7 @@ function focusName(id, all) {
   if (all) inp.select();
 }
 /** the level a block starting at row i would take if dropped before row k while asking for level `want` */
-function dropLevelFor(i, k, want) {
+function dropLevelFor(i, k, want, existingOnly) {
   const rows = state.rows, j = blockEnd(rows, i);
   const stay = k >= i && k <= j;
   const prev = stay ? rows[i - 1] : rows[k - 1], next = stay ? rows[j] : rows[k];
@@ -272,6 +269,16 @@ function dropLevelFor(i, k, want) {
   let level = clamp(want, 0, max);
   // dropped in front of deeper rows, it joins them as a sibling rather than adopting them
   if (next && next.level > level) level = Math.min(next.level, max);
+  if (existingOnly) {
+    // never turn a plain row into an area: land only inside something that already holds other items (or the row it is already in)
+    let cp = -1;
+    for (let q = i - 1; q >= 0; q--) if (rows[q].level < rows[i].level) { cp = q; break; }
+    while (level > 0) {
+      const pi = dropParentIndex(i, k, level);
+      if (pi < 0 || pi === cp || rows.slice(pi + 1, blockEnd(rows, pi)).some((r, q) => pi + 1 + q < i || pi + 1 + q >= j)) break;
+      level = rows[pi].level;
+    }
+  }
   return level;
 }
 /** move a row and everything inside it; changing its level re-levels its contents (area -> task -> subtask) */
@@ -431,6 +438,7 @@ function detailHtml(n, info, rows) {
     if (!n.milestone) html += durHtml(r);
     if (!n.milestone) html += `<label class="field"><span>Progress</span><div class="range-row"><input type="range" min="0" max="100" step="5" data-f="progress" value="${r.progress}"><output>${Math.round(r.progress)}%</output></div></label>`;
   }
+  html += colorHtml(r);
   html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
   if (!n.hasKids) {
     const others = info.filter(o => o.row.id !== r.id && !(o.level === 0 && o.hasKids) && !r.deps.includes(o.row.id));
@@ -445,12 +453,12 @@ function renderOutline() {
   let keep = null;
   if (act && outline.contains(act) && act.closest('[data-id]')) keep = { id: act.closest('[data-id]').dataset.id, f: act.dataset.f || (act.classList.contains('nm') ? 'nm' : null), a: act.selectionStart, b: act.selectionEnd };
   const rows = state.rows, info = derive(rows), S = state.settings;
-  const palette = areaPalette(S.primary, S.secondaryOn ? S.secondary : null, Math.max(1, info.filter(n => n.level === 0).length));
+  const palette = paletteOf(S).colors;
   const who = Array.from(new Set(rows.map(r => r.assignee).filter(Boolean)));
   const picked = new Set(selIds());
   let html = '';
   info.forEach(n => {
-    const r = n.row, c = palette[n.rootIdx % palette.length];
+    const r = n.row, c = palette[colorIndexOf(info, n) % palette.length];
     const color = n.level === 2 ? mix(c, '#ffffff', 0.45) : c;
     html += `<div class="orow lvl${n.level}${picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}">
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
@@ -499,6 +507,8 @@ outline.addEventListener('click', e => {
     else if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== act.dataset.dep); commit(); refresh(); }
     return;
   }
+  const sw = e.target.closest('.sw');
+  if (sw) { setRowColor(id, sw.dataset.color); return; }
   const segBtn = e.target.closest('.seg[data-f="type"] button');
   if (segBtn) {
     if (!segBtn.classList.contains('on')) setType(id, segBtn.dataset.v);
@@ -624,6 +634,14 @@ function dropParentIndex(i, k, level) {
   }
   return -1;
 }
+/** the level to drop at, from what is under the pointer: over an area's tasks means inside that area */
+function pointerLevel(y, fallback) {
+  let under = null;
+  for (const n of scene.info) if (!n.lane && n.y <= y + 0.5) under = n; // the last row that starts above the pointer
+  if (!under) return fallback;
+  if (under.level === 0 && under.hasKids && y >= under.cy) return 1; // the lower half of an area's own heading row counts as inside it
+  return under.level;
+}
 function reorderTarget(dx, y) {
   const info = scene.info;
   let k = info.length;
@@ -631,7 +649,7 @@ function reorderTarget(dx, y) {
   drag.k2 = k;
   const j = blockEnd(state.rows, drag.i);
   const stay = k >= drag.i && k <= j;
-  drag.dropLevel = dropLevelFor(drag.i, k, drag.lv0 + Math.round(dx / 24));
+  drag.dropLevel = dropLevelFor(drag.i, k, pointerLevel(y, drag.lv0), true);
   const at = stay ? drag.i : k;
   drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
   // dropping somewhere new inside an area: outline that area
@@ -754,10 +772,7 @@ const DESIGN = [
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
   ]],
   ['Colour', [
-    { type: 'themes' },
-    { k: 'primary', type: 'color', label: 'Primary' },
-    { k: 'secondaryOn', type: 'toggle', label: 'Secondary colour' },
-    { k: 'secondary', type: 'color', label: 'Secondary', sub: true, when: s => s.secondaryOn },
+    { type: 'palette' },
     { k: 'bgTransparent', type: 'toggle', label: 'Transparent background' },
     { k: 'bg', type: 'color', label: 'Background', when: s => !s.bgTransparent },
     { k: 'textMode', type: 'seg', label: 'Text', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
@@ -781,7 +796,7 @@ function buildDesign() {
       if (c.k) designCtl[c.k] = c;
       const cls = `ctl${c.sub ? ' sub' : ''}${c.col || c.type === 'themes' ? ' col' : ''}`;
       const lbl = `<span class="lbl">${c.label || ''}</span>`;
-      if (c.type === 'themes') html += `<div class="themes">${THEMES.map((t, i) => `<button data-theme="${i}" title="${t.name}" aria-label="${t.name}" style="background:${t.bg}"><i style="background:${t.p}"></i><i style="background:${t.s || mix(t.p, t.bg, 0.5)}"></i></button>`).join('')}</div>`;
+      if (c.type === 'palette') html += paletteHtml();
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
@@ -797,6 +812,7 @@ function buildDesign() {
 }
 function syncDesign() {
   const S = state.settings;
+  syncPalette();
   $$('[data-w]', designEl).forEach(w => { const c = designCtl[w.dataset.w]; w.hidden = !!(c.when && !c.when(S)); });
   $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(S[seg.dataset.k]) === b.dataset.v)));
   // in-sequence rows always carry names on the bars: show that, and lock the choice
@@ -826,24 +842,20 @@ function setSetting(k, v, soon) {
   if (k === 'font') ensureFont();
   renderChart(); syncDesign(); syncPop();
   if (k === 'sprintWeeks') renderOutline();
-  if (k === 'primary' || k === 'secondary' || k === 'secondaryOn') renderOutline();
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
-  const th = e.target.closest('[data-theme]');
-  if (th) {
-    const t = THEMES[+th.dataset.theme];
-    Object.assign(state.settings, { primary: t.p, secondaryOn: !!t.s, bg: t.bg, bgTransparent: false, textMode: 'auto' });
-    if (t.s) state.settings.secondary = t.s;
-    commit(); refresh();
-    return;
-  }
+  const pb = e.target.closest('[data-palette]');
+  if (pb) { applyPalette(PRESETS[+pb.dataset.palette]); return; }
+  const sb = e.target.closest('[data-scheme]');
+  if (sb) { const seed = paletteOf(state.settings).seed; if (seed) applyPalette(suggestPalettes(seed)[+sb.dataset.scheme]); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
   const b = e.target.closest('.seg[data-k] button');
   if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : designCtl[k].bool ? b.dataset.v === 'true' : b.dataset.v); }
 });
 designEl.addEventListener('input', e => {
   const t = e.target, k = t.dataset.k;
+  if (t.dataset.seed != null || t.dataset.seedpick != null) { const hex = parseColor(t.value); if (hex) applySeed(hex); return; }
   if (!k) return;
   if (t.type === 'checkbox') setSetting(k, t.checked);
   else if (t.type === 'color') setSetting(k, t.value, true);
@@ -1158,7 +1170,7 @@ function popHtml() {
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
-    return h;
+    return h + colorHtml(r);
   }
   if (pop.kind === 'today') return `<h4>“We are here” line</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}<label class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="No label"></label>`;
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null;
@@ -1222,6 +1234,8 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  const sw = e.target.closest('.sw');
+  if (sw && pop && pop.kind === 'row') { setRowColor(pop.id, sw.dataset.color); return; }
   if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }
   if (e.target.closest('[data-act="paste-cancel"]')) { closePop(); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
@@ -1515,6 +1529,57 @@ function duplicateSelection() {
   if (!rows.length) return;
   const ids = selIds(), n = insertParsed(cloneRows(JSON.parse(JSON.stringify(rows))), ids[ids.length - 1], null, true);
   toast(`Duplicated ${n} item${n === 1 ? '' : 's'}`);
+}
+
+// ---------------------------------------------------------------- colour: palettes and per-item colours
+const strip = cols => `<span class="strip">${cols.slice(0, 6).map(c => `<i style="background:${c}"></i>`).join('')}</span>`;
+function paletteHtml() {
+  return `<div class="seed-block"><span class="lbl">Paste a colour to build a palette</span>
+    <div class="color seed-row"><input class="inp hex seed-in" data-seed placeholder="#4f46e5" spellcheck="false" autocomplete="off" aria-label="Colour"><input type="color" data-seedpick value="#4f46e5" aria-label="Pick a colour"></div></div>
+    <div class="sugg" id="sugg" hidden></div>
+    <span class="lbl">Ready-made palettes</span>
+    <div class="pal-grid">${PRESETS.map((p, i) => `<button class="pal" data-palette="${i}" title="${esc(p.name)}">${strip(p.colors)}<span class="pn">${esc(p.name)}</span></button>`).join('')}</div>`;
+}
+function syncPalette() {
+  const pal = paletteOf(state.settings);
+  $$('[data-palette]', designEl).forEach(b => b.classList.toggle('on', PRESETS[+b.dataset.palette].id === pal.id));
+  const inp = $('[data-seed]', designEl), pick = $('[data-seedpick]', designEl), sg = $('#sugg', designEl);
+  if (!inp || !sg) return;
+  if (inp !== document.activeElement) inp.value = pal.seed || '';
+  if (!pal.seed) { sg.hidden = true; return; }
+  if (pick) pick.value = pal.seed;
+  const sig = pal.seed + '|' + pal.id;
+  if (sg.dataset.sig !== sig) { // rebuilt only when the colour or the choice changes
+    sg.innerHTML = `<span class="lbl">Matching palettes</span><div class="pal-grid">${suggestPalettes(pal.seed).map((p, i) => `<button class="pal${p.id === pal.id ? ' on' : ''}" data-scheme="${i}">${strip(p.colors)}<span class="pn">${esc(p.name)}</span></button>`).join('')}</div>`;
+    sg.dataset.sig = sig;
+  }
+  sg.hidden = false;
+}
+function applyPalette(p) {
+  state.settings.palette = p;
+  renderChart(); renderOutline(); syncDesign(); syncPop();
+  commit();
+}
+/** a pasted or picked colour: apply the best-matching palette straight away (keeping the scheme if one was already chosen) */
+function applySeed(hex) {
+  const cur = paletteOf(state.settings), key = cur.seed && String(cur.id).startsWith('seed-') ? cur.id : null;
+  if (cur.seed === hex && key) return;
+  const list = suggestPalettes(hex);
+  state.settings.palette = list.find(p => p.id === key) || list[0];
+  renderChart(); renderOutline(); syncDesign(); syncPop();
+  commitSoon();
+}
+function colorHtml(r) {
+  const cols = paletteOf(state.settings).colors;
+  return `<div class="field"><span>Colour</span><div class="swatches"><button class="sw auto${r.color == null ? ' on' : ''}" data-color="auto" title="Automatic — follows its area">Auto</button>${cols.map((c, i) => `<button class="sw${r.color === i ? ' on' : ''}" data-color="${i}" style="background:${c}" aria-label="Colour ${i + 1}"></button>`).join('')}</div></div>`;
+}
+/** colour one item (and what is inside it) from the palette, without touching anything else */
+function setRowColor(id, v) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  if (v === 'auto') delete r.color; else r.color = +v;
+  commit(); refresh();
+  if (pop && pop.kind === 'row') $$('.sw', popEl).forEach(b => b.classList.toggle('on', b.dataset.color === String(v)));
 }
 
 // ---------------------------------------------------------------- go

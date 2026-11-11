@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v15 · 11 Nov';
+const APP_VERSION = 'v16 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -122,6 +122,109 @@ function areaPalette(primary, secondary, n) {
   return out;
 }
 
+// ---------------------------------------------------------------- palettes
+// A palette is a short list of colours that areas take in turn. Every colour in it is kept dark enough for white labels
+// (or, for pastel palettes, light enough for near-black labels), so a chart never mixes label colours.
+const TEXT_LIGHT = '#ffffff', TEXT_DARK = '#0b1020';
+const LIGHT_MIN = 4.8, DARK_MIN = 9; // minimum label contrast the palettes are built to
+
+function oklabLin(L, C, H) {
+  const A = C * Math.cos(H), B = C * Math.sin(H);
+  const l = Math.pow(L + 0.3963377774 * A + 0.2158037573 * B, 3);
+  const m = Math.pow(L - 0.1055613458 * A - 0.0638541728 * B, 3);
+  const s = Math.pow(L - 0.0894841775 * A - 1.291485548 * B, 3);
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+}
+/** a colour from lightness / chroma / hue, easing the chroma off until it fits on screen */
+function okHex(L, C, H) {
+  let c = Math.max(0, C);
+  while (c > 0 && oklabLin(L, c, H).some(v => v < -0.001 || v > 1.001)) c -= 0.004;
+  return fromOklch([L, Math.max(0, c), H]);
+}
+/** the lightest (for white labels) or darkest (for dark labels) a colour of this hue and chroma may be */
+function toneLimit(C, H, mode) {
+  let lo = 0.04, hi = 0.99;
+  const ok = L => (mode === 'light' ? contrast(okHex(L, C, H), TEXT_LIGHT) >= LIGHT_MIN : contrast(okHex(L, C, H), TEXT_DARK) >= DARK_MIN);
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    if (mode === 'light') { if (ok(mid)) lo = mid; else hi = mid; } else if (ok(mid)) hi = mid; else lo = mid;
+  }
+  return mode === 'light' ? lo : hi;
+}
+/** nudge each colour so its label is readable, and keep the set close in tone so contrast stays even */
+function fixPalette(hexes, mode, keepFirst, loose) {
+  return hexes.map((hex, i) => {
+    const [L, C, H] = toOklch(hex), lim = toneLimit(C, H, mode);
+    const first = (keepFirst && i === 0) || loose; // `loose` palettes (shades of one hue) keep their own range of darkness
+    const L2 = mode === 'light' ? (first ? Math.min(L, lim) : clamp(L, lim - 0.1, lim)) : first ? Math.max(L, lim) : clamp(L, lim, Math.min(0.95, lim + 0.14));
+    return okHex(L2, C, H);
+  });
+}
+/** light labels unless the colour is so pale that darkening it enough would change it too much */
+function pickMode(L, C, H) { return L - toneLimit(C, H, 'light') <= 0.2 ? 'light' : 'dark'; }
+/** a lighter tint of a colour that still passes `min` contrast with the given label colour (used for subtask bars) */
+function lightenFor(hex, label, min) {
+  let lo = 0, hi = 0.5;
+  for (let i = 0; i < 12; i++) { const mid = (lo + hi) / 2; if (contrast(mix(hex, '#ffffff', mid), label) >= min) lo = mid; else hi = mid; }
+  return mix(hex, '#ffffff', lo);
+}
+const D2R = Math.PI / 180;
+
+const SCHEMES = [
+  ['gradient', 'Gradient', [0, 22, 44, 66, 88]],
+  ['analogous', 'Analogous', [0, 28, -28, 56, -56]],
+  ['mono', 'Monochrome', null],
+  ['complement', 'Complementary', [0, 180, 18, 198, -18]],
+  ['triad', 'Triadic', [0, 120, 240, 30, 150, 270]],
+  ['split', 'Split complementary', [0, 150, 210, 30, -30]],
+];
+/** a handful of matching palettes built from one colour; the first is the one to apply by default */
+function suggestPalettes(seed) {
+  seed = parseColor(seed) || '#4f46e5';
+  let [L, C, H] = toOklch(seed);
+  if (C < 0.02) H = 260 * D2R; // greys have no hue: lean blue
+  const Cb = clamp(Math.max(C, 0.09), 0.09, 0.2), mode = pickMode(L, C, H);
+  return SCHEMES.map(([key, name, hues]) => {
+    let colors;
+    if (!hues) { // shades of the one colour, stepping toward the tone limit (or away from it, for a dark seed)
+      const lim = toneLimit(C, H, mode), L1 = mode === 'light' ? Math.min(L, lim) : Math.max(L, lim);
+      const end = mode === 'light' ? (L1 > lim - 0.08 ? L1 - 0.15 : lim) : (L1 < lim + 0.1 ? Math.min(0.95, L1 + 0.14) : L1 - 0.05);
+      colors = [0, 1, 2, 3, 4].map(i => okHex(L1 + (end - L1) * (i / 4), i === 0 ? C : Math.max(C, 0.03), H));
+    } else colors = fixPalette(hues.map(d => okHex(L, Cb, H + d * D2R)), mode, true);
+    colors[0] = fixPalette([seed], mode, true)[0]; // the colour you pasted stays first, only nudged if its label would be hard to read
+    return { id: 'seed-' + key, name, text: mode, seed, colors };
+  });
+}
+function parseColor(s) {
+  s = String(s == null ? '' : s).trim().toLowerCase();
+  let m = /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(s);
+  if (m) { let h = m[1]; if (h.length === 3) h = h.split('').map(c => c + c).join(''); return '#' + h.slice(0, 6); }
+  m = /^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/.exec(s);
+  return m && [m[1], m[2], m[3]].every(v => +v <= 255) ? rgbToHex([+m[1], +m[2], +m[3]]) : null;
+}
+const validPalette = p => !!(p && Array.isArray(p.colors) && p.colors.length > 0 && p.colors.length <= 16 && p.colors.every(c => /^#[0-9a-f]{6}$/i.test(c)));
+
+const vivid = [250, 305, 350, 40, 95, 150, 200].map(h => okHex(0.55, 0.16, h * D2R));
+const PRESETS = [
+  { id: 'indigo', name: 'Indigo bloom', text: 'light', colors: ['#4f46e5', '#7c3aed', '#a855f7', '#d946ef', '#ec4899'] },
+  { id: 'ocean', name: 'Ocean', text: 'light', colors: ['#1d4ed8', '#0369a1', '#0e7490', '#0f766e', '#4f46e5'] },
+  { id: 'forest', name: 'Forest', text: 'light', colors: ['#15803d', '#3f6212', '#0f766e', '#4d7c0f', '#166534'] },
+  { id: 'sunset', name: 'Sunset', text: 'light', colors: ['#c2410c', '#dc2626', '#e11d48', '#be185d', '#a21caf'] },
+  { id: 'berry', name: 'Berry', text: 'light', colors: ['#7e22ce', '#a21caf', '#be185d', '#6d28d9', '#9d174d'] },
+  { id: 'earth', name: 'Earth', text: 'light', colors: ['#92400e', '#4d7c0f', '#a16207', '#0f766e', '#9f1239'] },
+  { id: 'corporate', name: 'Corporate', text: 'light', colors: ['#1e3a8a', '#0f766e', '#374151', '#7c2d12', '#4338ca'] },
+  { id: 'slate', name: 'Slate', text: 'light', loose: true, colors: ['#1e293b', '#334155', '#475569', '#64748b', '#0f172a'] },
+  { id: 'vivid', name: 'Vivid', text: 'light', colors: vivid },
+  { id: 'pastel', name: 'Pastel', text: 'dark', colors: ['#c4b5fd', '#fbcfe8', '#a7f3d0', '#fde68a', '#bae6fd'] },
+  { id: 'candy', name: 'Candy', text: 'dark', colors: ['#fda4af', '#fdba74', '#fde047', '#86efac', '#7dd3fc', '#c4b5fd'] },
+].map(p => Object.assign({}, p, { colors: fixPalette(p.colors, p.text, false, p.loose) }));
+const paletteOf = S => (validPalette(S && S.palette) ? S.palette : PRESETS[0]);
+/** which palette slot a row uses: its own choice, else its parent's, else its area's turn */
+function colorIndexOf(info, n) {
+  for (let q = n; q; q = q.parent >= 0 ? info[q.parent] : null) if (q.row.color != null) return q.row.color;
+  return n.rootIdx;
+}
+
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, width: 'wide',
@@ -129,7 +232,7 @@ const DEFAULT_SETTINGS = {
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
-  primary: '#4f46e5', secondaryOn: true, secondary: '#ec4899', bg: '#ffffff', bgTransparent: false, textMode: 'auto',
+  palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, grid: true, stripes: false, weekends: true,
 };
 
@@ -553,9 +656,10 @@ function buildScene(state, opts) {
   const muted = mix(text, surface, 0.42);
   const faint = mix(text, surface, 0.62);
   const grid = mix(text, surface, 0.9), gridStrong = mix(text, surface, 0.8), stripe = mix(text, surface, 0.96);
-  const nRoots = info.filter(n => n.level === 0).length;
-  const palette = areaPalette(S.primary, S.secondaryOn ? S.secondary : null, Math.max(1, nRoots));
-  const accent = S.secondaryOn ? S.secondary : text;
+  const pal = paletteOf(S), palette = pal.colors;
+  const baseOf = n => palette[colorIndexOf(info, n) % palette.length];
+  const hi = palette[0]; // the colour used for selection and drop highlights
+  const accent = mix(palette[Math.min(1, palette.length - 1)], text, 0.12); // the "we are here" line
 
   // metrics
   // owners written under the bars need a line of their own in every row
@@ -823,11 +927,11 @@ function buildScene(state, opts) {
   if (showBottom) drawHeader(headBotY, true);
 
   // ---- selection highlight & drop indicator (interactive only)
-  if (opts.rowHi != null) items.push({ t: 'rect', x: pad - 10, y: opts.rowHi, w: W - 2 * pad + 20, h: rowH, r: 6, fill: S.primary, opacity: 0.2, ui: true });
+  if (opts.rowHi != null) items.push({ t: 'rect', x: pad - 10, y: opts.rowHi, w: W - 2 * pad + 20, h: rowH, r: 6, fill: hi, opacity: 0.2, ui: true });
   if (opts.dropBox) { // while dragging: outline the area (or task) the item would land inside, so “into” can't be mistaken for “above”
     const pn = info.find(n => n.row.id === opts.dropBox.id);
     if (pn) {
-      const c = palette[pn.rootIdx % palette.length], { y0, y1 } = opts.dropBox;
+      const c = baseOf(pn), { y0, y1 } = opts.dropBox;
       const label = fitText('Into ' + (pn.row.name || 'Untitled'), 260, 12, 700, font), lw = M(label, 12, 700) + 20;
       items.push({ t: 'rect', x: pad - 10, y: y0 - 4, w: W - 2 * pad + 20, h: y1 - y0 + 8, r: 8, fill: c, opacity: 0.08, ui: true });
       items.push({ t: 'rect', x: pad - 10, y: y0 - 4, w: W - 2 * pad + 20, h: y1 - y0 + 8, r: 8, fill: 'none', stroke: c, sw: 2, ui: true });
@@ -837,7 +941,7 @@ function buildScene(state, opts) {
   }
   (opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : []).forEach(sid => {
     const n = info.find(n => n.row.id === sid);
-    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: S.primary, opacity: 0.09, ui: true });
+    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: hi, opacity: 0.09, ui: true });
   });
 
   // ---- milestone guide lines
@@ -872,7 +976,7 @@ function buildScene(state, opts) {
   // ---- rows
   info.forEach(n => {
     const row = n.row, id = row.id;
-    const base = palette[n.rootIdx % palette.length];
+    const base = baseOf(n);
     const name = row.name || 'Untitled';
     const size = n.level === 2 ? fs - 1 : fs;
     const group = isGroup(n);
@@ -913,7 +1017,9 @@ function buildScene(state, opts) {
       if (n.who) items.push({ t: 'text', x: n.who.x, y: n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2 + 8, text: n.who.text, size: n.who.size, weight: 500, fill: muted, anchor: 'start' });
       return;
     }
-    const full = n.level === 2 ? mix(base, surface, 0.42) : base;
+    // subtask bars are a lighter tint, but never so light that the label colour has to change
+    const subFill = pal.text === 'light' ? lightenFor(base, TEXT_LIGHT, 4.5) : pal.text === 'dark' ? mix(base, '#ffffff', 0.35) : mix(base, surface, 0.42);
+    const full = n.level === 2 ? subFill : base;
     const soft = n.level === 2 ? mix(base, surface, 0.8) : mix(base, surface, 0.62);
     const h = n.bh, by = n.cy - h / 2, r = radius(h);
     if (n.milestone) {
@@ -932,7 +1038,7 @@ function buildScene(state, opts) {
         const tw = M(shown, size, 500);
         const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
         // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
-        const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : on(full);
+        const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
         const it = { t: 'text', x: n.bx + (n.fit != null ? 7 : 9), y: n.cy, text: shown, size, weight: 500, fill: onFull, anchor: 'start' };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
         if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
@@ -979,9 +1085,9 @@ function buildScene(state, opts) {
     items.push({ t: 'rect', x: tx - 6, y: laneY + 20, w: 12, h: bodyEnd - laneY - 20, hit: true, role: 'today' });
   }
 
-  if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: S.primary, ui: true }); }
+  if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed };
 }
 
-if (typeof module !== 'undefined') module.exports = { parseImport, parseDate, derive, normalizeLevels, areaPalette, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
