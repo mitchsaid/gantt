@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v34 · 11 Nov';
+const APP_VERSION = 'v35 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -273,7 +273,7 @@ const DEFAULT_SETTINGS = {
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
-  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, stripes: false, weekends: true,
+  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
 };
 
 function newRow(p) {
@@ -1166,8 +1166,17 @@ function buildScene(state, opts) {
       const inset = n.bw > 10 ? 1.5 : 0; // a sliver of space each side, so bars that meet still read as separate
       const gx = n.bx + inset, gw = n.bw - 2 * inset;
       const pw = prog * gw;
-      if (tracked) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: soft });
-      if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: full });
+      // "Darker finished": every bar keeps its palette colour (and its label colour); the finished part is a deeper shade of it
+      const shaded = tracked && S.progressStyle === 'shade';
+      let deep = full;
+      if (shaded) {
+        const lightLabel = S.barText === 'light' || (S.barText !== 'dark' && pal.text !== 'dark');
+        let sh = 0.26;
+        if (!lightLabel) while (sh > 0 && contrast(mix(full, '#0b1020', sh), '#0b1020') < 7) sh -= 0.04; // darker must not cost a dark label its contrast
+        deep = mix(full, '#0b1020', Math.max(sh, 0));
+      }
+      if (tracked) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: shaded ? full : soft });
+      if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: shaded ? deep : full });
       const lsz = n.shrink || size;
       const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
       // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
@@ -1182,7 +1191,7 @@ function buildScene(state, opts) {
           const tw = M(shown, lsz, 500);
           const it = { t: 'text', x: n.bx + (n.fit != null ? 0.8 : 1) * (n.ip || 10), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
           // a label that straddles the progress edge is drawn in two colours, split at that edge
-          if (tracked && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
+          if (tracked && !shaded && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
             if (pw <= (n.ip || 10)) it.fill = on(soft);
             else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= (n.ip || 10) + tw * 0.5 ? it.fill : it.fill2; }
           }

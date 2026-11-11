@@ -854,6 +854,8 @@ const DESIGN = [
   ]],
   ['Show', [
     { k: 'progress', type: 'toggle', label: 'Progress in bars' },
+    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
+    { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
     { k: 'todayLine', type: 'toggle', label: '“We are here” line' },
     { k: 'todayLabel', type: 'text', label: 'Label', sub: true, ph: 'No label', when: s => s.todayLine },
     { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
