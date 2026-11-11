@@ -215,6 +215,7 @@ function renderChart() {
   if (drag && drag.range) o.range = drag.range;
   if (drag && drag.dropY != null) { o.dropY = drag.dropY; o.dropLevel = drag.dropLevel; }
   if (drag && drag.toRow != null) o.rowHi = drag.toRowY;
+  if (drag && drag.dropBox && drag.dropY != null) o.dropBox = drag.dropBox;
   scene = buildScene(state, o);
   svg.setAttribute('viewBox', `0 0 ${scene.w} ${scene.h}`);
   svg.setAttribute('font-family', `'${scene.font}', system-ui, sans-serif`);
@@ -567,6 +568,10 @@ outline.addEventListener('pointerdown', e => {
     line.hidden = stay && lv === lv0;
     line.style.top = (stay ? els[i].getBoundingClientRect().top : ref) - ob.top - 2 + 'px';
     line.style.left = 28 + lv * 14 + 'px';
+    // outline the row it would land inside
+    $$('.orow.drop-into', outline).forEach(el => el.classList.remove('drop-into'));
+    const pi = dropParentIndex(i, k, lv);
+    if (pi >= 0 && !line.hidden && pi !== derive(state.rows)[i].parent) els[pi].classList.add('drop-into');
     const bb = body.getBoundingClientRect();
     if (y < bb.top + 30) body.scrollTop -= 12; else if (y > bb.bottom - 30) body.scrollTop += 12;
   };
@@ -610,6 +615,15 @@ svg.addEventListener('pointerdown', e => {
   else if (role === 'row') { drag.i = n.i; drag.lv0 = n.level; }
 });
 /** work out where the dragged row (with everything inside it) would land, and show a drop line there */
+/** index of the row a block would end up inside if dropped before row k at `level` (-1 = the top level) */
+function dropParentIndex(i, k, level) {
+  const rows = state.rows, j = blockEnd(rows, i), stay = k >= i && k <= j;
+  for (let q = (stay ? i : k) - 1; q >= 0; q--) {
+    if (q >= i && q < j) continue; // the dragged rows themselves
+    if (rows[q].level < level) return q;
+  }
+  return -1;
+}
 function reorderTarget(dx, y) {
   const info = scene.info;
   let k = info.length;
@@ -620,6 +634,13 @@ function reorderTarget(dx, y) {
   drag.dropLevel = dropLevelFor(drag.i, k, drag.lv0 + Math.round(dx / 24));
   const at = stay ? drag.i : k;
   drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  // dropping somewhere new inside an area: outline that area
+  const pi = dropParentIndex(drag.i, k, drag.dropLevel);
+  drag.dropBox = null;
+  if (pi >= 0 && drag.dropY != null && pi !== info[drag.i].parent) {
+    const blk = info.slice(pi, blockEnd(state.rows, pi));
+    drag.dropBox = { id: state.rows[pi].id, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.lane ? n.y + n.h : n.y + scene.rowH))) };
+  }
 }
 svg.addEventListener('pointermove', e => {
   if (!drag) return;

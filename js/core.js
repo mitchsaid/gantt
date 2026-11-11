@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v13 · 11 Nov';
+const APP_VERSION = 'v14 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -824,6 +824,17 @@ function buildScene(state, opts) {
 
   // ---- selection highlight & drop indicator (interactive only)
   if (opts.rowHi != null) items.push({ t: 'rect', x: pad - 10, y: opts.rowHi, w: W - 2 * pad + 20, h: rowH, r: 6, fill: S.primary, opacity: 0.2, ui: true });
+  if (opts.dropBox) { // while dragging: outline the area (or task) the item would land inside, so “into” can't be mistaken for “above”
+    const pn = info.find(n => n.row.id === opts.dropBox.id);
+    if (pn) {
+      const c = palette[pn.rootIdx % palette.length], { y0, y1 } = opts.dropBox;
+      const label = fitText('Into ' + (pn.row.name || 'Untitled'), 260, 12, 700, font), lw = M(label, 12, 700) + 20;
+      items.push({ t: 'rect', x: pad - 10, y: y0 - 4, w: W - 2 * pad + 20, h: y1 - y0 + 8, r: 8, fill: c, opacity: 0.08, ui: true });
+      items.push({ t: 'rect', x: pad - 10, y: y0 - 4, w: W - 2 * pad + 20, h: y1 - y0 + 8, r: 8, fill: 'none', stroke: c, sw: 2, ui: true });
+      items.push({ t: 'rect', x: x1 + 10 - lw - 8, y: y0 - 2, w: lw, h: 21, r: 10.5, fill: c, ui: true });
+      items.push({ t: 'text', x: x1 + 10 - lw / 2 - 8, y: y0 + 8.5, text: label, size: 12, weight: 700, fill: onColor(c), anchor: 'middle', ui: true });
+    }
+  }
   (opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : []).forEach(sid => {
     const n = info.find(n => n.row.id === sid);
     if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: S.primary, opacity: 0.09, ui: true });
