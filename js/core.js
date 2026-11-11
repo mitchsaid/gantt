@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v19 · 11 Nov';
+const APP_VERSION = 'v20 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -726,6 +726,8 @@ function buildScene(state, opts) {
   const barMid = rowH / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
   rowH += subLine;
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
+  // room between a bar's edge and the name inside it: it grows with the text, and with how round the ends are (a pill's curve eats into the space)
+  const padFor = h => Math.round(Math.max(10, fs * 0.62) + (S.corners === 'pill' ? radius(h) * 0.45 : S.corners === 'rounded' ? radius(h) * 0.25 : 0));
   const isGroup = n => n.level === 0 && n.hasKids;
   const left = S.taskLabels === 'left' && !pack; // task names in a column on the left, otherwise on the bars
   const lanes = S.areaLabels === 'side' && info.some(isGroup); // areas named down the side, spanning their rows
@@ -877,13 +879,14 @@ function buildScene(state, opts) {
       }
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
-        if (!n.milestone && w + 18 <= bw) n.inside = true;
+        const ip = padFor(h); n.ip = ip;
+        if (!n.milestone && w + 2 * ip <= bw) n.inside = true;
         else if (!n.milestone && overflow !== 'outside') { // keep the name on the bar: wrapped, shrunk or shortened
           n.inside = true;
-          const lf = labelFit(name, Math.max(0, bw - 18), size, 500, h >= size * 2 + 4);
+          const lf = labelFit(name, Math.max(0, bw - 2 * ip), size, 500, h >= size * 2 + 4);
           n.lines = lf.lines; n.shrink = lf.size !== size ? lf.size : null;
         } else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
-        else { n.inside = true; n.fit = Math.max(0, bw - 14); } // no room beside it: shorten the name to fit the bar
+        else { n.inside = true; n.fit = Math.max(0, bw - 1.6 * ip); } // no room beside it: shorten the name to fit the bar
       } else if (n.milestone && !relative) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
         n.tail.push({ k: 'date', x: tx, w, text: t }); tx += w + 12;
@@ -1107,16 +1110,16 @@ function buildScene(state, opts) {
       // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
       const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
       if (n.inside && n.lines && n.lines.length > 1) {
-        n.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: n.bx + 9, y: n.cy + (li - (n.lines.length - 1) / 2) * lsz * 1.15, text: ln, size: lsz, weight: 500, fill: onFull, anchor: 'start' }));
+        n.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: n.bx + (n.ip || 10), y: n.cy + (li - (n.lines.length - 1) / 2) * lsz * 1.15, text: ln, size: lsz, weight: 500, fill: onFull, anchor: 'start' }));
       } else {
         const shown = n.lines ? n.lines[0] : n.fit != null ? fitText(name, n.fit, lsz, 500, font) : name;
         if (n.inside && shown) {
           const tw = M(shown, lsz, 500);
-          const it = { t: 'text', x: n.bx + (n.fit != null ? 7 : 9), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
+          const it = { t: 'text', x: n.bx + (n.fit != null ? 0.8 : 1) * (n.ip || 10), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
           // a label that straddles the progress edge is drawn in two colours, split at that edge
-          if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
-            if (pw <= 9) it.fill = on(soft);
-            else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= 9 + tw * 0.5 ? it.fill : it.fill2; }
+          if (S.progress && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
+            if (pw <= (n.ip || 10)) it.fill = on(soft);
+            else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= (n.ip || 10) + tw * 0.5 ? it.fill : it.fill2; }
           }
           items.push(it);
         }
