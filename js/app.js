@@ -918,6 +918,9 @@ const DESIGN = [
     { k: '_markerNote', type: 'note', label: 'Turn on the date marker (Timeline → Markers) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
     { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
     { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
+    { k: 'daysLeft', type: 'toggle', label: 'Days left' },
+    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one) to the end of each item.', when: s => s.daysLeft },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
@@ -977,7 +980,7 @@ function designSummary(id, S) {
   const cv = canvasOf(S);
   if (id === 'canvas') return `${cv.name} · ${S.fit === 'fixed' ? 'fixed height' : 'fits content'}`;
   if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks', S.todayLine ? 'date marker' : ''].filter(Boolean).join(' · ');
-  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
+  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.daysLeft ? 'days left' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
   if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
   if (id === 'text') return `${S.font}${S.textAuto === false ? ' · ' + S.textPt + ' pt' : ''}`;
   return '';

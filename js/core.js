@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v51 · 11 Nov';
+const APP_VERSION = 'v52 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  daysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -347,6 +347,14 @@ function derive(rows) {
     if (n.end < n.start) n.end = n.start;
   }
   return info;
+}
+/** days after `from` up to and including `to`; optionally only Monday–Friday */
+function daysLeftBetween(from, to, weekdaysOnly) {
+  if (to <= from) return 0;
+  if (!weekdaysOnly) return to - from;
+  let n = 0;
+  for (let d = from + 1; d <= to; d++) if (dow(d) < 5) n++;
+  return n;
 }
 /** compare every item with its baseline (the dates it was set to when the baseline was taken); parents compare their rolled-up span */
 function markChanges(info) {
@@ -1028,6 +1036,11 @@ function buildScene(state, opts) {
           if (tx + w <= lim) { n.tail.push({ k: 'who', x: tx, w, av, nm }); tx += w + 10; }
         }
       }
+      if (S.daysLeft && n.end >= todayD) { // "5 days left": from the date marker's date to the item's end
+        const dl = daysLeftBetween(todayD, n.end, S.daysLeftWeekdays), unit = S.daysLeftWeekdays ? 'workday' : 'day';
+        const txt = n.end === todayD ? 'Due today' : dl === 1 ? `1 ${unit} left` : `${dl} ${unit}s left`, w = M(txt, size - 1.5, 500);
+        if (tx + w <= lim) { n.tail.push({ k: 'left', x: tx, w, text: txt }); tx += w + 10; }
+      }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
       n.tailStart = n.milestone ? msX(n) - h * 0.52 - 4 : bx;
       if (fixed && n.tail.length && n.tailEnd > x1) { // no room on a fixed timeline: put the text before the bar instead
@@ -1315,7 +1328,7 @@ function buildScene(state, opts) {
     }
     n.tail.forEach(t => {
       if (t.k === 'name') items.push({ t: 'text', x: t.x, y: n.cy, text: name, size, weight: n.milestone ? 600 : 500, fill: text, anchor: 'start' });
-      else if (t.k === 'date') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
+      else if (t.k === 'date' || t.k === 'left') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       else if (t.k === 'badge') {
         items.push({ t: 'rect', x: t.x, y: n.cy - t.w / 2, w: t.w, h: t.w, r: t.w / 2, fill: base });
         items.push({ t: 'text', x: t.x + t.w / 2, y: n.cy, text: String(t.no), size: Math.max(8, Math.round(8.5 * kk * 2) / 2), weight: 700, fill: onColor(base), anchor: 'middle' });
@@ -1373,4 +1386,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
