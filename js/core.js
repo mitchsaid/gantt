@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v27 · 11 Nov';
+const APP_VERSION = 'v29 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -262,7 +262,7 @@ const DEFAULT_SETTINGS = {
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
-  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, grid: true, stripes: false, weekends: true,
+  font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, stripes: false, weekends: true,
 };
 
 function newRow(p) {
@@ -697,9 +697,8 @@ function buildScene(state, opts) {
   const tierOf = f => Math.round(26 * f / 14);
   const subLineOf = f => (S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? Math.round(15 * f / 14) : 0); // owners under the bars take a line of their own
   const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
-  let rowH = { compact: 30, regular: 38, roomy: 48 }[S.density];
-  if (!rowH) {
-    // auto: size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
+  let rowH = 0;
+  { // the baseline (Auto): size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
     const grp = n => n.level === 0 && n.hasKids;
     const side = S.areaLabels === 'side' && info.some(grp);
     let gaps = 0;
@@ -718,10 +717,13 @@ function buildScene(state, opts) {
       f = fsOf(rowH);
     }
   }
+  // Compact and Roomy are steps either side of that baseline, so they always sit in order around Auto whatever the plan or canvas
+  rowH = Math.max(rowH, Math.ceil(fsOf(rowH) * 2.4)); // the baseline always fits its text — even on a canvas that can't hold the plan
+  rowH = Math.round(clamp(rowH * ({ compact: 0.78, roomy: 1.3 }[S.density] || 1), 26, 120));
   const fs = fsOf(rowH);
   const kk = fs / 14; // whatever was sized for 14px text scales with it
   const subLine = subLineOf(fs), dd = Math.round(18 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
-  rowH = Math.max(rowH, Math.ceil(fs * 2.4)); // rows always fit their text
+  rowH = Math.max(rowH, Math.ceil(fs * 2.2)); // and no row is too tight for its text
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
   const barMid = rowH / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
@@ -973,10 +975,12 @@ function buildScene(state, opts) {
     }
   }
   const cellW = Math.max(...cells.map(c => c[1] - c[0])) * ppd;
-  if (S.grid) {
+  if (S.gridCells !== false) { // a line at each period (day, week, sprint…)
     const every = cellW < 7 ? Math.ceil(7 / cellW) : 1;
     const weekly = S.scale === 'days' && cellW < 16;
     cells.forEach((c, i) => { if (i > 0 && (weekly ? dow(c[0]) === 0 : i % every === 0)) items.push({ t: 'line', x1: X(c[0]), y1: bodyY, x2: X(c[0]), y2: bodyEnd, stroke: grid, sw: 1 }); });
+  }
+  if (S.gridMonths !== false) { // a stronger line where each month (or year, on a monthly scale) begins
     segs.forEach(sg => { if (sg.real && sg.s > rs) items.push({ t: 'line', x1: X(sg.s), y1: bodyY, x2: X(sg.s), y2: bodyEnd, stroke: gridStrong, sw: 1 }); });
   }
 

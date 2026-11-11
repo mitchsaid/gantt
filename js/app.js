@@ -64,6 +64,9 @@ function sanitize(st) {
     st.settings.palette = same ? PRESETS[0] : { id: 'custom', name: 'Custom', text: 'auto', seed: p, colors: areaPalette(p, old.secondaryOn === false ? null : parseColor(old.secondary), 6) };
   }
   if (!['light', 'dark', 'auto'].includes(st.settings.palette.text)) st.settings.palette = Object.assign({}, st.settings.palette, { text: 'auto' });
+  if (st.settings.density === 'regular') st.settings.density = 'auto'; // Regular was a fixed height; the steps are now relative to Auto
+  if (old.grid === false && old.gridCells == null) { st.settings.gridCells = false; st.settings.gridMonths = false; } // one Gridlines switch became two
+  delete st.settings.grid;
   const oldLabels = st.settings.labels; // earlier versions had one combined setting
   if (oldLabels) { st.settings.taskLabels = oldLabels === 'left' ? 'left' : 'bars'; st.settings.areaLabels = oldLabels === 'lanes' ? 'side' : 'row'; delete st.settings.labels; }
   st.rows = st.rows.filter(r => r && typeof r === 'object').map(r => {
@@ -878,8 +881,9 @@ const DESIGN = [
   ]],
   ['Style', [
     { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
-    { k: 'density', type: 'seg', label: 'Row height', col: true, opts: [['auto', 'Auto'], ['compact', 'Compact'], ['regular', 'Regular'], ['roomy', 'Roomy']] },
-    { k: 'grid', type: 'toggle', label: 'Gridlines' },
+    { k: 'density', type: 'seg', label: 'Row height', opts: [['compact', 'Compact'], ['auto', 'Auto'], ['roomy', 'Roomy']] },
+    { k: 'gridCells', type: 'toggle', label: 'Period lines' },
+    { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
     { k: 'stripes', type: 'toggle', label: 'Row stripes' },
     { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
   ]],
@@ -912,6 +916,10 @@ function buildDesign() {
 function syncDesign() {
   const S = state.settings;
   syncPalette();
+  // the gridline switches are named for what they actually draw at this scale
+  const gc = $('[data-w="gridCells"] .lbl', designEl), gm = $('[data-w="gridMonths"] .lbl', designEl);
+  if (gc) gc.textContent = { days: 'Day lines', weeks: 'Week lines', sprints: 'Sprint lines', months: 'Month lines', quarters: 'Quarter lines' }[S.scale] || 'Period lines';
+  if (gm) gm.textContent = S.scale === 'months' || S.scale === 'quarters' ? 'Year lines' : 'Month lines';
   $$('[data-w]', designEl).forEach(w => { const c = designCtl[w.dataset.w]; w.hidden = !!(c.when && !c.when(S)); });
   $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(S[seg.dataset.k]) === b.dataset.v)));
   // in-sequence rows always carry names on the bars: show that, and lock the choice
