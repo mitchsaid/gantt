@@ -56,6 +56,7 @@ function sanitize(st) {
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  st.settings.daysOff = (Array.isArray(st.settings.daysOff) ? st.settings.daysOff : []).filter(r => r && Number.isFinite(+r.from)).slice(0, 60).map(r => { const f = Math.round(+r.from); return { from: f, to: Math.max(f, Number.isFinite(+r.to) ? Math.round(+r.to) : f), label: String(r.label || '').slice(0, 40) }; });
   if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
   if (old.todayLabel === '' && old.markerLabelOn == null) { st.settings.markerLabelOn = false; st.settings.todayLabel = 'Today'; } // an empty label used to mean none
   if (old.canvas == null) st.settings.canvas = old.width === 'compact' ? 'slide43' : 'slide169'; // the old Slide / Report formats
@@ -921,7 +922,8 @@ const DESIGN = [
     { k: 'daysLeft', type: 'toggle', label: 'Days left' },
     { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
     { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
+    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
@@ -968,6 +970,7 @@ function buildDesign() {
       else if (c.type === 'info') html += `<p class="ctl-note" id="${c.id}" data-w="${c.k}"></p>`;
       else if (c.type === 'markercolor') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="swatches mk-sw"></div></div>`;
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
+      else if (c.type === 'daysoff') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="off-list" id="off-list"></div><div class="off-add"><input class="inp" type="date" id="off-from" aria-label="From"><input class="inp" type="date" id="off-to" aria-label="To (optional)" title="To (optional, for a range)"><input class="inp off-name" id="off-name" placeholder="Label (optional)" maxlength="40" autocomplete="off"><button class="btn ghost" data-act="off-add">Add</button></div></div>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
       else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
@@ -975,6 +978,27 @@ function buildDesign() {
     html += '</div></section>';
   });
   designEl.innerHTML = html;
+}
+/** non-working days (holidays, company freezes): never counted by the days-left annotations */
+function syncDaysOff() {
+  const list = $('#off-list', designEl);
+  if (!list) return;
+  const off = state.settings.daysOff || [], sig = JSON.stringify(off);
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = off.map((r, i) => `<span class="off-chip"><span>${r.from === r.to ? shortDate(r.from) : shortDate(r.from) + ' – ' + shortDate(r.to)}${r.label ? ' · ' + esc(r.label) : ''}</span><button class="x-btn" data-act="off-del" data-i="${i}" title="Remove" aria-label="Remove">✕</button></span>`).join('');
+}
+function daysOffAction(btn) {
+  const S = state.settings, off = (S.daysOff || []).slice();
+  if (btn.dataset.act === 'off-del') { off.splice(+btn.dataset.i, 1); setSetting('daysOff', off); return; }
+  if (btn.dataset.act !== 'off-add') return;
+  const f = isoToDay($('#off-from', designEl).value), t = isoToDay($('#off-to', designEl).value);
+  if (f == null) { const el = $('#off-from', designEl); el.classList.add('bad'); el.focus(); setTimeout(() => el.classList.remove('bad'), 900); return; }
+  const a = Math.min(f, t == null ? f : t), z = Math.max(f, t == null ? f : t);
+  off.push({ from: a, to: z, label: $('#off-name', designEl).value.trim().slice(0, 40) });
+  off.sort((x, y) => x.from - y.from);
+  ['#off-from', '#off-to', '#off-name'].forEach(q => { $(q, designEl).value = ''; });
+  setSetting('daysOff', off.slice(0, 60));
 }
 /** one line per section, shown when it is collapsed */
 function designSummary(id, S) {
@@ -1018,6 +1042,7 @@ function syncDesign() {
     const cv = scene.canvas, f = x => (Math.round(x * 100) / 100).toString();
     const ci = $('#canvas-info'), ti = $('#text-info');
     if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
+    syncDaysOff();
     const bi = $('#base-info');
     if (bi && S.showChanges) { const c = scene.info.filter(n => n.changed && !n.isArea).length; bi.textContent = `${S.baselineDate != null ? 'Baseline from ' + shortDate(S.baselineDate) + ' · ' : ''}${c} ${c === 1 ? 'item has' : 'items have'} changed.`; }
     if (ti) ti.textContent = `Names ${f(scene.fs * 0.75)} pt · dates ${f(scene.hs2 * 0.75)} pt, on a ${f(cv.w)} in wide canvas.`;
@@ -1053,6 +1078,8 @@ function setSetting(k, v, soon) {
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
+  const offAct = e.target.closest('[data-act^="off-"]');
+  if (offAct) { daysOffAction(offAct); return; }
   const peBtn = e.target.closest('[data-pe]');
   if (peBtn) { peUi.sel = +peBtn.dataset.pe; syncPalEditor(); return; }
   const peAct = e.target.closest('[data-act^="pe-"]');

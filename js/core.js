@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v57 · 11 Nov';
+const APP_VERSION = 'v58 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -364,11 +364,16 @@ function titleCase(s) {
 }
 const applyCase = (s, mode) => (mode === 'upper' ? String(s).toUpperCase() : mode === 'title' ? titleCase(s) : s);
 /** days after `from` up to and including `to`; optionally only Monday–Friday */
-function daysLeftBetween(from, to, weekdaysOnly) {
+function daysLeftBetween(from, to, weekdaysOnly, off) { // `off`: [{ from, to }] days that never count (holidays, freezes)
   if (to <= from) return 0;
-  if (!weekdaysOnly) return to - from;
+  const ranges = off && off.length ? off : null;
+  if (!weekdaysOnly && !ranges) return to - from;
   let n = 0;
-  for (let d = from + 1; d <= to; d++) if (dow(d) < 5) n++;
+  for (let d = from + 1; d <= to; d++) {
+    if (weekdaysOnly && dow(d) >= 5) continue;
+    if (ranges && ranges.some(r => d >= r.from && d <= r.to)) continue;
+    n++;
+  }
   return n;
 }
 /** compare every item with its baseline (the dates it was set to when the baseline was taken); parents compare their rolled-up span */
@@ -1141,7 +1146,7 @@ function buildScene(state, opts) {
         }
       }
       if (S.daysLeft && n.end >= todayD) { // "5 days left": from the date marker's date to the item's end
-        const dl = daysLeftBetween(todayD, n.end, S.daysLeftWeekdays), unit = S.daysLeftWeekdays ? 'workday' : 'day';
+        const dl = daysLeftBetween(todayD, n.end, S.daysLeftWeekdays, S.daysOff), unit = S.daysLeftWeekdays ? 'workday' : 'day';
         const txt = n.end === todayD ? 'Due today' : dl === 1 ? `1 ${unit} left` : `${dl} ${unit}s left`, w = M(txt, size - 1.5, 500);
         if (tx + w <= lim) { n.tail.push({ k: 'left', x: tx, w, text: txt }); tx += w + 10; }
       }
@@ -1489,7 +1494,7 @@ function buildScene(state, opts) {
 
   // ---- days left for the whole plan: a soft pill beside the marker's label, or at the top right when there is no marker on show
   if (S.planDaysLeft) {
-    const planEnd = Math.max(...info.map(n => n.end)), unit = S.daysLeftWeekdays ? 'workday' : 'day', cnt = daysLeftBetween(todayD, planEnd, S.daysLeftWeekdays);
+    const planEnd = Math.max(...info.map(n => n.end)), unit = S.daysLeftWeekdays ? 'workday' : 'day', cnt = daysLeftBetween(todayD, planEnd, S.daysLeftWeekdays, S.daysOff);
     const msg = todayD > planEnd ? 'Plan ended' : todayD === planEnd ? 'Ends today' : cnt === 1 ? `1 ${unit} left` : `${cnt} ${unit}s left`;
     const pc = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
     const pf = mix(pc, surface, 0.86), pw = M(msg, 11 * kk, 700) + 18;
