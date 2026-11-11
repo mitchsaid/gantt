@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v39 · 11 Nov';
+const APP_VERSION = 'v40 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -772,7 +772,7 @@ function buildScene(state, opts) {
   let labelW = 0, laneW = 0;
   const indentOf = n => (lanes ? Math.max(0, n.level - 1) : n.level) * 16;
   if (lanes) {
-    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(n.row.name || 'Untitled', fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(n.row.assignee, fs - 1.5, 500) : 0); });
+    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(n.row.name || 'Untitled', fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(n.row.assignee, fs - 1.5, 500) + (avOn ? Math.round(16 * kk) + 6 : 0) : 0); });
     laneW = clamp(laneW, 70, W * 0.2) + 28;
   }
   if (left) {
@@ -1133,7 +1133,14 @@ function buildScene(state, opts) {
       const ow = showAssignee(n) ? row.assignee : '';
       const lf = labelFit(name, laneW - 22, fs + 1, 700, true), nl = lf.lines.length, off = ow ? -8 * kk : 0;
       lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: pad, y: n.cy + off + (li - (nl - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' }));
-      if (ow) items.push({ t: 'text', x: pad, y: n.cy + (9 + (nl - 1) * lf.size * 0.6) * kk, text: fitText(ow, laneW - 22, fs - 1.5, 500, font), size: fs - 1.5, weight: 500, fill: muted, anchor: 'start' });
+      if (ow) {
+        const oy = n.cy + (9 + (nl - 1) * lf.size * 0.6) * kk, d = dU, av = avOn ? d + 6 : 0;
+        if (avOn) {
+          items.push({ t: 'rect', x: pad, y: oy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
+          items.push({ t: 'text', x: pad + d / 2, y: oy, text: initials(ow).slice(0, 2), size: 7.5 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+        }
+        items.push({ t: 'text', x: pad + av, y: oy, text: fitText(ow, laneW - 22 - av, fs - 1.5, 500, font), size: fs - 1.5, weight: 500, fill: muted, anchor: 'start' });
+      }
       items.push({ t: 'rect', x: pad + laneW - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
       items.push({ t: 'rect', x: pad - 10, y: n.y, w: laneW - 4, h: n.h, hit: true, id, role: 'row' });
       return;
