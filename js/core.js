@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v62 · 11 Nov';
+const APP_VERSION = 'v63 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -234,23 +234,20 @@ function parseColor(s) {
 }
 const validPalette = p => !!(p && Array.isArray(p.colors) && p.colors.length > 0 && p.colors.length <= 16 && p.colors.every(c => /^#[0-9a-f]{6}$/i.test(c)));
 
-const vivid = [250, 305, 350, 40, 95, 150, 200].map(h => okHex(0.55, 0.16, h * D2R));
-// Every palette is built so neighbouring colours are clearly different (at least ~0.09 apart in OKLab, ~0.1 for most), not just
-// shades of one hue: the label-contrast limit pins lightness, so distinction comes from spreading hue and tone together.
-// `loose` keeps each colour's own darkness (only capping it for label contrast) instead of squeezing them into one tonal band.
+// Palettes are categorical, like the ones in popular Gantt and mind-map tools: each colour a clearly different hue (about 0.13+ apart
+// in OKLab, where ~0.05 is "different side by side"), not a blend from one shade into the next. The label-contrast limit pins lightness,
+// so the distinction comes from spreading hue. The last colour is kept for milestones, so it is a calm neutral where it can be.
+// `loose` keeps each colour's own darkness (only capping it for label contrast); `auto` keeps colours exactly and picks labels per bar.
 const PRESETS = [
-  { id: 'indigo', name: 'Indigo bloom', text: 'light', loose: true, colors: ['#4f46e5', '#9b27e8', '#a0208f', '#d81b60', '#0b73bd'] },
-  { id: 'ocean', name: 'Ocean', text: 'light', loose: true, colors: ['#1d4ed8', '#3d7a8d', '#3b3793', '#005542', '#005a83'] },
-  { id: 'forest', name: 'Forest', text: 'light', loose: true, colors: ['#15803d', '#0d7c8a', '#7a6a00', '#0f4c3a', '#8a4b1f'] },
-  { id: 'sunset', name: 'Sunset', text: 'light', loose: true, colors: ['#c2410c', '#d9195d', '#a323a8', '#7544e0', '#7a3a07'] },
-  { id: 'berry', name: 'Berry', text: 'light', loose: true, colors: ['#7e22ce', '#c4365f', '#2d2bc0', '#c21fb4', '#8a1238'] },
+  { id: 'bold', name: 'Bold', text: 'light', loose: true, colors: ['#1d6fdc', '#cd4102', '#098436', '#8f2fd3', '#b01e5b', '#8a6a00', '#334155'] },
+  { id: 'spectrum', name: 'Spectrum', text: 'light', loose: true, colors: ['#00747d', '#d31c37', '#305cea', '#875c04', '#823c96', '#02850a', '#334155'] },
+  { id: 'mindmap', name: 'Mind map', text: 'light', loose: true, colors: ['#dc1d5b', '#2563eb', '#008437', '#c04f07', '#7c3aed', '#067d92', '#334155'] },
+  { id: 'cbsafe', name: 'Colour-blind safe', text: 'auto', colors: ['#0072b2', '#d55e00', '#009e73', '#cc79a7', '#e69f00', '#56b4e9', '#444444'] },
+  { id: 'corporate', name: 'Corporate', text: 'light', loose: true, colors: ['#1e40af', '#0f766e', '#b45309', '#7c3aed', '#be123c', '#475569', '#0f172a'] },
   { id: 'earth', name: 'Earth', text: 'light', loose: true, colors: ['#8e3b12', '#3f7d20', '#1d5c63', '#b3265c', '#a16207'] },
-  { id: 'corporate', name: 'Corporate', text: 'light', colors: ['#1e3a8a', '#0f766e', '#374151', '#7c2d12', '#4338ca'] },
-  { id: 'slate', name: 'Slate', text: 'light', loose: true, colors: ['#1c2430', '#4b5563', '#0f7a6e', '#646fa7', '#2c3a62'] },
-  { id: 'vivid', name: 'Vivid', text: 'light', colors: vivid },
   { id: 'pastel', name: 'Pastel', text: 'dark', colors: ['#c4b5fd', '#fbcfe8', '#a7f3d0', '#fde68a', '#bae6fd'] },
   { id: 'candy', name: 'Candy', text: 'dark', colors: ['#fda4af', '#fdba74', '#fde047', '#86efac', '#7dd3fc', '#c4b5fd'] },
-].map(p => Object.assign({}, p, { colors: fixPalette(p.colors, p.text, false, p.loose) }));
+].map(p => Object.assign({}, p, { colors: p.text === 'auto' ? p.colors : fixPalette(p.colors, p.text, false, p.loose) }));
 const paletteOf = S => (validPalette(S && S.palette) ? S.palette : PRESETS[0]);
 /** which palette slot a row uses: its own choice, else its parent's, else its area's turn */
 function colorIndexOf(info, n) { // a palette slot (number) or, if set by hand, any colour (a '#rrggbb' string)
