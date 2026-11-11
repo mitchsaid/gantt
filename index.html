@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=66">
+<link rel="stylesheet" href="css/style.css?v=67">
 </head>
 <body>
 <header class="topbar">
@@ -54,7 +54,20 @@
         <button class="chip-btn" data-add="milestone">+ Milestone</button>
       </div>
       <div class="paste-row"><button class="link-btn" data-paste><svg viewBox="0 0 24 24"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>Paste a list of tasks…</button></div>
-      <p class="hint">Drag <span class="grip-demo">⋮⋮</span> to reorder, or sideways to nest. <kbd>Enter</kbd> adds a row, <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indents. Shift- or Ctrl/⌘-click to select several, then Ctrl+C / Ctrl+V to copy and paste (Ctrl+D duplicates). Paste several lines into a name to add them all. Use ▾ on a row to edit its dates and details; on the chart, drag bars to move or resize them. Subtasks have thinner bars, smaller text and tighter rows so they read as detail under their task.</p>
+      <details class="tips" id="tips" open>
+        <summary>Tips &amp; shortcuts</summary>
+        <ul class="tip-list">
+          <li><span class="tip-k"><span class="grip-demo">⋮⋮</span></span><span>Drag to reorder, or sideways to nest</span></li>
+          <li><span class="tip-k"><kbd>Enter</kbd></span><span>Add a row under the selected one</span></li>
+          <li><span class="tip-k"><kbd>Shift+Enter</kbd></span><span>Add a subtask inside it</span></li>
+          <li><span class="tip-k"><kbd>Tab</kbd><kbd>Shift+Tab</kbd></span><span>Indent, outdent</span></li>
+          <li><span class="tip-k"><kbd>Shift</kbd><kbd data-mod>Ctrl</kbd></span><span>Click to select several</span></li>
+          <li><span class="tip-k"><kbd data-mod>Ctrl</kbd><span class="tip-plus">+</span><kbd>C</kbd><kbd>V</kbd><kbd>D</kbd></span><span>Copy, paste, duplicate</span></li>
+          <li><span class="tip-k">▾</span><span>Edit a row’s dates and details</span></li>
+          <li><span class="tip-k">On the chart</span><span>Drag bars to move them, their ends to resize</span></li>
+          <li><span class="tip-k">Paste lines</span><span>Several lines pasted into a name become several items</span></li>
+        </ul>
+      </details>
     </div>
   </aside>
 
@@ -126,7 +139,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=66"></script>
-<script src="js/app.js?v=66"></script>
+<script src="js/core.js?v=67"></script>
+<script src="js/app.js?v=67"></script>
 </body>
 </html>

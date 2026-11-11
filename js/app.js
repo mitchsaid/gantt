@@ -248,7 +248,7 @@ function renderChart() {
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
   const r = sel && state.rows[rowIndex(sel)];
-  $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : state.rows.length ? 'Adds at the end — select a row to add after it' : '';
+  $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : '';
   syncSelBar();
 }
 
@@ -2260,6 +2260,15 @@ $('#selbar').addEventListener('click', e => {
 });
 
 // ---------------------------------------------------------------- go
+{ // the tips card: ⌘ on a Mac, and it remembers whether it was left open
+  const tips = $('#tips');
+  if (tips) {
+    const mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+    $$('[data-mod]', tips).forEach(k => { k.textContent = mac ? '⌘' : 'Ctrl'; });
+    if (ui.tipsOpen === false) tips.open = false;
+    tips.addEventListener('toggle', () => { ui.tipsOpen = tips.open; saveUi(); });
+  }
+}
 $('#version').textContent = APP_VERSION;
 buildDesign();
 syncUndo();
