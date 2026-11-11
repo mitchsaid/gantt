@@ -1820,10 +1820,25 @@ function setRowProgress(id, v) {
   if (!r) return;
   r.progress = v;
   commit(); refresh();
+  if (v == null) offerProgressReset();
   if (pop && pop.kind === 'row' && pop.id === id) { // a focused popover isn't rebuilt, so bring its progress row up to date
     const rr = $('.range-row', popEl);
     if (rr) { rr.classList.toggle('off', v == null); $('input', rr).value = v == null ? 0 : v; $('output', rr).textContent = v == null ? 'Off' : Math.round(v) + '%'; $('.x-btn', rr).disabled = v == null; }
   }
+}
+/** progress is a chart-wide layer, so clearing the last bar that uses it offers to switch it off everywhere */
+function progressInUse() { return derive(state.rows).some(n => !n.hasKids && !n.milestone && n.row.progress > 0); }
+function offerProgressReset() {
+  if (!state.settings.progress || progressInUse()) return;
+  dialog('Turn progress off everywhere?', 'No bar shows any progress now. You can switch progress off for the whole chart, so existing and new bars go back to plain colours, or keep it on to start tracking again.', [
+    ['Turn off everywhere', 'primary', () => {
+      state.rows.forEach(r => { if (r.progress == null) r.progress = 0; }); // so switching it on again later starts every bar fresh
+      setSetting('progress', false);
+      renderOutline();
+      if (pop && pop.kind === 'row') syncPop();
+    }],
+    ['Keep progress on', 'ghost', null],
+  ]);
 }
 /** where this one milestone sits within its day (otherwise it follows the chart's setting) */
 function msHtml(r) {
