@@ -235,6 +235,7 @@ function renderChart() {
   wrap.classList.toggle('transparent', scene.transparent);
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
   applyZoom();
+  placeSelBar();
   const warn = $('#chart-warn');
   if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Chart'; }
 }
@@ -2147,8 +2148,35 @@ function syncSelBar() {
   const n = selIds().length, bar = $('#selbar');
   if (!bar) return;
   bar.hidden = n < 2;
-  if (n >= 2) $('#selbar-count').textContent = `${n} selected`;
+  if (n >= 2) { $('#selbar-count').textContent = `${n} selected`; placeSelBar(); }
 }
+/** the selection's toolbar floats just above the selected bars (below them if there is no room), kept within view */
+function placeSelBar() {
+  const bar = $('#selbar');
+  if (!bar || bar.hidden) return;
+  const host = bar.offsetParent;
+  if (!host) return;
+  const hr = host.getBoundingClientRect();
+  let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+  selIds().forEach(id => $$(`#chart [data-role="move"][data-id="${id}"]`).forEach(el => {
+    const r = el.getBoundingClientRect();
+    top = Math.min(top, r.top); bottom = Math.max(bottom, r.bottom); left = Math.min(left, r.left); right = Math.max(right, r.right);
+  }));
+  const w = bar.offsetWidth, h = bar.offsetHeight;
+  if (!isFinite(top)) { bar.style.left = Math.round((hr.width - w) / 2) + 'px'; bar.style.top = '14px'; return; }
+  const x = clamp((left + right) / 2 - hr.left - w / 2, 10, Math.max(10, hr.width - w - 10));
+  let y = top - hr.top - h - 12, below = false;
+  if (y < 10) { y = bottom - hr.top + 12; below = true; }
+  y = clamp(y, 10, Math.max(10, hr.height - h - 10));
+  bar.style.left = Math.round(x) + 'px';
+  bar.style.top = Math.round(y) + 'px';
+  bar.classList.toggle('below', below);
+  bar.style.setProperty('--cx', Math.round(clamp((left + right) / 2 - hr.left - x, 18, w - 18)) + 'px'); // a small pointer toward the selection
+}
+let selBarRaf = 0;
+const queueSelBar = () => { if (!selBarRaf) selBarRaf = requestAnimationFrame(() => { selBarRaf = 0; placeSelBar(); }); };
+$('#stage').addEventListener('scroll', queueSelBar, { passive: true });
+window.addEventListener('resize', queueSelBar);
 $('#selbar').addEventListener('click', e => {
   const b = e.target.closest('[data-sel]');
   if (!b) return;
