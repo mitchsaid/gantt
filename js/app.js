@@ -75,6 +75,7 @@ function sanitize(st) {
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
     row.type = row.type === 'milestone' ? 'milestone' : 'task';
+    if (row.msAlign != null && !['auto', 'start', 'middle', 'end'].includes(row.msAlign)) delete row.msAlign;
     if (row.color != null) { // a palette slot, or a colour chosen by hand
       const hex = typeof row.color === 'string' ? parseColor(row.color) : null, c = Math.round(+row.color);
       if (hex) row.color = hex; else if (typeof row.color !== 'string' && Number.isFinite(c) && c >= 0) row.color = c; else delete row.color;
@@ -447,6 +448,7 @@ function detailHtml(n, info, rows) {
     if (!n.milestone) html += durHtml(r);
     if (!n.milestone) html += `<label class="field"><span>Progress</span><div class="range-row"><input type="range" min="0" max="100" step="5" data-f="progress" value="${r.progress}"><output>${Math.round(r.progress)}%</output></div></label>`;
   }
+  if (n.milestone) html += msHtml(r);
   html += colorHtml(r);
   html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
   if (!n.hasKids) {
@@ -516,6 +518,8 @@ outline.addEventListener('click', e => {
     else if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== act.dataset.dep); commit(); refresh(); }
     return;
   }
+  const ms = e.target.closest('.seg[data-f="ms-align"] button');
+  if (ms) { setRowMs(id, ms.dataset.v); return; }
   const sw = e.target.closest('.sw');
   if (sw) { if (sw.dataset.color != null) setRowColor(id, sw.dataset.color); return; }
   const segBtn = e.target.closest('.seg[data-f="type"] button');
@@ -868,8 +872,8 @@ const DESIGN = [
     { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
     { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
     { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
-    { k: 'wrapNames', type: 'toggle', label: 'Wrap long names' },
-    { k: 'overflow', type: 'seg', label: 'If it still doesn’t fit', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
+    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
+    { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { k: '_textInfo', type: 'info', id: 'text-info' },
   ]],
   ['Style', [
@@ -1295,7 +1299,7 @@ function popHtml() {
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
-    return h + colorHtml(r);
+    return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
   }
   if (pop.kind === 'today') return `<h4>“We are here” line</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}<label class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="No label"></label>`;
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null;
@@ -1361,6 +1365,8 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  const ms = e.target.closest('.seg[data-f="ms-align"] button');
+  if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
   const sw = e.target.closest('.sw');
   if (sw && pop && pop.kind === 'row') { if (sw.dataset.color != null) setRowColor(pop.id, sw.dataset.color); return; }
   if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }
@@ -1695,6 +1701,18 @@ function applySeed(hex) {
   state.settings.palette = list.find(p => p.id === key) || list[0];
   renderChart(); renderOutline(); syncDesign(); syncPop();
   commitSoon();
+}
+/** where this one milestone sits within its day (otherwise it follows the chart's setting) */
+function msHtml(r) {
+  const cur = r.msAlign || '';
+  return `<div class="field"><span>Sits in its day at</span><div class="seg" data-f="ms-align">${[['', 'Default', 'Follow the chart’s setting'], ['auto', 'Auto', 'End of the day if a task finishes then, start if one begins then'], ['start', 'Start', 'Start of the day'], ['middle', 'Mid', 'Middle of the day'], ['end', 'End', 'End of the day']].map(([v, l, t]) => `<button data-v="${v}" title="${t}" class="${cur === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
+}
+function setRowMs(id, v) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  if (v) r.msAlign = v; else delete r.msAlign;
+  commit(); refresh();
+  if (pop && pop.kind === 'row') $$('.seg[data-f="ms-align"] button', popEl).forEach(b => b.classList.toggle('on', b.dataset.v === v));
 }
 function colorHtml(r) {
   const cols = paletteOf(state.settings).colors;

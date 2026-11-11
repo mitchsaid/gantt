@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v26 · 11 Nov';
+const APP_VERSION = 'v27 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -816,9 +816,9 @@ function buildScene(state, opts) {
   const X = d => x0 + (d - rs) * ppd;
   // where a milestone sits within its day: the start of the day lines up with a bar that starts then, the end with a bar that finishes then
   // Auto: the end of the day if a task finishes then (a completion), else the start if one begins then (a kick-off), else the middle
-  const fixedOff = { start: 0, middle: 0.5, end: 1 }[S.msAlign];
   info.forEach(n => {
     if (!n.milestone) return;
+    const fixedOff = { start: 0, middle: 0.5, end: 1 }[n.row.msAlign || S.msAlign]; // a milestone's own choice beats the chart's
     if (fixedOff != null) { n.msOff = fixedOff; return; }
     let ends = false, starts = false;
     info.forEach(o => { if (o !== n && !o.milestone && !o.hasKids) { if (o.end === n.start) ends = true; if (o.start === n.start) starts = true; } });
