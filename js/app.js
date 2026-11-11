@@ -890,14 +890,7 @@ const DESIGN = [
     { k: 'gridCells', type: 'toggle', label: 'Period lines' },
     { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
     { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
-    { type: 'head', label: 'Markers' },
-    { k: 'todayLine', type: 'toggle', label: 'Date marker' },
-    { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
-    { k: 'markerLabelOn', type: 'toggle', label: 'Show label', sub: true, when: s => s.todayLine },
-    { k: 'todayLabel', type: 'text', label: 'Label text', sub: true, ph: 'Today', when: s => s.todayLine && s.markerLabelOn !== false },
-    { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
-    { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
-    { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, when: s => s.todayLine },
+    { type: 'head', label: 'Milestones' },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
     { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
   ]],
@@ -915,15 +908,6 @@ const DESIGN = [
     { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { type: 'head', label: 'Extras' },
-    { k: 'progressMode', type: 'seg', label: 'Progress in bars', col: true, opts: [['off', 'Off'], ['manual', 'Set per bar'], ['marker', 'Up to date marker']] },
-    { k: '_markerNote', type: 'note', label: 'Turn on the date marker (Timeline → Markers) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
-    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
-    { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
-    { k: 'daysLeft', type: 'toggle', label: 'Days left' },
-    { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
-    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
@@ -931,6 +915,28 @@ const DESIGN = [
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
+  ]],
+  ['progress', 'Progress', [
+    { type: 'head', label: 'Date marker' },
+    { k: 'todayLine', type: 'toggle', label: 'Date marker' },
+    { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
+    { k: 'markerLabelOn', type: 'toggle', label: 'Show label', sub: true, when: s => s.todayLine },
+    { k: 'todayLabel', type: 'text', label: 'Label text', sub: true, ph: 'Today', when: s => s.todayLine && s.markerLabelOn !== false },
+    { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
+    { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
+    { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, when: s => s.todayLine },
+    { type: 'head', label: 'Progress in bars' },
+    { k: 'progressMode', type: 'seg', label: 'Progress in bars', col: true, opts: [['off', 'Off'], ['manual', 'Set per bar'], ['marker', 'Up to date marker']] },
+    { k: '_markerNote', type: 'note', label: 'Turn on the date marker (above) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
+    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
+    { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
+    { type: 'head', label: 'Days left' },
+    { k: 'daysLeft', type: 'toggle', label: 'Days left' },
+    { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
+    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
+    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
+    { type: 'head', label: 'Changes from original' },
     { k: 'showChanges', type: 'toggle', label: 'Changes from original' },
     { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, when: s => s.showChanges },
     { k: '_baseInfo', type: 'info', id: 'base-info', when: s => s.showChanges },
@@ -1004,8 +1010,9 @@ function daysOffAction(btn) {
 function designSummary(id, S) {
   const cv = canvasOf(S);
   if (id === 'canvas') return `${cv.name} · ${S.fit === 'fixed' ? 'fixed height' : 'fits content'}`;
-  if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks', S.todayLine ? 'date marker' : ''].filter(Boolean).join(' · ');
-  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.daysLeft || S.planDaysLeft ? 'days left' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
+  if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks'].filter(Boolean).join(' · ');
+  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
+  if (id === 'progress') return [S.todayLine ? 'date marker' : '', S.progress ? (S.progressSource === 'marker' ? 'progress to marker' : 'progress per bar') : '', S.daysLeft || S.planDaysLeft ? 'days left' : '', S.showChanges ? 'baseline' : ''].filter(Boolean).join(' · ') || 'nothing on';
   if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
   if (id === 'text') return `${S.font}${S.textAuto === false ? ' · ' + S.textPt + ' pt' : ''}`;
   return '';
