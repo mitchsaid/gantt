@@ -855,6 +855,11 @@ svg.addEventListener('pointercancel', endDrag);
 // ---------------------------------------------------------------- design panel
 const DESIGN = [
   ['canvas', 'Canvas', [
+    { type: 'head', label: 'Title' },
+    { k: 'showTitle', type: 'toggle', label: 'Show title' },
+    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
+    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
+    { type: 'head', label: 'Size' },
     { k: 'canvas', type: 'select', label: 'Size', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
     { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
     { k: 'canvasH', type: 'number', label: 'Height (in)', sub: true, min: 2, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
@@ -926,10 +931,6 @@ const DESIGN = [
     { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { k: '_textInfo', type: 'info', id: 'text-info' },
-    { type: 'head', label: 'Title' },
-    { k: 'showTitle', type: 'toggle', label: 'Show title' },
-    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
-    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
   ]],
 ];
 const designEl = $('#design');
