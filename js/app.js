@@ -86,6 +86,7 @@ function loadState() {
 }
 let state = loadState() || sampleState();
 let sel = null;
+let detailId = null; // the row whose details are open in the Plan panel — opened on purpose, never by selecting
 let scene = null;
 let drag = null;
 const undoStack = [], redoStack = [];
@@ -261,8 +262,13 @@ function focusName(id, all) {
 /** the level a block starting at row i would take if dropped before row k while asking for level `want` */
 function dropLevelFor(i, k, want) {
   const rows = state.rows, j = blockEnd(rows, i);
-  const prev = k >= i && k <= j ? rows[i - 1] : rows[k - 1];
-  return clamp(want, 0, prev ? Math.min(2, prev.level + 1) : 0);
+  const stay = k >= i && k <= j;
+  const prev = stay ? rows[i - 1] : rows[k - 1], next = stay ? rows[j] : rows[k];
+  const max = prev ? Math.min(2, prev.level + 1) : 0;
+  let level = clamp(want, 0, max);
+  // dropped in front of deeper rows, it joins them as a sibling rather than adopting them
+  if (next && next.level > level) level = Math.min(next.level, max);
+  return level;
 }
 /** move a row and everything inside it; changing its level re-levels its contents (area -> task -> subtask) */
 function moveBlock(i, k, want) {
@@ -421,7 +427,7 @@ function detailHtml(n, info, rows) {
     if (!n.milestone) html += durHtml(r);
     if (!n.milestone) html += `<label class="field"><span>Progress</span><div class="range-row"><input type="range" min="0" max="100" step="5" data-f="progress" value="${r.progress}"><output>${Math.round(r.progress)}%</output></div></label>`;
   }
-  if (!(n.level === 0 && n.hasKids)) html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
+  html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
   if (!n.hasKids) {
     const others = info.filter(o => o.row.id !== r.id && !(o.level === 0 && o.hasKids) && !r.deps.includes(o.row.id));
     html += `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
@@ -445,8 +451,9 @@ function renderOutline() {
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
       <span class="dot${n.milestone ? ' ms' : ''}" style="background:${color}"></span>
       <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.hasKids && n.level === 0 ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
-      <span class="dates">${fmtRange(n)}</span></div>`;
-    if (r.id === sel) html += detailHtml(n, info, rows);
+      <span class="dates">${fmtRange(n)}</span>
+      <button class="more${r.id === detailId ? ' on' : ''}" data-act="toggle" title="${r.id === detailId ? 'Hide details' : 'Edit details'}" aria-label="Edit details" aria-expanded="${r.id === detailId}"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></div>`;
+    if (r.id === detailId) html += detailHtml(n, info, rows);
   });
   html += `<datalist id="who-list">${who.map(w => `<option value="${esc(w)}">`).join('')}</datalist>`;
   outline.innerHTML = html;
@@ -469,10 +476,8 @@ outline.addEventListener('focusin', e => {
   sel = id;
   renderChart();
   $$('.orow.sel', outline).forEach(el => el.classList.remove('sel'));
-  $$('.detail', outline).forEach(el => el.remove());
   row.classList.add('sel');
-  const info = derive(state.rows);
-  row.insertAdjacentHTML('afterend', detailHtml(info[rowIndex(id)], info, state.rows));
+  syncAddNote();
 });
 outline.addEventListener('click', e => {
   const act = e.target.closest('[data-act]');
@@ -481,7 +486,8 @@ outline.addEventListener('click', e => {
   const id = host.dataset.id;
   if (act) {
     const a = act.dataset.act;
-    if (a === 'indent') shiftLevel(id, 1);
+    if (a === 'toggle') { detailId = detailId === id ? null : id; renderOutline(); const d = $(`.detail[data-id="${id}"]`); if (d && detailId) d.scrollIntoView({ block: 'nearest' }); }
+    else if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
     else if (a === 'del') askDelete(id);
     else if (a === 'dup') duplicateRow(id);
@@ -580,12 +586,24 @@ svg.addEventListener('pointerdown', e => {
   const n = id ? scene.info.find(x => x.row.id === id) : null;
   drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect };
   if (role !== 'row' && role !== 'title' && role !== 'timeline') drag.range = scene.range.slice();
-  if (role === 'move') { const i = n.i; drag.block = state.rows.slice(i, blockEnd(state.rows, i)).map(r => ({ r, s: r.start, e: r.end })); }
+  if (role === 'move') { const i = n.i; drag.i = i; drag.lv0 = n.level; drag.block = state.rows.slice(i, blockEnd(state.rows, i)).map(r => ({ r, s: r.start, e: r.end })); }
   else if (role === 'resize-l' || role === 'resize-r') drag.orig = { s: n.row.start, e: n.row.end };
   else if (role === 'progress') { drag.bx = n.bx; drag.bw = n.bw; }
   else if (role === 'today') drag.orig = state.settings.todayDate != null ? state.settings.todayDate : todayDay();
   else if (role === 'row') { drag.i = n.i; drag.lv0 = n.level; }
 });
+/** work out where the dragged row (with everything inside it) would land, and show a drop line there */
+function reorderTarget(dx, y) {
+  const info = scene.info;
+  let k = info.length;
+  for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
+  drag.k2 = k;
+  const j = blockEnd(state.rows, drag.i);
+  const stay = k >= drag.i && k <= j;
+  drag.dropLevel = dropLevelFor(drag.i, k, drag.lv0 + Math.round(dx / 24));
+  const at = stay ? drag.i : k;
+  drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+}
 svg.addEventListener('pointermove', e => {
   if (!drag) return;
   const dx = (e.clientX - drag.x) * drag.k, dy = (e.clientY - drag.y) * drag.k;
@@ -596,30 +614,31 @@ svg.addEventListener('pointermove', e => {
   svg.classList.add('dragging');
   const dd = Math.round(dx / drag.ppd);
   const row = drag.id ? state.rows[rowIndex(drag.id)] : null;
+  const py = (e.clientY - drag.top) * drag.k;
   if (drag.role === 'move') {
-    drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
-    // with tasks in sequence, dragging up or down picks which row the task continues
-    if (state.settings.pack && drag.block.length === 1) {
-      const y = (e.clientY - drag.top) * drag.k, me = scene.info.find(n => n.row.id === drag.id);
-      const over = scene.info.find(n => !n.lane && !n.hasKids && n.vrow !== me.vrow && n.parent === me.parent && y >= n.y && y < n.y + scene.rowH);
-      drag.toRow = over ? over.vrow : null; drag.toRowY = over ? over.y : null;
+    const pack = state.settings.pack;
+    // a mostly-sideways drag moves the item in time; a mostly-vertical one moves it between rows and areas
+    if (!pack && drag.mode == null) drag.mode = Math.abs(dy) > Math.abs(dx) ? 'reorder' : 'time';
+    if (!pack && drag.mode === 'reorder') { reorderTarget(dx, py); drag.reorder = true; }
+    else {
+      drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
+      // with tasks in sequence, dragging up or down picks which row the task continues,
+      // or — over a row that belongs to another area — moves it into that area
+      if (pack && drag.block.length === 1) {
+        const me = scene.info.find(n => n.row.id === drag.id);
+        const at = scene.info.filter(n => !n.lane && n.vrow !== me.vrow && py >= n.y && py < n.y + scene.rowH);
+        const over = at.find(n => !n.hasKids && n.parent === me.parent);
+        drag.toRow = over ? over.vrow : null; drag.toRowY = over ? over.y : null;
+        drag.reorder = !over && at.length > 0 && at.every(n => n.parent !== me.parent || n.hasKids);
+        if (drag.reorder) reorderTarget(dx, py); else drag.dropY = null;
+      }
     }
   }
   else if (drag.role === 'resize-l') row.start = Math.min(drag.orig.s + dd, drag.orig.e);
   else if (drag.role === 'resize-r') row.end = Math.max(drag.orig.e + dd, drag.orig.s);
   else if (drag.role === 'progress') row.progress = clamp(Math.round((((e.clientX - drag.left) * drag.k - drag.bx) / drag.bw) * 20) * 5, 0, 100);
   else if (drag.role === 'today') state.settings.todayDate = drag.orig + dd;
-  else if (drag.role === 'row') {
-    const y = (e.clientY - drag.top) * drag.k, info = scene.info;
-    let k = info.length;
-    for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
-    drag.k2 = k;
-    const j = blockEnd(state.rows, drag.i);
-    const stay = k >= drag.i && k <= j;
-    drag.dropLevel = dropLevelFor(drag.i, k, drag.lv0 + Math.round(dx / 24));
-    const at = stay ? drag.i : k;
-    drag.dropY = stay && drag.dropLevel === drag.lv0 ? null : at < info.length ? info[at].y - (info[at].level === 0 && info[at].hasKids && at > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
-  }
+  else if (drag.role === 'row') reorderTarget(dx, py);
   if (sel !== drag.id && drag.id) sel = drag.id;
   renderChart();
   if (drag.id) updateRowMeta(drag.id);
@@ -631,6 +650,7 @@ function endDrag() {
   svg.classList.remove('dragging');
   if (d.moved) {
     if (d.role === 'row' && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
+    if (d.role === 'move' && d.reorder && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
     if (d.role === 'move' && d.toRow != null) {
       // list it straight after the task it should follow on that row (or before the row's first task)
       const me = scene.info.find(n => n.row.id === d.id);
@@ -675,6 +695,7 @@ const DESIGN = [
     { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']] },
     { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
+    { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
     { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
     { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
     { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
@@ -688,6 +709,7 @@ const DESIGN = [
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under bars'], ['beside', 'Beside bars']], when: s => s.assignees },
+    { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
   ]],
@@ -1067,6 +1089,7 @@ popEl.className = 'pop'; popEl.hidden = true;
 document.body.appendChild(popEl);
 let pop = null;
 function popHtml() {
+  if (pop.kind === 'paste') return pasteHtml();
   const S = state.settings;
   const date = (label, f, v) => `<label class="field"><span>${label}</span><input class="inp" type="date" data-f="${f}" value="${dayToIso(v)}"></label>`;
   if (pop.kind === 'row') {
@@ -1091,6 +1114,7 @@ function popHtml() {
 function openPop(kind, rect, id, x) {
   pop = { kind, id: id || null };
   popEl.innerHTML = popHtml();
+  popEl.classList.toggle('wide', kind === 'paste');
   popEl.hidden = false;
   const w = popEl.offsetWidth, h = popEl.offsetHeight;
   let top = rect.bottom + 8;
@@ -1098,10 +1122,12 @@ function openPop(kind, rect, id, x) {
   if (top + h > innerHeight - 8) top = Math.max(8, rect.top - h - 8);
   popEl.style.top = top + 'px';
   popEl.style.left = clamp(x != null ? Math.max(x, rect.left) : rect.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
+  if (kind === 'paste') { syncPasteNote(); const ta = $('#pop-paste'); if (ta) ta.focus(); }
 }
 function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; }
 function syncPop() {
   if (!pop) return;
+  if (pop.kind === 'paste') { if (!popEl.querySelector('textarea')) popEl.innerHTML = popHtml(); syncPasteNote(); return; }
   const html = popHtml();
   if (!html) { closePop(); return; }
   const act = document.activeElement;
@@ -1122,6 +1148,7 @@ popEl.addEventListener('input', e => {
   const t = e.target, f = t.dataset.f;
   if (!pop || !f) return;
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowInput(r, t); }
+  else if (f === 'paste') { pop.text = t.value; syncPasteNote(); }
   else if (f === 'todayLabel') setSetting('todayLabel', t.value, true);
 });
 popEl.addEventListener('change', e => {
@@ -1137,11 +1164,20 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }
+  if (e.target.closest('[data-act="paste-cancel"]')) { closePop(); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
   const b = e.target.closest('.seg[data-f="rangeMode"] button');
   if (b) setSetting('rangeMode', b.dataset.v);
 });
-popEl.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.target.blur(); if (e.target.dataset.f === 'name') closePop(); } });
+popEl.addEventListener('keydown', e => {
+  if (e.target.dataset.f === 'paste') {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doPasteAdd(); }
+    else if (e.key === 'Tab') { e.preventDefault(); const t = e.target; t.setRangeText('\t', t.selectionStart, t.selectionEnd, 'end'); t.dispatchEvent(new Event('input', { bubbles: true })); }
+    return;
+  }
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.target.blur(); if (e.target.dataset.f === 'name') closePop(); }
+});
 
 // ---------------------------------------------------------------- inline text editing on the chart
 function inlineEdit(rect, value, fontPx, weight, onInput) {
@@ -1222,6 +1258,90 @@ $$('.panel').forEach(p => {
   p.addEventListener('click', () => { if (p.classList.contains('collapsed') && matchMedia('(min-width: 861px)').matches) toggle(); });
 });
 syncPanels();
+
+// ---------------------------------------------------------------- quick add: paste several items
+/** where pasted items go: after the selected row (inside an area when one is selected), or in place of an empty row */
+function pastePlace(parsed, afterId, hole) {
+  const rows = state.rows, info = derive(rows), nested = parsed.some(r => r.level > 0);
+  if (hole) {
+    let at = hole.at;
+    if (nested) while (at < rows.length && rows[at].level > 0) at++; // areas can only start between blocks
+    return { at, level: nested ? 0 : hole.level, ref: info[at - 1] || null };
+  }
+  const i = afterId ? rowIndex(afterId) : -1;
+  if (i < 0) { const ref = info[info.length - 1] || null; return { at: rows.length, level: nested ? 0 : ref ? Math.min(ref.level, 1) : 0, ref }; }
+  const n = info[i];
+  if (nested) { // keep areas as areas: go after the top-level block the selection is in
+    let r0 = i;
+    while (rows[r0].level > 0) r0--;
+    const at = blockEnd(rows, r0);
+    return { at, level: 0, ref: info[at - 1] };
+  }
+  const at = blockEnd(rows, i);
+  return { at, level: n.hasKids && n.level === 0 ? 1 : n.level, ref: info[at - 1] };
+}
+function insertParsed(parsed, afterId, replaceId) {
+  const rows = state.rows, ri = replaceId ? rowIndex(replaceId) : -1;
+  let hole = null;
+  if (ri >= 0) { hole = { at: ri, level: rows[ri].level }; rows.splice(ri, 1); }
+  const place = pastePlace(parsed, afterId, hole);
+  if (parsed.dated === false) { // undated lists carry on from the row before them
+    const S = state.settings;
+    const leaf = parsed.filter((r, k) => !(parsed[k + 1] && parsed[k + 1].level > r.level));
+    const target = place.ref ? nextWorkday(place.ref.end + 1) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
+    const delta = target - Math.min(...leaf.map(r => r.start));
+    parsed.forEach(r => { r.start += delta; r.end += delta; });
+  }
+  parsed.forEach(r => { r.level = clamp(r.level + place.level, 0, 2); });
+  rows.splice(place.at, 0, ...parsed);
+  normalizeLevels(rows);
+  sel = parsed[0].id;
+  commit(); refresh();
+  return parsed.length;
+}
+// pasting several lines into a name field adds them all
+outline.addEventListener('paste', e => {
+  const t = e.target;
+  if (!t.classList || !t.classList.contains('nm')) return;
+  const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+  if (!/[\r\n]/.test(text.trim())) return; // a single line pastes as usual
+  let parsed = [];
+  try { parsed = parseImport(text); } catch (err) { console.error(err); }
+  if (parsed.length < 2) return;
+  e.preventDefault();
+  const id = t.closest('.orow').dataset.id, i = rowIndex(id);
+  const empty = !t.value.trim() && blockEnd(state.rows, i) === i + 1;
+  commit();
+  const n = insertParsed(parsed, id, empty ? id : null);
+  toast(`Added ${n} items — Undo reverts them`);
+});
+function pasteHtml() {
+  return `<h4>Add several items</h4>
+    <textarea class="inp paste-area" id="pop-paste" data-f="paste" rows="8" spellcheck="false" placeholder="One item per line.&#10;Indent a line to make it a subtask.&#10;Add dates, a duration (2w) or an owner after a comma.">${esc(pop.text || '')}</textarea>
+    <p class="note" id="paste-note"></p>
+    <div class="pop-btns"><button class="btn ghost" data-act="paste-cancel">Cancel</button><button class="btn primary" data-act="paste-add" disabled>Add</button></div>`;
+}
+function syncPasteNote() {
+  const note = $('#paste-note'), btn = $('[data-act="paste-add"]', popEl);
+  if (!note || !btn) return;
+  let parsed = [];
+  if (pop && pop.text && pop.text.trim()) { try { parsed = parseImport(pop.text); } catch (err) { console.error(err); } }
+  const r = sel && state.rows[rowIndex(sel)];
+  const where = r ? `after “${r.name || 'Untitled'}”` : 'at the end';
+  btn.disabled = !parsed.length;
+  btn.textContent = parsed.length > 1 ? `Add ${parsed.length} items` : 'Add';
+  note.textContent = parsed.length ? `Will be added ${where}.` : `Added ${where}. Ctrl/⌘+Enter to add.`;
+}
+function doPasteAdd() {
+  if (!pop || pop.kind !== 'paste' || !pop.text || !pop.text.trim()) return;
+  let parsed = [];
+  try { parsed = parseImport(pop.text); } catch (err) { console.error(err); }
+  if (!parsed.length) return;
+  closePop();
+  const n = insertParsed(parsed, sel, null);
+  toast(`Added ${n} item${n === 1 ? '' : 's'} — Undo reverts them`);
+}
+$$('[data-paste]').forEach(b => b.addEventListener('click', () => { const r = b.getBoundingClientRect(); openPop('paste', r, null, r.left); }));
 
 // ---------------------------------------------------------------- go
 $('#version').textContent = APP_VERSION;

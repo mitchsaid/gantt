@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
 <header class="topbar">
@@ -51,8 +51,9 @@
         <button class="chip-btn" data-add="area">+ Area</button>
         <button class="chip-btn" data-add="task">+ Task</button>
         <button class="chip-btn" data-add="milestone">+ Milestone</button>
+        <button class="chip-btn" data-paste>Paste list</button>
       </div>
-      <p class="hint">Drag <span class="grip-demo">⋮⋮</span> to reorder. <kbd>Enter</kbd> adds a row, <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indents — or drag a row sideways to nest it. On the chart, drag bars to move or resize them and click anything to edit it.</p>
+      <p class="hint">Drag <span class="grip-demo">⋮⋮</span> to reorder, or sideways to nest. <kbd>Enter</kbd> adds a row, <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indents. Paste several lines into a name to add them all. Use ▾ on a row to edit its dates and details; on the chart, drag bars to move or resize them.</p>
     </div>
   </aside>
 
@@ -66,6 +67,7 @@
           <button class="chip-btn" data-add="task" data-chart>+ Task</button>
           <button class="chip-btn" data-add="milestone" data-chart>+ Milestone</button>
           <button class="chip-btn" data-add="area" data-chart>+ Area</button>
+          <button class="chip-btn" data-paste data-chart>Paste list</button>
           <span class="chart-add-note" id="chart-add-note"></span>
         </div>
       </div>
@@ -116,7 +118,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=9"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/core.js?v=12"></script>
+<script src="js/app.js?v=12"></script>
 </body>
 </html>

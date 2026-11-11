@@ -64,6 +64,7 @@ svg { display: block; }
 .canvas-wrap.transparent.dark { background: repeating-conic-gradient(#232733 0% 25%, #181b24 0% 50%) 0 0 / 18px 18px; }
 #chart { width: 100%; height: auto; user-select: none; -webkit-user-select: none; }
 #chart [data-role] { fill: transparent; }
+#chart text, #chart polygon, #chart polyline, #chart line { pointer-events: none; } /* labels never block grabbing the bar beneath */
 #chart [data-role='move'] { cursor: grab; }
 #chart [data-role='resize-l'], #chart [data-role='resize-r'], #chart [data-role='progress'], #chart [data-role='today'] { cursor: ew-resize; }
 #chart [data-role='row'] { cursor: ns-resize; }
@@ -89,7 +90,14 @@ svg { display: block; }
 .orow.lvl2 .nm { color: #4b5563; }
 .orow .nm:focus { background: #fff; border-color: var(--accent); }
 .orow .dates { flex: none; font-size: 11px; color: #9aa1af; padding: 0 4px; font-variant-numeric: tabular-nums; pointer-events: none; }
-.orow.sel .dates { display: none; }
+.orow .more { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 0; background: none; border-radius: 6px; color: #b3b8c5; padding: 0; }
+.orow .more:hover { background: #e8eaf0; color: #3b4252; }
+.orow .more.on { color: var(--accent); background: #dfe2ff; }
+.orow .more svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.15s; }
+.orow .more.on svg { transform: rotate(180deg); }
+.pop.wide { width: 360px; }
+.pop .paste-area { height: auto; min-height: 150px; padding: 8px 10px; resize: vertical; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 4; }
+.pop-btns { display: flex; gap: 8px; justify-content: flex-end; }
 .drop-line { position: absolute; left: 8px; right: 0; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 5; }
 .detail { margin: 2px 0 8px 22px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; display: grid; gap: 10px; }
 .detail .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
