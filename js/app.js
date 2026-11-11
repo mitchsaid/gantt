@@ -76,6 +76,8 @@ function sanitize(st) {
     row.end = Number.isFinite(+row.end) ? Math.max(row.start, Math.round(+row.end)) : row.start;
     row.progress = row.progress == null ? null : clamp(+row.progress || 0, 0, 100); // null: not tracked for this bar
     row.name = String(row.name || ''); row.assignee = String(row.assignee || '');
+    if (row.baseline && Number.isFinite(+row.baseline.s) && Number.isFinite(+row.baseline.e)) row.baseline = { s: Math.round(+row.baseline.s), e: Math.round(+row.baseline.e) }; else delete row.baseline;
+    if (typeof row.changeNote === 'string' && row.changeNote.trim()) row.changeNote = row.changeNote.slice(0, 140); else delete row.changeNote;
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
     row.type = row.type === 'milestone' ? 'milestone' : 'task';
@@ -468,6 +470,7 @@ function fmtRange(n) {
 }
 function detailHtml(n, info, rows) {
   const r = n.row;
+  if (state.settings.showChanges) markChanges(info);
   { const S = state.settings; if (S.progress && S.progressSource === 'marker' && S.todayLine) applyDateProgress(info, S.todayDate != null ? S.todayDate : todayDay()); } // percentages shown here follow the marker too
   let html = '';
   html += `<div class="detail" data-id="${r.id}">`;
@@ -482,6 +485,7 @@ function detailHtml(n, info, rows) {
     if (!n.milestone) html += progressHtml(r);
   }
   if (n.milestone) html += msHtml(r);
+  html += changeHtml(n);
   html += colorHtml(r);
   html += assigneeHtml(r);
   if (!n.hasKids) {
@@ -919,6 +923,10 @@ const DESIGN = [
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
+    { k: 'showChanges', type: 'toggle', label: 'Changes from original' },
+    { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, when: s => s.showChanges },
+    { k: '_baseInfo', type: 'info', id: 'base-info', when: s => s.showChanges },
+    { k: '_baseBtn', type: 'button', label: 'Update or remove baseline…', sub: true, act: 'baseline', when: s => s.showChanges },
   ]],
   ['colour', 'Colour', [
     { type: 'palette' },
@@ -1006,6 +1014,8 @@ function syncDesign() {
     const cv = scene.canvas, f = x => (Math.round(x * 100) / 100).toString();
     const ci = $('#canvas-info'), ti = $('#text-info');
     if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
+    const bi = $('#base-info');
+    if (bi && S.showChanges) { const c = scene.info.filter(n => n.changed && !n.isArea).length; bi.textContent = `${S.baselineDate != null ? 'Baseline from ' + shortDate(S.baselineDate) + ' · ' : ''}${c} ${c === 1 ? 'item has' : 'items have'} changed.`; }
     if (ti) ti.textContent = `Names ${f(scene.fs * 0.75)} pt · dates ${f(scene.hs2 * 0.75)} pt, on a ${f(cv.w)} in wide canvas.`;
   }
   $$('input[data-k], select[data-k]', designEl).forEach(inp => {
@@ -1023,6 +1033,7 @@ function setSetting(k, v, soon) {
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
   if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
   if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
+  if (k === 'showChanges' && v && !hasBaseline()) setBaseline(); // the first time, the baseline is the plan as it stands
   if (k === 'progressSource' && v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
   state.settings[k] = v;
   if (k === 'font') ensureFont();
@@ -1039,6 +1050,7 @@ designEl.addEventListener('click', e => {
   const sb = e.target.closest('[data-scheme]');
   if (sb) { const seed = paletteOf(state.settings).seed; if (seed) applyPalette(suggestPalettes(seed)[+sb.dataset.scheme]); return; }
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
+  if (e.target.closest('[data-act="baseline"]')) { baselineDialog(); return; }
   const b = e.target.closest('.seg[data-k] button');
   if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : designCtl[k].bool ? b.dataset.v === 'true' : b.dataset.v); }
 });
@@ -1331,6 +1343,7 @@ function ensureAssigneeShown(r) {
 function rowInput(r, t) {
   const f = t.dataset.f;
   if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
+  else if (f === 'changeNote') { r.changeNote = t.value; renderChart(); commitSoon(); }
   else if (f === 'color-custom' || f === 'color-hex') { // a colour from outside the palette
     const hex = parseColor(t.value);
     if (!hex) return;
@@ -1388,7 +1401,9 @@ function popHtml() {
   const S = state.settings;
   const date = (label, f, v) => `<label class="field"><span>${label}</span><input class="inp" type="date" data-f="${f}" value="${dayToIso(v)}"></label>`;
   if (pop.kind === 'row') {
-    const n = derive(state.rows).find(x => x.row.id === pop.id);
+    const pinfo = derive(state.rows);
+    if (S.showChanges) markChanges(pinfo);
+    const n = pinfo.find(x => x.row.id === pop.id);
     if (!n) return '';
     const r = n.row;
     let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">`;
@@ -1396,7 +1411,7 @@ function popHtml() {
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
     if (!n.hasKids && !n.milestone) h += progressHtml(r);
-    h += assigneeHtml(r);
+    h += assigneeHtml(r) + changeHtml(n);
     return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
   }
   if (pop.kind === 'today') {
@@ -1871,6 +1886,27 @@ function clearAssignee(id) {
   $$('.clearable').forEach(c => { const i = $('input', c), b = $('.x-btn', c); if (b) b.hidden = !i.value; }); // a focused popover isn't rebuilt
   const inp = $('.pop [data-f="assignee"]') || $(`.detail[data-id="${id}"] [data-f="assignee"]`);
   if (inp) inp.focus(); // ready to type another name
+}
+/** the baseline: every item's dates when it was taken. Later edits move the plan, not the baseline, and the chart shows the difference. */
+const hasBaseline = () => state.rows.some(r => r.baseline);
+function setBaseline() {
+  derive(state.rows).forEach(n => { n.row.baseline = { s: n.start, e: n.milestone ? n.start : n.end }; delete n.row.changeNote; });
+  state.settings.baselineDate = todayDay();
+}
+function baselineDialog() {
+  dialog('Update the baseline?', 'Changes are measured from the baseline dates. Use today’s dates as the new baseline to start tracking from here, or remove it. Either way the reasons you wrote are cleared.', [
+    ['Use current dates', 'primary', () => { setBaseline(); commit(); refresh(); }],
+    ['Remove baseline', 'danger', () => { state.rows.forEach(r => { delete r.baseline; delete r.changeNote; }); state.settings.showChanges = false; commit(); refresh(); }],
+    ['Cancel', 'ghost', null],
+  ]);
+}
+/** for an item that differs from its baseline: how, and a field for why (shown as a numbered note in the legend) */
+function changeHtml(n) {
+  if (!state.settings.showChanges || !n.changed || n.isArea) return '';
+  const ds = n.start - n.bs, de = n.end - n.be, pl = k => `${Math.abs(k)} day${Math.abs(k) === 1 ? '' : 's'}`, dir = k => (k > 0 ? 'later' : 'earlier');
+  const parts = n.milestone ? [`moved ${pl(ds)} ${dir(ds)}`] : [ds ? `starts ${pl(ds)} ${dir(ds)}` : '', de ? `ends ${pl(de)} ${dir(de)}` : ''].filter(Boolean);
+  const was = n.milestone ? shortDate(n.bs) : `${shortDate(n.bs)} – ${shortDate(n.be)}`;
+  return `<div class="field"><span>Changed from original</span><p class="note">Was ${was}: ${parts.join(', ')}.</p><input class="inp" data-f="changeNote" value="${esc(n.row.changeNote || '')}" placeholder="Why? Shown in the legend" maxlength="140" autocomplete="off"></div>`;
 }
 /** progress for one bar: a slider, and a way to switch progress off for just this bar */
 function progressHtml(r) {

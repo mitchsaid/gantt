@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v49 · 11 Nov';
+const APP_VERSION = 'v50 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -347,6 +347,19 @@ function derive(rows) {
     if (n.end < n.start) n.end = n.start;
   }
   return info;
+}
+/** compare every item with its baseline (the dates it was set to when the baseline was taken); parents compare their rolled-up span */
+function markChanges(info) {
+  for (let i = info.length - 1; i >= 0; i--) {
+    const n = info[i], b = n.row.baseline;
+    if (n.hasKids) {
+      let s = Infinity, e = -Infinity;
+      n.kids.forEach(k => { const c = info[k]; if (c.bs != null) { s = Math.min(s, c.bs); e = Math.max(e, c.be); } });
+      n.bs = s === Infinity ? null : s; n.be = s === Infinity ? null : e;
+    } else if (b && Number.isFinite(b.s) && Number.isFinite(b.e)) { n.bs = b.s; n.be = n.milestone ? b.s : Math.max(b.s, b.e); }
+    else { n.bs = null; n.be = null; } // added after the baseline: nothing to compare with
+    n.changed = n.bs != null && (n.bs !== n.start || n.be !== n.end);
+  }
 }
 /** progress implied by a date instead of typed in: how much of each bar lies before it (the marker line sits mid-day); parents roll up as usual */
 function applyDateProgress(info, day) {
@@ -706,6 +719,12 @@ function buildScene(state, opts) {
   opts = opts || {};
   const S = state.settings, rows = state.rows, font = S.font;
   const info = derive(rows);
+  // changes from the original plan: items that moved or grew, and those with a reason get a number that the legend explains
+  const showChg = !!S.showChanges;
+  if (showChg) markChanges(info);
+  const noted = [];
+  if (showChg) info.forEach(n => { if (n.changed && !n.isArea && String(n.row.changeNote || '').trim()) { n.noteNo = noted.length + 1; noted.push(n); } });
+  const legendOn = showChg && S.changesLegend !== false && info.some(n => n.changed && !n.isArea);
   // visual rows: normally one per item; when packing, sibling tasks that don't overlap in time share a row
   const pack = !!S.pack;
   let vrows = 0, run = null;
@@ -848,7 +867,10 @@ function buildScene(state, opts) {
   const bodyEnd = y;
   const headBotY = y;
   if (showBottom) y += headH;
-  const Hc = Math.round(y + pad - (showBottom ? 8 : 0)); // what the content needs
+  const ls = Math.max(10.5, Math.round((fs - 3) * 2) / 2), lh = Math.round(ls * 1.9);
+  let legendY = 0;
+  if (legendOn) { legendY = y + 10; y += 10 + lh * (1 + noted.length) + 4; }
+  const Hc = Math.round(y + pad - (showBottom && !legendOn ? 8 : 0)); // what the content needs
   const H = fixedPx ? Math.max(Hc, fixedPx) : Hc;
 
   // time range
@@ -976,6 +998,7 @@ function buildScene(state, opts) {
       if (onBars && !n.milestone && showAssignee(n)) { const d = Math.round(Math.min(h - 2 * Math.max(3, h * 0.1), 36 * kk)); if (d >= Math.round(15 * kk) && bw >= d + 16) avD = d; }
       n.avD = avD;
       const bwL = bw - (avD ? avD + 4 : 0); // room left for the name
+      if (n.noteNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.noteNo }); tx += bd + 10; } // the change's number, right after the bar
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         const ip = padFor(h); n.ip = ip;
@@ -1223,6 +1246,11 @@ function buildScene(state, opts) {
       // the milestone's own palette colour, deepened only if it would be too faint against the background (3:1, the minimum for a graphic)
       let mark = base, mt = 0;
       while (contrast(mark, surface) < 3 && mt < 0.9) { mt += 0.1; mark = mix(base, text, mt); }
+      if (showChg && n.changed) { // where it was: a hollow diamond, joined to the new date by a dashed line
+        const ox = X(n.bs + n.msOff);
+        if (Math.abs(ox - cx) > 1) items.push({ t: 'line', x1: ox, y1: n.cy, x2: cx, y2: n.cy, stroke: base, sw: 1.5, dash: [4, 3] });
+        items.push({ t: 'diamond', cx: ox, cy: n.cy, r: rr, fill: mix(base, surface, 0.8), stroke: base });
+      }
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mark, stroke: surface });
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: n.h, hit: true, id, role: 'move' });
     } else {
@@ -1263,6 +1291,13 @@ function buildScene(state, opts) {
           items.push(it);
         }
       }
+      if (showChg && n.changed) { // the original dates as a dashed line under the bar; time added or moved is a tint of the bar's own colour
+        const ox0 = X(n.bs), ox1 = X(n.be + 1), slack = (n.h - h) / 2, gh = clamp(slack - 2, 2.5, 4), gy = by + h + 1.5 + gh / 2, tint = mix(base, surface, 0.5);
+        if (n.bx < ox0 - 0.5) items.push({ t: 'rect', x: n.bx, y: gy - gh / 2, w: ox0 - n.bx, h: gh, r: gh / 2, fill: tint });
+        if (n.bx + n.bw > ox1 + 0.5) items.push({ t: 'rect', x: ox1, y: gy - gh / 2, w: n.bx + n.bw - ox1, h: gh, r: gh / 2, fill: tint });
+        items.push({ t: 'line', x1: ox0, y1: gy, x2: ox1, y2: gy, stroke: base, sw: Math.max(1.5, gh * 0.6), dash: [4, 3] });
+        items.push({ t: 'line', x1: ox0, y1: gy - gh, x2: ox0, y2: gy + gh, stroke: base, sw: 1.5 }, { t: 'line', x1: ox1, y1: gy - gh, x2: ox1, y2: gy + gh, stroke: base, sw: 1.5 });
+      }
       if (n.avD) { // the owner's avatar, ringed in white so it reads on any bar colour
         const d = n.avD, g = (h - d) / 2, ax = n.bx + n.bw - inset - g - d, fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
         items.push({ t: 'rect', x: ax, y: by + g, w: d, h: d, r: d / 2, fill: fillA, stroke: '#ffffff', sw: 1.5 });
@@ -1281,7 +1316,10 @@ function buildScene(state, opts) {
     n.tail.forEach(t => {
       if (t.k === 'name') items.push({ t: 'text', x: t.x, y: n.cy, text: name, size, weight: n.milestone ? 600 : 500, fill: text, anchor: 'start' });
       else if (t.k === 'date') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
-      else {
+      else if (t.k === 'badge') {
+        items.push({ t: 'rect', x: t.x, y: n.cy - t.w / 2, w: t.w, h: t.w, r: t.w / 2, fill: base });
+        items.push({ t: 'text', x: t.x + t.w / 2, y: n.cy, text: String(t.no), size: Math.max(8, Math.round(8.5 * kk * 2) / 2), weight: 700, fill: onColor(base), anchor: 'middle' });
+      } else {
         const d = dd;
         if (t.av) {
           items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
@@ -1292,6 +1330,25 @@ function buildScene(state, opts) {
     });
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
   });
+
+  // ---- legend: how to read the change marks, then a numbered reason for each change that has one
+  if (legendOn) {
+    const k0 = palette[0], tint = mix(k0, surface, 0.5), ly = legendY + lh / 2;
+    let lx = pad;
+    items.push({ t: 'line', x1: lx, y1: ly, x2: lx + 28, y2: ly, stroke: k0, sw: 2, dash: [4, 3] });
+    items.push({ t: 'line', x1: lx, y1: ly - 4, x2: lx, y2: ly + 4, stroke: k0, sw: 1.5 }, { t: 'line', x1: lx + 28, y1: ly - 4, x2: lx + 28, y2: ly + 4, stroke: k0, sw: 1.5 });
+    items.push({ t: 'text', x: lx + 36, y: ly, text: 'Original dates', size: ls, weight: 500, fill: muted, anchor: 'start' });
+    lx += 36 + M('Original dates', ls, 500) + 24;
+    items.push({ t: 'rect', x: lx, y: ly - 2, w: 28, h: 4, r: 2, fill: tint });
+    items.push({ t: 'text', x: lx + 36, y: ly, text: 'Moved or extended', size: ls, weight: 500, fill: muted, anchor: 'start' });
+    noted.forEach((n, i) => {
+      const cy = legendY + lh * (i + 1) + lh / 2, d = Math.round(ls * 1.5), b = baseOf(n);
+      const was = n.milestone ? shortDate(n.bs) : shortDate(n.bs) + ' – ' + shortDate(n.be);
+      items.push({ t: 'rect', x: pad, y: cy - d / 2, w: d, h: d, r: d / 2, fill: b });
+      items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.noteNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
+      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText((n.row.name || 'Untitled') + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
+    });
+  }
 
   // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
   if (S.todayLine && todayD >= rs && todayD <= re) {
@@ -1316,4 +1373,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
