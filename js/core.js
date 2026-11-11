@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v33 · 11 Nov';
+const APP_VERSION = 'v34 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -232,9 +232,20 @@ const paletteOf = S => (validPalette(S && S.palette) ? S.palette : PRESETS[0]);
 /** which palette slot a row uses: its own choice, else its parent's, else its area's turn */
 function colorIndexOf(info, n) { // a palette slot (number) or, if set by hand, any colour (a '#rrggbb' string)
   for (let q = n; q; q = q.parent >= 0 ? info[q.parent] : null) if (q.row.color != null) return q.row.color;
-  return n.rootIdx;
+  return null; // nothing chosen by hand: the palette decides
 }
-function rowBaseColor(info, n, palette) { const c = colorIndexOf(info, n); return typeof c === 'string' ? c : palette[c % palette.length]; }
+/**
+ * The colour a row is drawn in. Bars and areas take the palette in order, starting from its first colour — a milestone never
+ * uses up a turn. Every milestone shares one colour, the last in the palette (so bars cycle through the others).
+ */
+function rowBaseColor(info, n, palette) {
+  const c = colorIndexOf(info, n);
+  if (typeof c === 'string') return c;
+  if (c != null) return palette[c % palette.length];
+  if (n.milestone) return palette[palette.length - 1];
+  const bars = palette.length >= 3 ? palette.length - 1 : palette.length;
+  return palette[n.rootIdx % bars];
+}
 
 // ---------------------------------------------------------------- canvas
 // The chart is drawn at 96 px per inch, so sizes are real: a 16px label is 12pt on the slide or page it ends up on.
@@ -287,7 +298,8 @@ function derive(rows) {
   info.forEach(n => {
     while (stack.length && stack[stack.length - 1].level >= n.level) stack.pop();
     if (stack.length) { n.parent = stack[stack.length - 1].i; stack[stack.length - 1].kids.push(n.i); }
-    if (n.level === 0) rootCount++;
+    const isMilestone = n.row.type === 'milestone' && !(info[n.i + 1] && info[n.i + 1].level > n.level);
+    if (n.level === 0 && !isMilestone) rootCount++; // a top-level milestone doesn't take a turn in the palette
     n.rootIdx = Math.max(0, rootCount);
     stack.push(n);
   });
@@ -1143,7 +1155,10 @@ function buildScene(state, opts) {
     const h = n.bh, by = n.cy - h / 2, r = radius(h);
     if (n.milestone) {
       const cx = msX(n), rr = h * 0.52;
-      items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mix(base, text, 0.3), stroke: surface });
+      // the milestone's own palette colour, deepened only if it would be too faint against the background (3:1, the minimum for a graphic)
+      let mark = base, mt = 0;
+      while (contrast(mark, surface) < 3 && mt < 0.9) { mt += 0.1; mark = mix(base, text, mt); }
+      items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mark, stroke: surface });
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: rowH, hit: true, id, role: 'move' });
     } else {
       const tracked = S.progress && n.progress != null; // bars with progress switched off stay plain
