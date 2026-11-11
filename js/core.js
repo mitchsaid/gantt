@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v16 · 11 Nov';
+const APP_VERSION = 'v17 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -171,13 +171,20 @@ function lightenFor(hex, label, min) {
 const D2R = Math.PI / 180;
 
 const SCHEMES = [
-  ['gradient', 'Gradient', [0, 22, 44, 66, 88]],
+  ['generic', 'Generic gradient', 'generic'],
+  ['gradient', 'Matching gradient', [0, 40, 80, 120, 160, 200]],
   ['analogous', 'Analogous', [0, 28, -28, 56, -56]],
   ['mono', 'Monochrome', null],
   ['complement', 'Complementary', [0, 180, 18, 198, -18]],
   ['triad', 'Triadic', [0, 120, 240, 30, 150, 270]],
-  ['split', 'Split complementary', [0, 150, 210, 30, -30]],
 ];
+/** the colour you chose, easing through the hue wheel (the short way round) into a deep slate blue — the classic "generic" gradient */
+function genericGradient(L, C, H, mode) {
+  const He = 250 * D2R, Le = mode === 'light' ? 0.4 : 0.86, Ce = 0.045;
+  const dh = ((((He - H) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI; // signed shortest turn, in (-π, π]
+  const lim = toneLimit(Math.max(C, 0.05), H, mode), L1 = mode === 'light' ? Math.min(L, lim) : Math.max(L, lim);
+  return [0, 1, 2, 3, 4, 5].map(i => { const t = i / 5; return okHex(L1 + (Le - L1) * t, C + (Ce - C) * Math.pow(t, 1.6), H + dh * t); }); // chroma holds, then fades at the end
+}
 /** a handful of matching palettes built from one colour; the first is the one to apply by default */
 function suggestPalettes(seed) {
   seed = parseColor(seed) || '#4f46e5';
@@ -186,7 +193,8 @@ function suggestPalettes(seed) {
   const Cb = clamp(Math.max(C, 0.09), 0.09, 0.2), mode = pickMode(L, C, H);
   return SCHEMES.map(([key, name, hues]) => {
     let colors;
-    if (!hues) { // shades of the one colour, stepping toward the tone limit (or away from it, for a dark seed)
+    if (hues === 'generic') colors = fixPalette(genericGradient(L, C, H, mode), mode, true, true);
+    else if (!hues) { // shades of the one colour, stepping toward the tone limit (or away from it, for a dark seed)
       const lim = toneLimit(C, H, mode), L1 = mode === 'light' ? Math.min(L, lim) : Math.max(L, lim);
       const end = mode === 'light' ? (L1 > lim - 0.08 ? L1 - 0.15 : lim) : (L1 < lim + 0.1 ? Math.min(0.95, L1 + 0.14) : L1 - 0.05);
       colors = [0, 1, 2, 3, 4].map(i => okHex(L1 + (end - L1) * (i / 4), i === 0 ? C : Math.max(C, 0.03), H));
