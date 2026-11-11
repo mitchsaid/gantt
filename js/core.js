@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v18 · 11 Nov';
+const APP_VERSION = 'v19 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -235,9 +235,27 @@ function colorIndexOf(info, n) {
   return n.rootIdx;
 }
 
+// ---------------------------------------------------------------- canvas
+// The chart is drawn at 96 px per inch, so sizes are real: a 16px label is 12pt on the slide or page it ends up on.
+const PX_PER_IN = 96;
+const CANVASES = [
+  { id: 'slide169', name: 'Slide 16:9', w: 13.333, h: 7.5 },
+  { id: 'slide43', name: 'Slide 4:3', w: 10, h: 7.5 },
+  { id: 'a4l', name: 'A4 landscape', w: 11.693, h: 8.268 },
+  { id: 'a4p', name: 'A4 portrait', w: 8.268, h: 11.693 },
+  { id: 'letterl', name: 'Letter landscape', w: 11, h: 8.5 },
+  { id: 'letterp', name: 'Letter portrait', w: 8.5, h: 11 },
+  { id: 'square', name: 'Square', w: 8, h: 8 },
+];
+function canvasOf(S) {
+  const c = CANVASES.find(c => c.id === S.canvas);
+  if (c) return { id: c.id, name: c.name, w: c.w, h: c.h };
+  return { id: 'custom', name: 'Custom', w: clamp(+S.canvasW || 13.333, 3, 40), h: clamp(+S.canvasH || 7.5, 2, 40) };
+}
+
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
-  title: 'Project plan', showTitle: true, width: 'wide',
+  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
@@ -638,8 +656,8 @@ function buildScene(state, opts) {
   let vrows = 0, run = null;
   // rough days-per-pixel, so a short bar or a milestone keeps enough of the row free for its name
   const spanDays = info.length ? Math.max(...info.map(n => n.end)) - Math.min(...info.map(n => n.start)) + 1 : 1;
-  const dpp = spanDays / ((S.width === 'compact' ? 960 : 1280) * 0.8);
-  const holdsUntil = n => { const need = ((n.row.name || 'Untitled').length * 8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
+  const dpp = spanDays / (canvasOf(S).w * PX_PER_IN * 0.8);
+  const holdsUntil = n => { const need = ((n.row.name || 'Untitled').length * 8.8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
   info.forEach(n => {
     n.fit = null;
     const mark = tr => { tr.end = n.milestone ? holdsUntil(n) : n.end; tr.hold = holdsUntil(n); };
@@ -654,7 +672,8 @@ function buildScene(state, opts) {
       if (run) mark(run.tr[0]);
     }
   });
-  const W = S.width === 'compact' ? 960 : 1280;
+  const cv = canvasOf(S), W = Math.round(cv.w * PX_PER_IN);
+  const fixedPx = S.fit === 'fixed' ? Math.round(cv.h * PX_PER_IN) : null; // a fixed canvas keeps its height; the rows are sized to fill it
   const pad = 40;
   const items = [];
   const M = (t, size, weight) => measureText(t, size, weight, font);
@@ -671,12 +690,15 @@ function buildScene(state, opts) {
   const hi = palette[0]; // the colour used for selection and drop highlights
   const accent = mix(palette[Math.min(1, palette.length - 1)], text, 0.12); // the "we are here" line
 
-  // metrics
-  // owners written under the bars need a line of their own in every row
-  const subLine = S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? 15 : 0;
+  // metrics — sizes are px at 96 per inch, so text is in true points on the output
+  const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
+  const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, 14.5, 20) * 2) / 2);
+  const tierOf = f => Math.round(26 * f / 14);
+  const subLineOf = f => (S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? Math.round(15 * f / 14) : 0); // owners under the bars take a line of their own
+  const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
   let rowH = { compact: 30, regular: 38, roomy: 48 }[S.density];
   if (!rowH) {
-    // auto: size rows so the chart fills a slide (16:9) — few items get tall bars, long plans stay compact
+    // auto: size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
     const grp = n => n.level === 0 && n.hasKids;
     const side = S.areaLabels === 'side' && info.some(grp);
     let gaps = 0;
@@ -685,11 +707,20 @@ function buildScene(state, opts) {
       if (i > 0 && (grp(n) || (side && n.level === 0 && info[i - 1].level > 0))) gaps += side ? 18 : 10;
       if (!(side && grp(n))) used.add(n.vrow);
     });
-    const hh = (S.dateMode === 'relative' || S.periodNames === false ? 1 : 2) * 26 + 8;
-    const fixedH = 2 * pad + (S.showTitle && S.title ? 56 : 0) + (S.todayLine ? 26 : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
-    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, used.size)) - subLine, 38, 68);
+    const targetH = Math.round(cv.h * PX_PER_IN), maxRow = fixedPx ? 90 : 68, minRow = fixedPx ? 26 : 38;
+    const tiers0 = S.dateMode !== 'relative' && S.periodNames !== false ? 2 : 1;
+    let f = textPt ? fsOf(0) : 16; // the text size, header and owner lines all depend on the row height, so settle them together
+    for (let it = 0; it < 4; it++) {
+      const hh = tiers0 * tierOf(f) + 8;
+      const fixedH = 2 * pad + (S.showTitle && S.title ? titleOf(f) + 26 : 0) + (S.todayLine ? Math.round(26 * f / 14) : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
+      rowH = clamp(Math.floor((targetH - fixedH) / Math.max(1, used.size)) - subLineOf(f), minRow, maxRow);
+      f = fsOf(rowH);
+    }
   }
-  const fs = Math.round((rowH <= 38 ? 12.5 + (rowH - 30) * 0.1875 : Math.min(17, 14 + (rowH - 38) * 0.1)) * 2) / 2;
+  const fs = fsOf(rowH);
+  const kk = fs / 14; // whatever was sized for 14px text scales with it
+  const subLine = subLineOf(fs), dd = Math.round(18 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
+  rowH = Math.max(rowH, Math.ceil(fs * 2.4)); // rows always fit their text
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
   const barMid = rowH / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
@@ -715,16 +746,17 @@ function buildScene(state, opts) {
   // vertical layout
   let y = pad;
   if (S.showTitle && S.title) {
-    const tt = fitText(S.title, W - 2 * pad, 30, 700, font);
-    items.push({ t: 'text', x: pad, y: y + 16, text: tt, size: 30, weight: 700, fill: text, anchor: 'start' });
-    items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, 30, 700) + 12, h: 44, hit: true, role: 'title' });
-    y += 30 + 26;
+    const tsz = titleOf(fs);
+    const tt = fitText(S.title, W - 2 * pad, tsz, 700, font);
+    items.push({ t: 'text', x: pad, y: y + tsz * 0.53, text: tt, size: tsz, weight: 700, fill: text, anchor: 'start' });
+    items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, tsz, 700) + 12, h: tsz * 1.45, hit: true, role: 'title' });
+    y += tsz + 26;
   }
-  const lane = S.todayLine ? 26 : 0;
+  const lane = S.todayLine ? Math.round(26 * kk) : 0;
   const laneY = y;
   y += lane;
   const relative = S.dateMode === 'relative';
-  const tierH = 26;
+  const tierH = tierOf(fs);
   const showSegs = !relative && S.periodNames !== false; // the “December 2026” tier above the period labels
   const tiers = showSegs ? 2 : 1;
   const headH = tiers * tierH + 8;
@@ -751,7 +783,8 @@ function buildScene(state, opts) {
   const bodyEnd = y;
   const headBotY = y;
   if (showBottom) y += headH;
-  const H = Math.round(y + pad - (showBottom ? 8 : 0));
+  const Hc = Math.round(y + pad - (showBottom ? 8 : 0)); // what the content needs
+  const H = fixedPx ? Math.max(Hc, fixedPx) : Hc;
 
   // time range
   const todayD = S.todayDate != null ? S.todayDate : todayDay();
@@ -779,6 +812,26 @@ function buildScene(state, opts) {
   let ppd = (x1 - x0) / (re - rs);
   const X = d => x0 + (d - rs) * ppd;
 
+  // long names: what happens when a name doesn't fit its space (Design → Long names)
+  const overflow = S.overflow || 'outside';
+  const labelFit = (name, maxW, size, weight, canWrap) => {
+    if (M(name, size, weight) <= maxW) return { lines: [name], size };
+    if (overflow === 'wrap' && canWrap) { // two lines in slightly smaller type, the second shortened if it still runs over
+      const ws = Math.round(size * 0.88 * 2) / 2, words = name.split(/\s+/);
+      let l1 = '', wi = 0;
+      while (wi < words.length) { const t = l1 ? l1 + ' ' + words[wi] : words[wi]; if (l1 && M(t, ws, weight) > maxW) break; l1 = t; wi++; }
+      const rest = words.slice(wi).join(' ');
+      return { lines: rest ? [fitText(l1, maxW, ws, weight, font), fitText(rest, maxW, ws, weight, font)] : [fitText(l1, maxW, ws, weight, font)], size: ws };
+    }
+    if (overflow === 'shrink' || overflow === 'wrap') { // smaller type, down to a floor, then shortened
+      const min = Math.max(8, size * 0.62);
+      let s = size;
+      while (s > min && M(name, s, weight) > maxW) s -= 0.5;
+      return { lines: [fitText(name, maxW, s, weight, font)], size: s };
+    }
+    return { lines: [fitText(name, maxW, size, weight, font)], size }; // truncate ("move outside" has nowhere to go here)
+  };
+
   // what goes to the right of each bar (labels that don't fit, owners)
   const showAssignee = n => S.assignees && n.row.assignee && (isGroup(n) ? S.assigneeAreas !== false : (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.level === 2 : n.level < 2)));
   const plan = () => {
@@ -794,7 +847,7 @@ function buildScene(state, opts) {
     }
     info.forEach(n => {
       const lim = pack ? room[n.row.id] : Infinity;
-      n.fit = null; n.who = null; n.areaWho = null;
+      n.fit = null; n.who = null; n.areaWho = null; n.lines = null; n.shrink = null;
       const size = n.level === 2 ? fs - 1 : fs;
       const h = n.milestone ? Math.min(n.level === 2 ? subH : barH, msCap) : n.level === 2 ? subH : barH;
       const bx = X(n.start), bw = Math.max(X(n.end + 1) - bx, 4);
@@ -809,14 +862,14 @@ function buildScene(state, opts) {
           if (!left) { // heading above its line: the owner follows the name
             const x = bx + M(name, fs + 1, 700) + 14;
             n.areaWho = { x, text: who, size: cs };
-            n.tailEnd = Math.max(n.tailEnd, x + 24 + M(who, cs, 500));
+            n.tailEnd = Math.max(n.tailEnd, x + dd + 6 + M(who, cs, 500));
           } else if (subLine) { // under its summary bar, like a task
             const ws = Math.max(10, fs - 2.5);
             n.who = { x: bx + 2, text: who, size: ws, area: true };
             n.tailEnd = Math.max(n.tailEnd, bx + 2 + M(who, ws, 500));
           } else {
             n.areaWho = { x: bx + bw + 8, text: who, size: cs };
-            n.tailEnd = bx + bw + 8 + 24 + M(who, cs, 500);
+            n.tailEnd = bx + bw + 8 + dd + 6 + M(who, cs, 500);
           }
         }
         over = Math.max(over, n.tailEnd - x1);
@@ -825,7 +878,11 @@ function buildScene(state, opts) {
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         if (!n.milestone && w + 18 <= bw) n.inside = true;
-        else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
+        else if (!n.milestone && overflow !== 'outside') { // keep the name on the bar: wrapped, shrunk or shortened
+          n.inside = true;
+          const lf = labelFit(name, Math.max(0, bw - 18), size, 500, h >= size * 2 + 4);
+          n.lines = lf.lines; n.shrink = lf.size !== size ? lf.size : null;
+        } else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
         else { n.inside = true; n.fit = Math.max(0, bw - 14); } // no room beside it: shorten the name to fit the bar
       } else if (n.milestone && !relative) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
@@ -838,9 +895,9 @@ function buildScene(state, opts) {
         const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
         if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + M(t, ws, 500) - x1); }
       }
-      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + 24 <= lim) {
+      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + dd + 6 <= lim) {
         const w = M(n.row.assignee, size - 1.5, 500);
-        n.tail.push({ k: 'who', x: tx, w: w + 24 }); tx += w + 24 + 10;
+        n.tail.push({ k: 'who', x: tx, w: w + dd + 6 }); tx += w + dd + 6 + 10;
       }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
       n.tailStart = n.milestone ? X(n.start + 0.5) - h * 0.52 - 4 : bx;
@@ -915,22 +972,22 @@ function buildScene(state, opts) {
     items.push({ t: 'rect', x: x0, y: top, w: x1 - x0, h: headH, hit: true, role: 'timeline' });
     if (showSegs) segs.forEach(sg => {
       const w = X(sg.e) - X(sg.s) - 10;
-      const label = M(sg.label, 12.5, 700) <= w ? sg.label : M(sg.short, 12.5, 700) <= w ? sg.short : '';
-      if (label) items.push({ t: 'text', x: X(sg.s) + (sg.real && sg.s > rs ? 6 : 0), y: segY, text: label, size: 12.5, weight: 700, fill: text, anchor: 'start' });
+      const label = M(sg.label, hs1, 700) <= w ? sg.label : M(sg.short, hs1, 700) <= w ? sg.short : '';
+      if (label) items.push({ t: 'text', x: X(sg.s) + (sg.real && sg.s > rs ? 6 : 0), y: segY, text: label, size: hs1, weight: 700, fill: text, anchor: 'start' });
     });
     const variants = cells.map((c, i) => unitLabel(c, i - firstCell));
     let vi = 0;
     const nVar = variants[0].length;
-    const maxW = v => Math.max(...variants.map(l => M(l[Math.min(v, l.length - 1)], 11.5, 500)));
+    const maxW = v => Math.max(...variants.map(l => M(l[Math.min(v, l.length - 1)], hs2, 500)));
     while (vi < nVar - 1 && maxW(vi) + 8 > cellW) vi++;
     const every = Math.max(1, Math.ceil((maxW(vi) + 8) / cellW));
     cells.forEach((c, i) => {
       if (every > 1 && (S.scale === 'days' && !relative ? dow(c[0]) !== 0 && every <= 7 : (i - firstCell) % every !== 0)) return;
       if (i < firstCell && (relative || S.scale === 'sprints')) return;
       const label = variants[i][Math.min(vi, variants[i].length - 1)];
-      if (every === 1 && X(c[1]) - X(c[0]) < M(label, 11.5, 500) + 4) return; // a clipped period at the edge with no room
+      if (every === 1 && X(c[1]) - X(c[0]) < M(label, hs2, 500) + 4) return; // a clipped period at the edge with no room
       const cx = every > 1 ? X(c[0]) + 3 : (X(c[0]) + X(c[1])) / 2;
-      items.push({ t: 'text', x: cx, y: unitY, text: variants[i][Math.min(vi, variants[i].length - 1)], size: 11.5, weight: 500, fill: muted, anchor: every > 1 ? 'start' : 'middle' });
+      items.push({ t: 'text', x: cx, y: unitY, text: variants[i][Math.min(vi, variants[i].length - 1)], size: hs2, weight: 500, fill: muted, anchor: every > 1 ? 'start' : 'middle' });
     });
   };
   if (showTop) drawHeader(headTopY, false);
@@ -994,8 +1051,9 @@ function buildScene(state, opts) {
     if (n.lane) {
       n.lx = pad;
       const ow = showAssignee(n) ? row.assignee : '';
-      items.push({ t: 'text', x: pad, y: ow ? n.cy - 8 : n.cy, text: fitText(name, laneW - 22, fs + 1, 700, font), size: fs + 1, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' });
-      if (ow) items.push({ t: 'text', x: pad, y: n.cy + 9, text: fitText(ow, laneW - 22, fs - 1.5, 500, font), size: fs - 1.5, weight: 500, fill: muted, anchor: 'start' });
+      const lf = labelFit(name, laneW - 22, fs + 1, 700, true), nl = lf.lines.length, off = ow ? -8 * kk : 0;
+      lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: pad, y: n.cy + off + (li - (nl - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' }));
+      if (ow) items.push({ t: 'text', x: pad, y: n.cy + (9 + (nl - 1) * lf.size * 0.6) * kk, text: fitText(ow, laneW - 22, fs - 1.5, 500, font), size: fs - 1.5, weight: 500, fill: muted, anchor: 'start' });
       items.push({ t: 'rect', x: pad + laneW - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
       items.push({ t: 'rect', x: pad - 10, y: n.y, w: laneW - 4, h: n.h, hit: true, id, role: 'row' });
       return;
@@ -1005,7 +1063,8 @@ function buildScene(state, opts) {
       n.lx = lx;
       const weight = group ? 700 : 500;
       const lsize = group ? fs + 1 : size;
-      items.push({ t: 'text', x: lx, y: n.cy, text: fitText(name, x0 - 14 - lx, lsize, weight, font), size: lsize, weight, fill: group ? mix(base, text, 0.25) : n.level === 2 ? muted : text, anchor: 'start' });
+      const lf = labelFit(name, x0 - 14 - lx, lsize, weight, barMid * 2 >= lsize * 2 + 4);
+      lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: lx, y: n.cy + (li - (lf.lines.length - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight, fill: group ? mix(base, text, 0.25) : n.level === 2 ? muted : text, anchor: 'start' }));
       items.push({ t: 'rect', x: pad + laneW - (lanes ? 4 : 10), y: n.y, w: x0 - pad - laneW - (lanes ? 6 : 0), h: rowH, hit: true, id, role: 'row' });
     }
     if (group) {
@@ -1018,9 +1077,9 @@ function buildScene(state, opts) {
         items.push({ t: 'rect', x: n.bx, y: n.y + rowH - 7, w: n.bw, h: 4, r: S.corners === 'square' ? 0 : 2, fill: strong });
       }
       if (n.areaWho) {
-        const a = n.areaWho, d = 18, ay = left ? n.cy : n.cy - 4;
+        const a = n.areaWho, d = dd, ay = left ? n.cy : n.cy - 4;
         items.push({ t: 'rect', x: a.x, y: ay - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-        items.push({ t: 'text', x: a.x + d / 2, y: ay, text: initials(a.text).slice(0, 2), size: 8, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+        items.push({ t: 'text', x: a.x + d / 2, y: ay, text: initials(a.text).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
         items.push({ t: 'text', x: a.x + d + 6, y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: Math.max(n.bw, left ? 0 : n.tailEnd - n.bx), h: rowH - 4, hit: true, id, role: 'move' });
@@ -1043,19 +1102,24 @@ function buildScene(state, opts) {
       const pw = prog * gw;
       if (S.progress) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: soft });
       if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: full });
-      const shown = n.fit != null ? fitText(name, n.fit, size, 500, font) : name;
-      if (n.inside && shown) {
-        const tw = M(shown, size, 500);
-        const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
-        // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
-        const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
-        const it = { t: 'text', x: n.bx + (n.fit != null ? 7 : 9), y: n.cy, text: shown, size, weight: 500, fill: onFull, anchor: 'start' };
-        // a label that straddles the progress edge is drawn in two colours, split at that edge
-        if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
-          if (pw <= 9) it.fill = on(soft);
-          else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= 9 + tw * 0.5 ? it.fill : it.fill2; }
+      const lsz = n.shrink || size;
+      const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
+      // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
+      const onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
+      if (n.inside && n.lines && n.lines.length > 1) {
+        n.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: n.bx + 9, y: n.cy + (li - (n.lines.length - 1) / 2) * lsz * 1.15, text: ln, size: lsz, weight: 500, fill: onFull, anchor: 'start' }));
+      } else {
+        const shown = n.lines ? n.lines[0] : n.fit != null ? fitText(name, n.fit, lsz, 500, font) : name;
+        if (n.inside && shown) {
+          const tw = M(shown, lsz, 500);
+          const it = { t: 'text', x: n.bx + (n.fit != null ? 7 : 9), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
+          // a label that straddles the progress edge is drawn in two colours, split at that edge
+          if (S.progress && pw < 9 + tw + 2 && on(soft) !== onFull) {
+            if (pw <= 9) it.fill = on(soft);
+            else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= 9 + tw * 0.5 ? it.fill : it.fill2; }
+          }
+          items.push(it);
         }
-        items.push(it);
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: rowH - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
@@ -1071,9 +1135,9 @@ function buildScene(state, opts) {
       if (t.k === 'name') items.push({ t: 'text', x: t.x, y: n.cy, text: name, size, weight: n.milestone ? 600 : 500, fill: text, anchor: 'start' });
       else if (t.k === 'date') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       else {
-        const d = 18;
+        const d = dd;
         items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-        items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
+        items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
         items.push({ t: 'text', x: t.x + d + 6, y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
     });
@@ -1084,20 +1148,20 @@ function buildScene(state, opts) {
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
     const label = S.todayLabel || '';
-    const lw = label ? M(label, 11, 700) + 18 : 0;
+    const lw = label ? M(label, 11 * kk, 700) + 18 : 0;
     const px = clamp(tx - lw / 2, pad, W - pad - lw);
-    items.push({ t: 'line', x1: tx, y1: laneY + (label ? 20 : 4), x2: tx, y2: bodyEnd, stroke: accent, sw: 2 });
+    items.push({ t: 'line', x1: tx, y1: laneY + (label ? tlh : 4), x2: tx, y2: bodyEnd, stroke: accent, sw: 2 });
     if (label) {
-      items.push({ t: 'rect', x: px, y: laneY, w: lw, h: 20, r: S.corners === 'square' ? 3 : 10, fill: accent });
-      items.push({ t: 'text', x: px + lw / 2, y: laneY + 10, text: label, size: 11, weight: 700, fill: onColor(accent), anchor: 'middle' });
+      items.push({ t: 'rect', x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: accent });
+      items.push({ t: 'text', x: px + lw / 2, y: laneY + tlh / 2, text: label, size: 11 * kk, weight: 700, fill: onColor(accent), anchor: 'middle' });
     } else items.push({ t: 'diamond', cx: tx, cy: laneY + 6, r: 5, fill: accent });
-    items.push({ t: 'rect', x: Math.min(px, tx - 7), y: laneY, w: Math.max(lw, 14), h: 22, hit: true, role: 'today' });
-    items.push({ t: 'rect', x: tx - 6, y: laneY + 20, w: 12, h: bodyEnd - laneY - 20, hit: true, role: 'today' });
+    items.push({ t: 'rect', x: Math.min(px, tx - 7), y: laneY, w: Math.max(lw, 14), h: tlh + 2, hit: true, role: 'today' });
+    items.push({ t: 'rect', x: tx - 6, y: laneY + tlh, w: 12, h: bodyEnd - laneY - tlh, hit: true, role: 'today' });
   }
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed };
+  return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

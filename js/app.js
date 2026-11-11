@@ -56,6 +56,8 @@ function sanitize(st) {
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  if (old.canvas == null) st.settings.canvas = old.width === 'compact' ? 'slide43' : 'slide169'; // the old Slide / Report formats
+  delete st.settings.width;
   if (!had) { // plans saved with a primary / secondary colour become a palette
     const p = parseColor(old.primary), same = !p || (p === '#4f46e5' && old.secondaryOn !== false && (!old.secondary || old.secondary === '#ec4899'));
     st.settings.palette = same ? PRESETS[0] : { id: 'custom', name: 'Custom', text: 'auto', seed: p, colors: areaPalette(p, old.secondaryOn === false ? null : parseColor(old.secondary), 6) };
@@ -221,6 +223,8 @@ function renderChart() {
   wrap.classList.toggle('transparent', scene.transparent);
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
   applyZoom();
+  const warn = $('#chart-warn');
+  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Chart'; }
 }
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
@@ -738,7 +742,11 @@ const DESIGN = [
   ['Chart', [
     { k: 'showTitle', type: 'toggle', label: 'Show title' },
     { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
-    { k: 'width', type: 'seg', label: 'Format', opts: [['wide', 'Slide'], ['compact', 'Report']] },
+    { k: 'canvas', type: 'select', label: 'Canvas', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
+    { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
+    { k: 'canvasH', type: 'number', label: 'Height (in)', sub: true, min: 2, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
+    { k: 'fit', type: 'seg', label: 'Height', opts: [['content', 'Fit content'], ['fixed', 'Fixed']] },
+    { k: '_canvasInfo', type: 'info', id: 'canvas-info' },
     { k: 'pack', type: 'seg', label: 'Rows', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
   ]],
   ['Labels', [
@@ -775,10 +783,17 @@ const DESIGN = [
     { type: 'palette' },
     { k: 'bgTransparent', type: 'toggle', label: 'Transparent background' },
     { k: 'bg', type: 'color', label: 'Background', when: s => !s.bgTransparent },
-    { k: 'textMode', type: 'seg', label: 'Text', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
+    { k: 'textMode', type: 'seg', label: 'Text colour', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
+  ]],
+  ['Text', [
+    { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
+    { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
+    { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
+    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
+    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate'], ['wrap', 'Wrap']] },
+    { k: '_textInfo', type: 'info', id: 'text-info' },
   ]],
   ['Style', [
-    { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
     { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
     { k: 'density', type: 'seg', label: 'Row height', col: true, opts: [['auto', 'Auto'], ['compact', 'Compact'], ['regular', 'Regular'], ['roomy', 'Roomy']] },
     { k: 'grid', type: 'toggle', label: 'Gridlines' },
@@ -801,10 +816,11 @@ function buildDesign() {
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
       else if (c.type === 'dur') html += `<div class="${cls}" data-w="${c.k}">${lbl}${durControl(0, 6, 'len-n', 'len-u')}</div>`;
+      else if (c.type === 'info') html += `<p class="ctl-note" id="${c.id}" data-w="${c.k}"></p>`;
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
-      else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"></label>`;
+      else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
     });
     html += '</div>';
   });
@@ -825,6 +841,12 @@ function syncDesign() {
     if (ln && ln !== document.activeElement) ln.value = n;
     if (lu && lu !== document.activeElement) lu.value = u;
   }
+  if (scene) { // sizes in real units, and a warning when a fixed canvas can't hold the plan
+    const cv = scene.canvas, f = x => (Math.round(x * 100) / 100).toString();
+    const ci = $('#canvas-info'), ti = $('#text-info');
+    if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
+    if (ti) ti.textContent = `Names ${f(scene.fs * 0.75)} pt · dates ${f(scene.hs2 * 0.75)} pt, on a ${f(cv.w)} in wide canvas.`;
+  }
   $$('input[data-k], select[data-k]', designEl).forEach(inp => {
     const k = inp.dataset.k;
     if (inp.type === 'checkbox') inp.checked = !!S[k];
@@ -835,6 +857,8 @@ function syncDesign() {
 }
 function setSetting(k, v, soon) {
   const S = state.settings;
+  if (k === 'canvas' && v === 'custom') { const c = canvasOf(S); S.canvasW = Math.round(c.w * 100) / 100; S.canvasH = Math.round(c.h * 100) / 100; }
+  if (k === 'textAuto' && v === false && scene) S.textPt = Math.round(scene.fs * 0.75 * 2) / 2; // start the override from what Auto was using
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
   if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
   if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
@@ -862,6 +886,7 @@ designEl.addEventListener('input', e => {
   else if (t.dataset.hex != null) { let v = t.value.trim(); if (v && v[0] !== '#') v = '#' + v; if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) setSetting(k, rgbToHex(hexToRgb(v)), true); }
   else if (t.type === 'date') { const d = isoToDay(t.value); if (d != null) setSetting(k, k === 'todayDate' && d === todayDay() ? null : d, true); }
   else if (t.tagName === 'SELECT') setSetting(k, t.value);
+  else if (t.type === 'number') { const v = parseFloat(t.value); if (Number.isFinite(v) && v >= +t.min && v <= +t.max) setSetting(k, v, true); }
   else setSetting(k, t.value, true);
 });
 designEl.addEventListener('change', e => {
@@ -986,9 +1011,11 @@ async function exportPptx() {
   const sc = await exportScene();
   await loadScript('vendor/pptxgen.bundle.js');
   const pptx = new PptxGenJS();
-  pptx.layout = 'LAYOUT_WIDE';
+  const cv = sc.canvas;
+  pptx.defineLayout({ name: 'CANVAS', width: cv.w, height: cv.h }); // the slide is the canvas, so text keeps its point size
+  pptx.layout = 'CANVAS';
   pptx.title = state.settings.title || 'Gantt chart';
-  const SW = 13.333, SH = 7.5, m = 0.3;
+  const SW = cv.w, SH = cv.h, m = 0;
   const slide = pptx.addSlide();
   const hx = c => c.replace('#', '').toUpperCase();
   if (!sc.transparent) slide.background = { color: hx(state.settings.bg) };
@@ -1288,7 +1315,7 @@ const stage = $('#stage'), wrapEl = $('#chart-col');
 let zoom = 1;
 function applyZoom() {
   wrapEl.style.width = zoom * 100 + '%';
-  wrapEl.style.maxWidth = (state.settings.width === 'compact' ? 960 : 1280) * zoom + 'px';
+  wrapEl.style.maxWidth = (scene ? scene.w : 1280) * zoom + 'px';
   $('#zoom-val').textContent = Math.round(zoom * 100) + '%';
 }
 function setZoom(z, cx, cy) {
