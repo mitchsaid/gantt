@@ -86,6 +86,8 @@ function loadState() {
 }
 let state = loadState() || sampleState();
 let sel = null;
+let multi = new Set(); // with `sel`, the rows picked by shift/ctrl-click
+const selIds = () => (multi.size > 1 && multi.has(sel) ? state.rows.filter(r => multi.has(r.id)).map(r => r.id) : sel ? [sel] : []);
 let detailId = null; // the row whose details are open in the Plan panel — opened on purpose, never by selecting
 let scene = null;
 let drag = null;
@@ -118,6 +120,7 @@ function timeTravel(from, to) {
   lastSnap = from.pop();
   state = JSON.parse(lastSnap);
   if (sel && !state.rows.some(r => r.id === sel)) sel = null;
+  multi = new Set();
   save(); syncUndo(); ensureFont(); refresh();
 }
 function syncUndo() { $('#btn-undo').disabled = !undoStack.length; $('#btn-redo').disabled = !redoStack.length; }
@@ -208,7 +211,7 @@ function drawScene(sc, scale) {
 }
 
 function renderChart() {
-  const o = { sel };
+  const o = { sel, selSet: selIds() };
   if (drag && drag.range) o.range = drag.range;
   if (drag && drag.dropY != null) { o.dropY = drag.dropY; o.dropLevel = drag.dropLevel; }
   if (drag && drag.toRow != null) o.rowHi = drag.toRowY;
@@ -247,8 +250,8 @@ const rowIndex = id => state.rows.findIndex(r => r.id === id);
 const nextWorkday = d => (dow(d) >= 5 ? d + (7 - dow(d)) : d);
 
 function select(id, opts) {
-  if (sel === id) return;
-  sel = id;
+  if (sel === id && !multi.size) return;
+  sel = id; multi = new Set();
   if (pop && pop.kind === 'row' && pop.id !== id) closePop();
   renderChart(); renderOutline(); syncAddNote();
   if (id && !(opts && opts.quiet)) { const el = $(`.orow[data-id="${id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
@@ -443,11 +446,12 @@ function renderOutline() {
   const rows = state.rows, info = derive(rows), S = state.settings;
   const palette = areaPalette(S.primary, S.secondaryOn ? S.secondary : null, Math.max(1, info.filter(n => n.level === 0).length));
   const who = Array.from(new Set(rows.map(r => r.assignee).filter(Boolean)));
+  const picked = new Set(selIds());
   let html = '';
   info.forEach(n => {
     const r = n.row, c = palette[n.rootIdx % palette.length];
     const color = n.level === 2 ? mix(c, '#ffffff', 0.45) : c;
-    html += `<div class="orow lvl${n.level}${r.id === sel ? ' sel' : ''}" data-id="${r.id}">
+    html += `<div class="orow lvl${n.level}${picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}">
       <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
       <span class="dot${n.milestone ? ' ms' : ''}" style="background:${color}"></span>
       <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.hasKids && n.level === 0 ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
@@ -471,9 +475,9 @@ function updateRowMeta(id) { // light update while typing/dragging, without rebu
 outline.addEventListener('focusin', e => {
   if (!e.target.classList.contains('nm')) return;
   const row = e.target.closest('.orow'), id = row.dataset.id;
-  if (id === sel) return;
+  if (id === sel && !multi.size) return;
   // select without rebuilding the row, so the caret lands where the user clicked
-  sel = id;
+  sel = id; multi = new Set();
   renderChart();
   $$('.orow.sel', outline).forEach(el => el.classList.remove('sel'));
   row.classList.add('sel');
@@ -499,7 +503,13 @@ outline.addEventListener('click', e => {
     if (!segBtn.classList.contains('on')) setType(id, segBtn.dataset.v);
     return;
   }
-  if (host.classList.contains('orow') && !e.target.closest('input,.grip')) select(id);
+  if (host.classList.contains('orow') && !e.target.closest('input,.grip')) { if (e.shiftKey || e.ctrlKey || e.metaKey) multiSelect(id, e.shiftKey ? 'range' : 'toggle'); else select(id); }
+});
+// shift / ctrl-click on a row's name picks it instead of editing it
+outline.addEventListener('mousedown', e => {
+  if (!e.target.classList.contains('nm') || !(e.shiftKey || e.ctrlKey || e.metaKey) || e.button) return;
+  e.preventDefault();
+  multiSelect(e.target.closest('.orow').dataset.id, e.shiftKey ? 'range' : 'toggle');
 });
 outline.addEventListener('input', e => {
   const host = e.target.closest('[data-id]');
@@ -584,9 +594,16 @@ svg.addEventListener('pointerdown', e => {
   try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   const box = svg.getBoundingClientRect();
   const n = id ? scene.info.find(x => x.row.id === id) : null;
-  drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect };
+  drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect, mod: e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : null };
   if (role !== 'row' && role !== 'title' && role !== 'timeline') drag.range = scene.range.slice();
-  if (role === 'move') { const i = n.i; drag.i = i; drag.lv0 = n.level; drag.block = state.rows.slice(i, blockEnd(state.rows, i)).map(r => ({ r, s: r.start, e: r.end })); }
+  if (role === 'move') {
+    const i = n.i; drag.i = i; drag.lv0 = n.level;
+    // dragging one of several selected items moves them all
+    const picked = selIds(), group = picked.length > 1 && picked.includes(id) ? picked : [id], seen = new Set();
+    drag.block = [];
+    group.forEach(gid => { const gi = rowIndex(gid); state.rows.slice(gi, blockEnd(state.rows, gi)).forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); drag.block.push({ r, s: r.start, e: r.end }); } }); });
+    drag.multi = group.length > 1;
+  }
   else if (role === 'resize-l' || role === 'resize-r') drag.orig = { s: n.row.start, e: n.row.end };
   else if (role === 'progress') { drag.bx = n.bx; drag.bw = n.bw; }
   else if (role === 'today') drag.orig = state.settings.todayDate != null ? state.settings.todayDate : todayDay();
@@ -618,7 +635,7 @@ svg.addEventListener('pointermove', e => {
   if (drag.role === 'move') {
     const pack = state.settings.pack;
     // a mostly-sideways drag moves the item in time; a mostly-vertical one moves it between rows and areas
-    if (!pack && drag.mode == null) drag.mode = Math.abs(dy) > Math.abs(dx) ? 'reorder' : 'time';
+    if (!pack && drag.mode == null) drag.mode = !drag.multi && Math.abs(dy) > Math.abs(dx) ? 'reorder' : 'time';
     if (!pack && drag.mode === 'reorder') { reorderTarget(dx, py); drag.reorder = true; }
     else {
       drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
@@ -663,6 +680,7 @@ function endDrag() {
   } else if (d.role === 'title') editTitle(d.rect);
   else if (d.role === 'timeline') openPop('timeline', d.rect, null, d.x - 60);
   else if (d.role === 'today') openPop('today', d.rect, null, d.x - 60);
+  else if (d.id && d.mod) multiSelect(d.id, d.mod);
   else if (d.id) {
     // the chart re-renders on selection, so double-clicks are detected here rather than via dblclick
     const now = Date.now(), dbl = lastClick.id === d.id && now - lastClick.t < 450;
@@ -1010,12 +1028,15 @@ document.addEventListener('keydown', e => {
   if (!modal.hidden) return;
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
-  else if (!inField && sel && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDelete(sel); }
+  else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
+  else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
+  else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
+  else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-    // nudge the selected item (and anything inside it) by a day; Shift = a week
+    // nudge the selected items (and anything inside them) by a day; Shift = a week
     e.preventDefault();
-    const i = rowIndex(sel), d = (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 7 : 1);
-    state.rows.slice(i, blockEnd(state.rows, i)).forEach(r => { r.start += d; r.end += d; });
+    const d = (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 7 : 1);
+    selectedBlocks().forEach(r => { r.start += d; r.end += d; });
     refresh(); commitSoon();
   }
 });
@@ -1280,7 +1301,7 @@ function pastePlace(parsed, afterId, hole) {
   const at = blockEnd(rows, i);
   return { at, level: n.hasKids && n.level === 0 ? 1 : n.level, ref: info[at - 1] };
 }
-function insertParsed(parsed, afterId, replaceId) {
+function insertParsed(parsed, afterId, replaceId, selectAll) {
   const rows = state.rows, ri = replaceId ? rowIndex(replaceId) : -1;
   let hole = null;
   if (ri >= 0) { hole = { at: ri, level: rows[ri].level }; rows.splice(ri, 1); }
@@ -1295,7 +1316,7 @@ function insertParsed(parsed, afterId, replaceId) {
   parsed.forEach(r => { r.level = clamp(r.level + place.level, 0, 2); });
   rows.splice(place.at, 0, ...parsed);
   normalizeLevels(rows);
-  sel = parsed[0].id;
+  sel = parsed[0].id; multi = selectAll && parsed.length > 1 ? new Set(parsed.map(r => r.id)) : new Set();
   commit(); refresh();
   return parsed.length;
 }
@@ -1305,8 +1326,7 @@ outline.addEventListener('paste', e => {
   if (!t.classList || !t.classList.contains('nm')) return;
   const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
   if (!/[\r\n]/.test(text.trim())) return; // a single line pastes as usual
-  let parsed = [];
-  try { parsed = parseImport(text); } catch (err) { console.error(err); }
+  const parsed = rowsFromText(text);
   if (parsed.length < 2) return;
   e.preventDefault();
   const id = t.closest('.orow').dataset.id, i = rowIndex(id);
@@ -1342,6 +1362,123 @@ function doPasteAdd() {
   toast(`Added ${n} item${n === 1 ? '' : 's'} — Undo reverts them`);
 }
 $$('[data-paste]').forEach(b => b.addEventListener('click', () => { const r = b.getBoundingClientRect(); openPop('paste', r, null, r.left); }));
+
+// ---------------------------------------------------------------- selecting several, copy & paste
+/** shift-click selects a range, ctrl/⌘-click adds or removes one */
+function multiSelect(id, mode) {
+  const cur = selIds();
+  if (mode === 'range' && sel && sel !== id && rowIndex(sel) >= 0) {
+    const a = rowIndex(sel), b = rowIndex(id), lo = Math.min(a, b), hi = Math.max(a, b);
+    multi = new Set(state.rows.slice(lo, hi + 1).map(r => r.id)); // the anchor stays where it was
+  } else {
+    const set = new Set(cur);
+    if (set.has(id)) { set.delete(id); if (sel === id) sel = [...set].pop() || null; } else { set.add(id); sel = id; }
+    multi = set; if (set.size <= 1) multi = new Set();
+    if (set.size === 1) sel = [...set][0];
+  }
+  closePop(); renderChart(); renderOutline(); syncAddNote();
+}
+function selectAllRows() {
+  if (!state.rows.length) return;
+  multi = new Set(state.rows.map(r => r.id)); sel = state.rows[0].id;
+  closePop(); renderChart(); renderOutline(); syncAddNote();
+}
+/** the selected rows plus everything inside them, in plan order */
+function selectedBlocks() {
+  const seen = new Set(), out = [];
+  selIds().forEach(id => { const i = rowIndex(id); if (i >= 0) state.rows.slice(i, blockEnd(state.rows, i)).forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); out.push(r); } }); });
+  return out.sort((a, b) => rowIndex(a.id) - rowIndex(b.id));
+}
+function deleteMany(ids) {
+  const rows = state.rows, gone = new Set();
+  ids.forEach(id => { const i = rowIndex(id); if (i >= 0) rows.slice(i, blockEnd(rows, i)).forEach(r => gone.add(r.id)); });
+  const first = Math.min(...ids.map(rowIndex).filter(i => i >= 0));
+  state.rows = rows.filter(r => !gone.has(r.id));
+  state.rows.forEach(r => { r.deps = r.deps.filter(d => !gone.has(d)); });
+  normalizeLevels(state.rows);
+  multi = new Set();
+  sel = state.rows.length ? state.rows[Math.min(first, state.rows.length - 1)].id : null;
+  commit(); refresh();
+}
+function askDeleteSel() {
+  const ids = selIds();
+  if (ids.length === 1) { askDelete(ids[0]); return; }
+  const n = selectedBlocks().length;
+  dialog(`Delete ${ids.length} items?`, n > ids.length ? `Together with what is inside them, that removes ${n} rows.` : 'They will be removed from the plan.', [
+    ['Delete', 'danger', () => deleteMany(ids)], ['Cancel', 'ghost', null],
+  ]);
+}
+// what gets copied is plain indented text — one item per line, tab-separated — so it also pastes into a doc or spreadsheet,
+// and back into this tool (or the paste box) with dates, owners, progress and milestones intact
+let clip = null; // the last thing copied inside the app, kept so a paste restores everything exactly (links between items too)
+function clipText(rows) {
+  const min = Math.min(...rows.map(r => r.level));
+  const kids = new Set(derive(state.rows).filter(n => n.hasKids).map(n => n.row.id));
+  const flat = s => String(s).replace(/[\t\r\n]+/g, ' ');
+  return rows.map(r => {
+    const cells = [flat(r.name)], group = kids.has(r.id);
+    if (!group) { cells.push(dayToIso(r.start)); cells.push(r.type === 'milestone' ? 'Milestone' : dayToIso(r.end)); }
+    if (r.assignee) cells.push(flat(r.assignee));
+    if (!group && r.type !== 'milestone' && r.progress > 0) cells.push(Math.round(r.progress) + '%');
+    return '\t'.repeat(r.level - min) + cells.join('\t');
+  }).join('\n');
+}
+function cloneRows(src) {
+  const min = Math.min(...src.map(r => r.level)), map = {};
+  const rows = src.map(r => { const c = Object.assign({}, r, { id: uid(), level: r.level - min, deps: r.deps.slice() }); map[r.id] = c.id; return c; });
+  rows.forEach(c => { c.deps = c.deps.map(d => map[d] || d).filter(d => rows.some(x => x.id === d) || rowIndex(d) >= 0); });
+  rows.dated = true;
+  return rows;
+}
+function rowsFromText(text) {
+  if (clip && clip.text === text) return cloneRows(clip.rows);
+  let parsed = [];
+  try { parsed = parseImport(text); } catch (err) { console.error(err); }
+  return parsed;
+}
+const inTextField = () => { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
+function copySelection(e, cut) {
+  if (inTextField() || !modal.hidden) return;
+  if (window.getSelection && String(window.getSelection())) return; // the user is copying page text
+  const rows = selectedBlocks();
+  if (!rows.length) return;
+  e.preventDefault();
+  const text = clipText(rows);
+  e.clipboardData.setData('text/plain', text);
+  clip = { text, rows: JSON.parse(JSON.stringify(rows)) };
+  if (cut) { const ids = selIds(); commit(); deleteMany(ids); toast(`Cut ${rows.length} item${rows.length === 1 ? '' : 's'} — paste to place ${rows.length === 1 ? 'it' : 'them'}`); }
+  else toast(`Copied ${rows.length} item${rows.length === 1 ? '' : 's'}`);
+}
+document.addEventListener('copy', e => copySelection(e, false));
+document.addEventListener('cut', e => copySelection(e, true));
+document.addEventListener('paste', e => {
+  if (inTextField() || !modal.hidden) return;
+  const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+  if (!text.trim()) return;
+  const parsed = rowsFromText(text);
+  if (!parsed.length) return;
+  e.preventDefault();
+  const ids = selIds();
+  commit();
+  const n = insertParsed(parsed, ids.length ? ids[ids.length - 1] : null, null, true);
+  toast(`Pasted ${n} item${n === 1 ? '' : 's'} — Undo reverts ${n === 1 ? 'it' : 'them'}`);
+});
+// browsers don't send a cut event without a text selection, so Ctrl/⌘+X is handled from the keyboard
+function cutSelection() {
+  const rows = selectedBlocks();
+  if (!rows.length) return;
+  const text = clipText(rows), ids = selIds();
+  clip = { text, rows: JSON.parse(JSON.stringify(rows)) };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => { /* the in-app copy still works */ });
+  commit(); deleteMany(ids);
+  toast(`Cut ${rows.length} item${rows.length === 1 ? '' : 's'} — paste to place ${rows.length === 1 ? 'it' : 'them'}`);
+}
+function duplicateSelection() {
+  const rows = selectedBlocks();
+  if (!rows.length) return;
+  const ids = selIds(), n = insertParsed(cloneRows(JSON.parse(JSON.stringify(rows))), ids[ids.length - 1], null, true);
+  toast(`Duplicated ${n} item${n === 1 ? '' : 's'}`);
+}
 
 // ---------------------------------------------------------------- go
 $('#version').textContent = APP_VERSION;

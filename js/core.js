@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v12 · 11 Nov';
+const APP_VERSION = 'v13 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -824,10 +824,10 @@ function buildScene(state, opts) {
 
   // ---- selection highlight & drop indicator (interactive only)
   if (opts.rowHi != null) items.push({ t: 'rect', x: pad - 10, y: opts.rowHi, w: W - 2 * pad + 20, h: rowH, r: 6, fill: S.primary, opacity: 0.2, ui: true });
-  if (opts.sel) {
-    const n = info.find(n => n.row.id === opts.sel);
+  (opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : []).forEach(sid => {
+    const n = info.find(n => n.row.id === sid);
     if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: S.primary, opacity: 0.09, ui: true });
-  }
+  });
 
   // ---- milestone guide lines
   if (S.msLines) info.forEach(n => {

@@ -125,7 +125,8 @@ kbd { font: inherit; font-size: 10.5px; border: 1px solid var(--line-strong); bo
 input[type='range'] { width: 100%; accent-color: var(--accent); margin: 0; }
 .range-row { display: flex; align-items: center; gap: 8px; }
 .range-row output { width: 38px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
-.group { padding: 12px 4px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 11px; }
+.group { padding: 12px 4px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr); gap: 11px; }
+.ctl.col .seg button { padding: 0 4px; }
 .group:last-child { border-bottom: 0; }
 .group h3 { margin: 0; font-size: 12.5px; font-weight: 700; }
 .ctl { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; }
