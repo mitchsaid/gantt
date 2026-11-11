@@ -854,38 +854,32 @@ svg.addEventListener('pointercancel', endDrag);
 
 // ---------------------------------------------------------------- design panel
 const DESIGN = [
-  ['Chart', [
-    { k: 'showTitle', type: 'toggle', label: 'Show title' },
-    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
-    { k: 'canvas', type: 'select', label: 'Canvas', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
+  ['canvas', 'Canvas', [
+    { k: 'canvas', type: 'select', label: 'Size', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
     { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
     { k: 'canvasH', type: 'number', label: 'Height (in)', sub: true, min: 2, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
-    { k: 'fit', type: 'seg', label: 'Height', opts: [['content', 'Fit content'], ['fixed', 'Fixed']] },
+    { k: 'fit', type: 'seg', label: 'Canvas height', opts: [['content', 'Fit content'], ['fixed', 'Fixed']] },
     { k: '_canvasInfo', type: 'info', id: 'canvas-info' },
-    { k: 'pack', type: 'seg', label: 'Rows', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
   ]],
-  ['Labels', [
-    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
-    { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
-    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
-    { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
-  ]],
-  ['Timeline', [
+  ['timeline', 'Timeline', [
+    { type: 'head', label: 'Scale' },
     { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
     { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']], when: s => s.scale === 'sprints' },
-    { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
-    { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
-    { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
+    { type: 'head', label: 'Span' },
     { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
     { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
     { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
     { k: '_len', type: 'dur', label: 'Or length from start', sub: true, col: true, when: s => s.rangeMode === 'fixed' },
     { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', when: s => s.rangeMode === 'fixed' },
-  ]],
-  ['Show', [
-    { k: 'progress', type: 'toggle', label: 'Progress in bars' },
-    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
-    { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
+    { type: 'head', label: 'Header' },
+    { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
+    { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
+    { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
+    { type: 'head', label: 'Gridlines' },
+    { k: 'gridCells', type: 'toggle', label: 'Period lines' },
+    { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
+    { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
+    { type: 'head', label: 'Markers' },
     { k: 'todayLine', type: 'toggle', label: 'Date marker' },
     { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
     { k: 'markerLabelOn', type: 'toggle', label: 'Show label', sub: true, when: s => s.todayLine },
@@ -893,47 +887,60 @@ const DESIGN = [
     { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
     { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
     { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, when: s => s.todayLine },
-    { k: 'deps', type: 'toggle', label: 'Dependency lines' },
+    { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
+    { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
+  ]],
+  ['tasks', 'Tasks', [
+    { type: 'head', label: 'Rows' },
+    { k: 'pack', type: 'seg', label: 'Row layout', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
+    { k: 'density', type: 'seg', label: 'Row height', opts: [['compact', 'Compact'], ['auto', 'Auto'], ['roomy', 'Roomy']] },
+    { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
+    { k: 'stripes', type: 'toggle', label: 'Row stripes' },
+    { type: 'head', label: 'Names' },
+    { k: 'taskLabels', type: 'seg', label: 'Task names', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
+    { k: 'areaLabels', type: 'seg', label: 'Area names', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
+    { type: 'head', label: 'Extras' },
+    { k: 'progress', type: 'toggle', label: 'Progress in bars' },
+    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
+    { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under bars'], ['beside', 'Beside bars']], when: s => s.assignees },
     { k: 'assigneeAvatar', type: 'toggle', label: 'Show initials avatar', sub: true, when: s => s.assignees },
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
-    { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
-    { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
+    { k: 'deps', type: 'toggle', label: 'Dependency lines' },
   ]],
-  ['Colour', [
+  ['colour', 'Colour', [
     { type: 'palette' },
     { k: 'bgTransparent', type: 'toggle', label: 'Transparent background' },
     { k: 'bg', type: 'color', label: 'Background', when: s => !s.bgTransparent },
     { k: 'textMode', type: 'seg', label: 'Text colour', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
+    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
   ]],
-  ['Text', [
+  ['text', 'Text', [
     { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
     { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
     { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
-    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
     { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { k: '_textInfo', type: 'info', id: 'text-info' },
-  ]],
-  ['Style', [
-    { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
-    { k: 'density', type: 'seg', label: 'Row height', opts: [['compact', 'Compact'], ['auto', 'Auto'], ['roomy', 'Roomy']] },
-    { k: 'gridCells', type: 'toggle', label: 'Period lines' },
-    { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
-    { k: 'stripes', type: 'toggle', label: 'Row stripes' },
-    { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
+    { type: 'head', label: 'Title' },
+    { k: 'showTitle', type: 'toggle', label: 'Show title' },
+    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
+    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
   ]],
 ];
 const designEl = $('#design');
 const designCtl = {};
 function buildDesign() {
   let html = '';
-  DESIGN.forEach(([title, ctls]) => {
-    html += `<div class="group"><h3>${title}</h3>`;
+  DESIGN.forEach(([id, title, ctls]) => {
+    const open = ui.designOpen[id] !== false;
+    html += `<section class="group${open ? '' : ' collapsed'}" data-sec="${id}"><h3><button class="ghead" data-sec-toggle="${id}" aria-expanded="${open}" aria-controls="sec-${id}"><i class="chev" aria-hidden="true"></i><span class="gt">${title}</span><span class="gsum" data-sum="${id}"></span></button></h3><div class="gbody" id="sec-${id}">`;
     ctls.forEach(c => {
       if (c.k) designCtl[c.k] = c;
+      if (c.type === 'head') { html += `<h4 class="ghd">${c.label}</h4>`; return; }
       const cls = `ctl${c.sub ? ' sub' : ''}${c.col || c.type === 'themes' ? ' col' : ''}`;
       const lbl = `<span class="lbl">${c.label || ''}</span>`;
       if (c.type === 'palette') html += paletteHtml();
@@ -948,12 +955,30 @@ function buildDesign() {
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
       else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
     });
-    html += '</div>';
+    html += '</div></section>';
   });
   designEl.innerHTML = html;
 }
+/** one line per section, shown when it is collapsed */
+function designSummary(id, S) {
+  const cv = canvasOf(S);
+  if (id === 'canvas') return `${cv.name} · ${S.fit === 'fixed' ? 'fixed height' : 'fits content'}`;
+  if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks', S.todayLine ? 'date marker' : ''].filter(Boolean).join(' · ');
+  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
+  if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
+  if (id === 'text') return `${S.font}${S.textAuto === false ? ' · ' + S.textPt + ' pt' : ''}`;
+  return '';
+}
+function setSectionOpen(id, open) {
+  ui.designOpen[id] = open; saveUi();
+  const sec = $(`.group[data-sec="${id}"]`, designEl);
+  if (!sec) return;
+  sec.classList.toggle('collapsed', !open);
+  $('.ghead', sec).setAttribute('aria-expanded', String(open));
+}
 function syncDesign() {
   const S = state.settings;
+  $$('[data-sum]', designEl).forEach(el => { const h = designSummary(el.dataset.sum, S); if (el.innerHTML !== h) el.innerHTML = h; });
   syncPalette();
   syncMarkerColor();
   // the gridline switches are named for what they actually draw at this scale
@@ -1000,6 +1025,8 @@ function setSetting(k, v, soon) {
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
+  const gh = e.target.closest('[data-sec-toggle]');
+  if (gh) { setSectionOpen(gh.dataset.secToggle, gh.getAttribute('aria-expanded') !== 'true'); return; }
   if (markerColorEvent(e, 'click')) return;
   const pb = e.target.closest('[data-palette]');
   if (pb) { applyPalette(PRESETS[+pb.dataset.palette]); return; }
@@ -1259,7 +1286,8 @@ window.addEventListener('beforeunload', commit);
 
 // ---------------------------------------------------------------- durations & timeline
 const UI_KEY = 'gantt:ui';
-const ui = Object.assign({ durUnit: 'weeks', hidePlan: false, hideDesign: false }, (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })());
+const ui = Object.assign({ durUnit: 'weeks', hidePlan: false, hideDesign: false, designOpen: {} }, (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })());
+if (!ui.designOpen || typeof ui.designOpen !== 'object') ui.designOpen = {};
 const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* storage unavailable */ } };
 const DUR_UNITS = [['days', 'days'], ['weeks', 'weeks'], ['sprints', 'sprints'], ['months', 'months']];
 

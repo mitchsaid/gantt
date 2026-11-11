@@ -24,6 +24,7 @@ python3 -m http.server 8000
 - **Import** — paste an outline (tabs, spaces, bullets, numbering, Markdown headings, CSV/TSV, rows copied from a spreadsheet) or upload `.xlsx` / `.csv`. Dates, durations, owners and percentages are detected; undated lists are laid out as a waterfall.
 - **Export** — PowerPoint (native, editable shapes), PDF, PNG (3×), copy image to clipboard, and a `.json` project file.
 - Zoom with Ctrl/⌘ + scroll or a trackpad pinch; both side panels collapse and can be resized (the widths are remembered).
+- **Design panel in five sections** — Canvas (size), Timeline (periods, span, header, gridlines, date marker and milestones), Tasks (row layout, names, progress, assignees, dependencies), Colour and Text. Each section collapses to a one-line summary, and which are open is remembered.
 - Autosaves to the browser, with undo/redo.
 
 ## Layout
