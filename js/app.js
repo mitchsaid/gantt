@@ -1109,6 +1109,11 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
+  else if (!inField && !mod && !e.altKey && !e.shiftKey && e.key === 'Enter' && selIds().length && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Enter adds a new item under the selection
+    e.preventDefault();
+    const picked = selIds();
+    commit(); addRow('task', picked[picked.length - 1], true, true);
+  }
   else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
   else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
   else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
@@ -1242,6 +1247,8 @@ function openPop(kind, rect, id, x) {
 function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; }
 function syncPop() {
   if (!pop) return;
+  // a row's popover belongs to the selected row: once the selection moves (paste, duplicate, group…) it must not stay on the old one
+  if (pop.kind === 'row' && pop.id !== sel) { closePop(); return; }
   if (pop.kind === 'paste') { if (!popEl.querySelector('textarea')) popEl.innerHTML = popHtml(); syncPasteNote(); return; }
   const html = popHtml();
   if (!html) { closePop(); return; }
