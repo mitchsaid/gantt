@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v46 · 11 Nov';
+const APP_VERSION = 'v47 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -235,15 +235,18 @@ function parseColor(s) {
 const validPalette = p => !!(p && Array.isArray(p.colors) && p.colors.length > 0 && p.colors.length <= 16 && p.colors.every(c => /^#[0-9a-f]{6}$/i.test(c)));
 
 const vivid = [250, 305, 350, 40, 95, 150, 200].map(h => okHex(0.55, 0.16, h * D2R));
+// Every palette is built so neighbouring colours are clearly different (at least ~0.09 apart in OKLab, ~0.1 for most), not just
+// shades of one hue: the label-contrast limit pins lightness, so distinction comes from spreading hue and tone together.
+// `loose` keeps each colour's own darkness (only capping it for label contrast) instead of squeezing them into one tonal band.
 const PRESETS = [
-  { id: 'indigo', name: 'Indigo bloom', text: 'light', colors: ['#4f46e5', '#7c3aed', '#a855f7', '#d946ef', '#ec4899'] },
-  { id: 'ocean', name: 'Ocean', text: 'light', colors: ['#1d4ed8', '#0369a1', '#0e7490', '#0f766e', '#4f46e5'] },
-  { id: 'forest', name: 'Forest', text: 'light', colors: ['#15803d', '#3f6212', '#0f766e', '#4d7c0f', '#166534'] },
-  { id: 'sunset', name: 'Sunset', text: 'light', colors: ['#c2410c', '#dc2626', '#e11d48', '#be185d', '#a21caf'] },
-  { id: 'berry', name: 'Berry', text: 'light', colors: ['#7e22ce', '#a21caf', '#be185d', '#6d28d9', '#9d174d'] },
-  { id: 'earth', name: 'Earth', text: 'light', colors: ['#92400e', '#4d7c0f', '#a16207', '#0f766e', '#9f1239'] },
+  { id: 'indigo', name: 'Indigo bloom', text: 'light', loose: true, colors: ['#4f46e5', '#9b27e8', '#a0208f', '#d81b60', '#0b73bd'] },
+  { id: 'ocean', name: 'Ocean', text: 'light', loose: true, colors: ['#1d4ed8', '#3d7a8d', '#3b3793', '#005542', '#005a83'] },
+  { id: 'forest', name: 'Forest', text: 'light', loose: true, colors: ['#15803d', '#0d7c8a', '#7a6a00', '#0f4c3a', '#8a4b1f'] },
+  { id: 'sunset', name: 'Sunset', text: 'light', loose: true, colors: ['#c2410c', '#d9195d', '#a323a8', '#7544e0', '#7a3a07'] },
+  { id: 'berry', name: 'Berry', text: 'light', loose: true, colors: ['#7e22ce', '#c4365f', '#2d2bc0', '#c21fb4', '#8a1238'] },
+  { id: 'earth', name: 'Earth', text: 'light', loose: true, colors: ['#8e3b12', '#3f7d20', '#1d5c63', '#b3265c', '#a16207'] },
   { id: 'corporate', name: 'Corporate', text: 'light', colors: ['#1e3a8a', '#0f766e', '#374151', '#7c2d12', '#4338ca'] },
-  { id: 'slate', name: 'Slate', text: 'light', loose: true, colors: ['#1e293b', '#334155', '#475569', '#64748b', '#0f172a'] },
+  { id: 'slate', name: 'Slate', text: 'light', loose: true, colors: ['#1c2430', '#4b5563', '#0f7a6e', '#646fa7', '#2c3a62'] },
   { id: 'vivid', name: 'Vivid', text: 'light', colors: vivid },
   { id: 'pastel', name: 'Pastel', text: 'dark', colors: ['#c4b5fd', '#fbcfe8', '#a7f3d0', '#fde68a', '#bae6fd'] },
   { id: 'candy', name: 'Candy', text: 'dark', colors: ['#fda4af', '#fdba74', '#fde047', '#86efac', '#7dd3fc', '#c4b5fd'] },
