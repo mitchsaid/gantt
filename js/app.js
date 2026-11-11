@@ -921,7 +921,7 @@ const DESIGN = [
     { k: 'daysLeft', type: 'toggle', label: 'Days left' },
     { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
     { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. The plan’s count is shown on the marker.', when: s => s.daysLeft || s.planDaysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
@@ -1039,7 +1039,6 @@ function setSetting(k, v, soon) {
     refresh(); commit();
     return;
   }
-  if (k === 'planDaysLeft' && v) S.todayLine = true; // it is read off the date marker
   if (k === 'canvas' && v === 'custom') { const c = canvasOf(S); S.canvasW = Math.round(c.w * 100) / 100; S.canvasH = Math.round(c.h * 100) / 100; }
   if (k === 'textAuto' && v === false && scene) S.textPt = Math.round(scene.fs * 0.75 * 2) / 2; // start the override from what Auto was using
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();

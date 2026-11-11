@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v56 · 11 Nov';
+const APP_VERSION = 'v57 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -900,7 +900,7 @@ function buildScene(state, opts) {
     let f = textPt ? fsOf(0) : 16; // the text size, header and owner lines all depend on the row height, so settle them together
     for (let it = 0; it < 4; it++) {
       const hh = tiers0 * tierOf(f) + 8;
-      const fixedH = 2 * pad + (S.showTitle && S.title ? titleOf(f) + 26 : 0) + (S.todayLine ? Math.round(26 * f / 14) : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
+      const fixedH = 2 * pad + (S.showTitle && S.title ? titleOf(f) + 26 : 0) + (S.todayLine || S.planDaysLeft ? Math.round(26 * f / 14) : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
       rowH = clamp(Math.floor((targetH - fixedH) / Math.max(1, usedW)) - subLineOf(f), minRow, maxRow);
       f = fsOf(rowH);
     }
@@ -948,7 +948,7 @@ function buildScene(state, opts) {
     items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, tsz, 700) + 12, h: tsz * 1.45, hit: true, role: 'title' });
     y += tsz + 26;
   }
-  const lane = S.todayLine ? Math.round(26 * kk) : 0;
+  const lane = S.todayLine || S.planDaysLeft ? Math.round(26 * kk) : 0;
   const laneY = y;
   y += lane;
   const relative = S.dateMode === 'relative';
@@ -1468,19 +1468,16 @@ function buildScene(state, opts) {
   }
 
   // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
+  let markerPill = null; // where the marker's label (or its diamond) sits, so the plan's days-left can go beside it
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
-    let label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
-    if (S.planDaysLeft) { // how long the whole plan has left, counted from this date to the last item's end
-      const planEnd = Math.max(...info.map(n => n.end)), unit = S.daysLeftWeekdays ? 'workday' : 'day', n = daysLeftBetween(todayD, planEnd, S.daysLeftWeekdays);
-      const left = todayD > planEnd ? 'Plan ended' : todayD === planEnd ? 'Ends today' : n === 1 ? `1 ${unit} left` : `${n} ${unit}s left`;
-      label = label ? label + ' · ' + left : left;
-    }
+    const label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
     const mcol = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
     const mw = { 1: 1.5, 2: 2, 3: 3.5 }[S.markerWidth] || 2;
     const mdash = S.markerStyle === 'dashed' ? [mw * 3.5 + 3, mw * 2 + 3] : S.markerStyle === 'dotted' ? [0.01, mw * 2.2 + 2.5] : null; // dots are zero-length dashes with round caps
     const lw = label ? M(label, 11 * kk, 700) + 18 : 0;
     const px = clamp(tx - lw / 2, pad, W - pad - lw);
+    markerPill = label ? { l: px, r: px + lw } : { l: tx - 7, r: tx + 7 };
     items.push({ t: 'line', x1: tx, y1: laneY + (label ? tlh : 4), x2: tx, y2: bodyEnd, stroke: mcol, sw: mw, dash: mdash, cap: S.markerStyle === 'dotted' ? 'round' : undefined, dashType: S.markerStyle === 'dotted' ? 'sysDot' : undefined });
     if (label) {
       items.push({ t: 'rect', x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: mcol });
@@ -1488,6 +1485,20 @@ function buildScene(state, opts) {
     } else items.push({ t: 'diamond', cx: tx, cy: laneY + 6, r: 5, fill: mcol });
     items.push({ t: 'rect', x: Math.min(px, tx - 7), y: laneY, w: Math.max(lw, 14), h: tlh + 2, hit: true, role: 'today' });
     items.push({ t: 'rect', x: tx - 6, y: laneY + tlh, w: 12, h: bodyEnd - laneY - tlh, hit: true, role: 'today' });
+  }
+
+  // ---- days left for the whole plan: a soft pill beside the marker's label, or at the top right when there is no marker on show
+  if (S.planDaysLeft) {
+    const planEnd = Math.max(...info.map(n => n.end)), unit = S.daysLeftWeekdays ? 'workday' : 'day', cnt = daysLeftBetween(todayD, planEnd, S.daysLeftWeekdays);
+    const msg = todayD > planEnd ? 'Plan ended' : todayD === planEnd ? 'Ends today' : cnt === 1 ? `1 ${unit} left` : `${cnt} ${unit}s left`;
+    const pc = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
+    const pf = mix(pc, surface, 0.86), pw = M(msg, 11 * kk, 700) + 18;
+    let tcol = pc; for (let t = 0.1; contrast(tcol, pf) < 4.5 && t <= 1; t += 0.1) tcol = mix(pc, text, t);
+    let ppx = W - pad - pw;
+    if (markerPill) { ppx = markerPill.r + 8; if (ppx + pw > W - pad) ppx = Math.max(pad, markerPill.l - 8 - pw); }
+    items.push({ t: 'rect', x: ppx, y: laneY, w: pw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: pf, stroke: pc, sw: 1.2 });
+    items.push({ t: 'text', x: ppx + pw / 2, y: laneY + tlh / 2, text: msg, size: 11 * kk, weight: 700, fill: tcol, anchor: 'middle' });
+    if (markerPill) items.push({ t: 'rect', x: ppx, y: laneY, w: pw, h: tlh + 2, hit: true, role: 'today' });
   }
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
