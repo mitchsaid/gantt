@@ -914,14 +914,14 @@ const DESIGN = [
     { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { type: 'head', label: 'Extras' },
-    { k: 'progress', type: 'toggle', label: 'Progress in bars' },
-    { k: 'progressSource', type: 'seg', label: 'Progress from', sub: true, col: true, opts: [['manual', 'Set per bar'], ['marker', 'Date marker']], when: s => s.progress },
+    { k: 'progressMode', type: 'seg', label: 'Progress in bars', col: true, opts: [['off', 'Off'], ['manual', 'Set per bar'], ['marker', 'Up to date marker']] },
     { k: '_markerNote', type: 'note', label: 'Turn on the date marker (Timeline → Markers) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
     { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
     { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
     { k: 'daysLeft', type: 'toggle', label: 'Days left' },
-    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft },
-    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one) to the end of each item.', when: s => s.daysLeft },
+    { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
+    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. The plan’s count is shown on the marker.', when: s => s.daysLeft || s.planDaysLeft },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
@@ -981,7 +981,7 @@ function designSummary(id, S) {
   const cv = canvasOf(S);
   if (id === 'canvas') return `${cv.name} · ${S.fit === 'fixed' ? 'fixed height' : 'fits content'}`;
   if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks', S.todayLine ? 'date marker' : ''].filter(Boolean).join(' · ');
-  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.daysLeft ? 'days left' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
+  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.progress ? 'progress' : '', S.daysLeft || S.planDaysLeft ? 'days left' : '', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
   if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
   if (id === 'text') return `${S.font}${S.textAuto === false ? ' · ' + S.textPt + ' pt' : ''}`;
   return '';
@@ -1003,7 +1003,7 @@ function syncDesign() {
   if (gc) gc.textContent = { days: 'Day lines', weeks: 'Week lines', sprints: 'Sprint lines', months: 'Month lines', quarters: 'Quarter lines' }[S.scale] || 'Period lines';
   if (gm) gm.textContent = S.scale === 'months' || S.scale === 'quarters' ? 'Year lines' : 'Month lines';
   $$('[data-w]', designEl).forEach(w => { const c = designCtl[w.dataset.w]; w.hidden = !!(c.when && !c.when(S)); });
-  $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(S[seg.dataset.k]) === b.dataset.v)));
+  $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(seg.dataset.k === 'progressMode' ? (!S.progress ? 'off' : S.progressSource === 'marker' ? 'marker' : 'manual') : S[seg.dataset.k]) === b.dataset.v)));
   // in-sequence rows always carry names on the bars: show that, and lock the choice
   const tl = $('[data-w="taskLabels"]', designEl);
   tl.classList.toggle('disabled', !!S.pack);
@@ -1032,6 +1032,14 @@ function syncDesign() {
 }
 function setSetting(k, v, soon) {
   const S = state.settings;
+  if (k === 'progressMode') { // Off / typed per bar / read off the date marker
+    S.progress = v !== 'off';
+    if (v !== 'off') S.progressSource = v;
+    if (v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
+    refresh(); commit();
+    return;
+  }
+  if (k === 'planDaysLeft' && v) S.todayLine = true; // it is read off the date marker
   if (k === 'canvas' && v === 'custom') { const c = canvasOf(S); S.canvasW = Math.round(c.w * 100) / 100; S.canvasH = Math.round(c.h * 100) / 100; }
   if (k === 'textAuto' && v === false && scene) S.textPt = Math.round(scene.fs * 0.75 * 2) / 2; // start the override from what Auto was using
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();

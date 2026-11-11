@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v55 · 11 Nov';
+const APP_VERSION = 'v56 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', daysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -1470,7 +1470,12 @@ function buildScene(state, opts) {
   // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
-    const label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
+    let label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
+    if (S.planDaysLeft) { // how long the whole plan has left, counted from this date to the last item's end
+      const planEnd = Math.max(...info.map(n => n.end)), unit = S.daysLeftWeekdays ? 'workday' : 'day', n = daysLeftBetween(todayD, planEnd, S.daysLeftWeekdays);
+      const left = todayD > planEnd ? 'Plan ended' : todayD === planEnd ? 'Ends today' : n === 1 ? `1 ${unit} left` : `${n} ${unit}s left`;
+      label = label ? label + ' · ' + left : left;
+    }
     const mcol = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
     const mw = { 1: 1.5, 2: 2, 3: 3.5 }[S.markerWidth] || 2;
     const mdash = S.markerStyle === 'dashed' ? [mw * 3.5 + 3, mw * 2 + 3] : S.markerStyle === 'dotted' ? [0.01, mw * 2.2 + 2.5] : null; // dots are zero-length dashes with round caps
