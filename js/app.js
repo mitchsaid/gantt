@@ -233,6 +233,7 @@ function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); sy
 function syncAddNote() {
   const r = sel && state.rows[rowIndex(sel)];
   $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : state.rows.length ? 'Adds at the end — select a row to add after it' : '';
+  syncSelBar();
 }
 
 // ---------------------------------------------------------------- fonts
@@ -1109,6 +1110,7 @@ document.addEventListener('keydown', e => {
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
   else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
+  else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
   else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
   else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
@@ -1625,6 +1627,44 @@ function setRowColor(id, v) {
   commit(); refresh();
   if (pop && pop.kind === 'row') $$('.sw', popEl).forEach(b => b.classList.toggle('on', b.dataset.color === String(v)));
 }
+
+/** put the selected items (with what is inside them) into a brand-new area, placed just above the area the first of them was in */
+function groupIntoNewArea() {
+  const ids = selIds();
+  if (ids.length < 2) return;
+  const rows = state.rows, blocks = selectedBlocks(), inSel = new Set(blocks.map(r => r.id));
+  const idx = new Map(rows.map((r, i) => [r.id, i]));
+  let at = idx.get(blocks[0].id);
+  while (at > 0 && rows[at].level > 0) at--; // the top-level block the first item sits in
+  const pos = rows.slice(0, at).filter(r => !inSel.has(r.id)).length; // where that lands once the selection is lifted out
+  // each selected item becomes a task of the new area, and its contents move with it
+  let rootEnd = -1, delta = 0;
+  blocks.forEach(r => {
+    const i = idx.get(r.id);
+    if (i >= rootEnd) { delta = 1 - r.level; rootEnd = blockEnd(rows, i); }
+    r.level = clamp(r.level + delta, 0, 2);
+  });
+  const area = newRow({ level: 0, name: 'New area', start: Math.min(...blocks.map(r => r.start)), end: Math.max(...blocks.map(r => r.end)) });
+  state.rows = rows.filter(r => !inSel.has(r.id));
+  state.rows.splice(pos, 0, area, ...blocks);
+  normalizeLevels(state.rows);
+  sel = area.id; multi = new Set();
+  commit(); refresh();
+  editOnChart(area.id); // name it right where it appeared
+  toast(`${blocks.length === ids.length ? ids.length : ids.length + ' items'} moved into a new area — Undo reverts`);
+}
+function syncSelBar() {
+  const n = selIds().length, bar = $('#selbar');
+  if (!bar) return;
+  bar.hidden = n < 2;
+  if (n >= 2) $('#selbar-count').textContent = `${n} selected`;
+}
+$('#selbar').addEventListener('click', e => {
+  const b = e.target.closest('[data-sel]');
+  if (!b) return;
+  if (b.dataset.sel === 'group') { commit(); groupIntoNewArea(); }
+  else if (b.dataset.sel === 'clear') select(null);
+});
 
 // ---------------------------------------------------------------- go
 $('#version').textContent = APP_VERSION;

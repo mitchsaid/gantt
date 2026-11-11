@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=21">
+<link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
 <header class="topbar">
@@ -72,6 +72,11 @@
         </div>
       </div>
     </div>
+    <div class="selbar" id="selbar" role="toolbar" aria-label="Selection" hidden>
+      <span id="selbar-count"></span>
+      <button class="selbar-btn primary" data-sel="group" title="Group them into a new area (Ctrl/⌘+G)">Add to new area</button>
+      <button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>
+    </div>
     <div class="zoombar" role="group" aria-label="Zoom">
       <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
       <button id="zoom-val" title="Reset zoom">100%</button>
@@ -118,7 +123,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=21"></script>
-<script src="js/app.js?v=21"></script>
+<script src="js/core.js?v=22"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>
