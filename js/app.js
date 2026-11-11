@@ -910,6 +910,7 @@ const DESIGN = [
     { k: 'taskLabels', type: 'seg', label: 'Task names', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
     { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'areaLabels', type: 'seg', label: 'Area names', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
+    { k: 'textCase', type: 'seg', label: 'Name case', opts: [['default', 'Default'], ['upper', 'UPPER'], ['title', 'Title Case']] },
     { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { type: 'head', label: 'Extras' },

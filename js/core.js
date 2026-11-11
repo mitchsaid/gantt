@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v53 · 11 Nov';
+const APP_VERSION = 'v54 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -293,7 +293,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  daysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', daysLeft: false, daysLeftWeekdays: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -348,6 +348,21 @@ function derive(rows) {
   }
   return info;
 }
+const SMALL_WORDS = new Set(['a', 'an', 'the', 'and', 'but', 'or', 'nor', 'for', 'so', 'yet', 'as', 'at', 'by', 'in', 'of', 'on', 'to', 'up', 'via', 'vs', 'per']);
+/** "site map & flows" -> "Site Map & Flows": small words stay lower (except first and last), words that already have capitals inside (API, iOS) are left alone */
+function titleCase(s) {
+  const parts = String(s).split(/(\s+)/), total = parts.filter(w => w.trim()).length;
+  let i = -1;
+  return parts.map(w => {
+    if (!w.trim()) return w;
+    i++;
+    if (/[A-Z]/.test(w.slice(1))) return w;
+    const lower = w.toLowerCase();
+    if (i > 0 && i < total - 1 && SMALL_WORDS.has(lower.replace(/[^a-z']/g, ''))) return lower;
+    return lower.replace(/(^|[-–/(“"'])([a-zà-ÿ])/g, (m, p, c) => p + c.toUpperCase());
+  }).join('');
+}
+const applyCase = (s, mode) => (mode === 'upper' ? String(s).toUpperCase() : mode === 'title' ? titleCase(s) : s);
 /** days after `from` up to and including `to`; optionally only Monday–Friday */
 function daysLeftBetween(from, to, weekdaysOnly) {
   if (to <= from) return 0;
@@ -815,6 +830,7 @@ function buildScene(state, opts) {
   opts = opts || {};
   const S = state.settings, rows = state.rows, font = S.font;
   const info = derive(rows);
+  const nameOf = n => applyCase(n.row.name || 'Untitled', S.textCase); // how a name is shown (Design → Name case); the plan itself keeps what was typed
   // changes from the original plan: items that moved or grew, and those with a reason get a number that the legend explains
   const showChg = !!S.showChanges;
   if (showChg) markChanges(info);
@@ -827,7 +843,7 @@ function buildScene(state, opts) {
   // rough days-per-pixel, so a short bar or a milestone keeps enough of the row free for its name
   const spanDays = info.length ? Math.max(...info.map(n => n.end)) - Math.min(...info.map(n => n.start)) + 1 : 1;
   const dpp = spanDays / (canvasOf(S).w * PX_PER_IN * 0.8);
-  const holdsUntil = n => { const need = ((n.row.name || 'Untitled').length * 8.8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
+  const holdsUntil = n => { const need = (nameOf(n).length * 8.8 + 34) * dpp; return n.milestone ? n.end + need : Math.max(n.end, n.start + need); };
   info.forEach(n => {
     n.fit = null;
     const mark = tr => { tr.end = n.milestone ? holdsUntil(n) : n.end; tr.hold = holdsUntil(n); };
@@ -914,11 +930,11 @@ function buildScene(state, opts) {
   let labelW = 0, laneW = 0;
   const indentOf = n => (lanes ? Math.max(0, n.level - 1) : n.level) * 16;
   if (lanes) {
-    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(n.row.name || 'Untitled', fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(n.row.assignee, fs - 1.5, 500) + (avOn ? Math.round(16 * kk) + 6 : 0) : 0); });
+    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(nameOf(n), fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(n.row.assignee, fs - 1.5, 500) + (avOn ? Math.round(16 * kk) + 6 : 0) : 0); });
     laneW = clamp(laneW, 70, W * 0.2) + 28;
   }
   if (left) {
-    info.forEach(n => { if (!(lanes && isGroup(n))) labelW = Math.max(labelW, indentOf(n) + M(n.row.name || 'Untitled', isGroup(n) ? fs + 1 : n.sub ? fs - 1.5 : fs, isGroup(n) ? 700 : 500)); });
+    info.forEach(n => { if (!(lanes && isGroup(n))) labelW = Math.max(labelW, indentOf(n) + M(nameOf(n), isGroup(n) ? fs + 1 : n.sub ? fs - 1.5 : fs, isGroup(n) ? 700 : 500)); });
     labelW = clamp(labelW, 110, W * 0.27) + 22;
   }
   const x0 = pad + laneW + labelW, x1 = W - pad;
@@ -1066,7 +1082,7 @@ function buildScene(state, opts) {
       const bx = X(n.start), bw = Math.max(X(n.end + 1) - bx, 4);
       n.bx = bx; n.bw = bw; n.bh = h; n.inside = false; n.tail = [];
       let tx = n.milestone ? msX(n) + h * 0.5 + 8 : bx + bw + 8;
-      const name = n.row.name || 'Untitled';
+      const name = nameOf(n);
       if (n.lane) { n.tailEnd = bx; return; }
       if (isGroup(n)) {
         n.tailEnd = left ? bx + bw : Math.max(bx + bw, bx + M(name, fs + 1, 700));
@@ -1286,7 +1302,7 @@ function buildScene(state, opts) {
   info.forEach(n => {
     const row = n.row, id = row.id;
     const base = baseOf(n);
-    const name = row.name || 'Untitled';
+    const name = nameOf(n);
     const size = n.sub ? fs - 1.5 : fs;
     const group = isGroup(n);
     if (n.sep) items.push({ t: 'line', x1: pad, y1: n.y - 9, x2: x1, y2: n.y - 9, stroke: gridStrong, sw: 1 });
@@ -1447,7 +1463,7 @@ function buildScene(state, opts) {
       const was = n.milestone ? shortDate(n.bs) : shortDate(n.bs) + ' – ' + shortDate(n.be);
       items.push({ t: 'rect', x: pad, y: cy - d / 2, w: d, h: d, r: d / 2, fill: b });
       items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.noteNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
-      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText((n.row.name || 'Untitled') + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
+      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
   }
 
@@ -1474,4 +1490,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
