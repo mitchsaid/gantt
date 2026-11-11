@@ -454,7 +454,7 @@ function detailHtml(n, info, rows) {
   }
   if (n.milestone) html += msHtml(r);
   html += colorHtml(r);
-  html += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
+  html += assigneeHtml(r);
   if (!n.hasKids) {
     const others = info.filter(o => o.row.id !== r.id && !(o.level === 0 && o.hasKids) && !r.deps.includes(o.row.id));
     html += `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
@@ -516,6 +516,7 @@ outline.addEventListener('click', e => {
     const a = act.dataset.act;
     if (a === 'toggle') { detailId = detailId === id ? null : id; renderOutline(); const d = $(`.detail[data-id="${id}"]`); if (d && detailId) d.scrollIntoView({ block: 'nearest' }); }
     else if (a === 'progress-clear') setRowProgress(id, null);
+    else if (a === 'assignee-clear') clearAssignee(id);
     else if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
     else if (a === 'del') askDelete(id);
@@ -1281,7 +1282,7 @@ function rowInput(r, t) {
     }
     commitSoon();
   }
-  else if (f === 'assignee') { r.assignee = t.value; if (t.value.trim()) ensureAssigneeShown(r); renderChart(); commitSoon(); }
+  else if (f === 'assignee') { r.assignee = t.value; if (t.value.trim()) ensureAssigneeShown(r); const x = t.parentNode.querySelector('.x-btn'); if (x) x.hidden = !t.value; renderChart(); commitSoon(); }
   else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; const rr = t.closest('.range-row'); if (rr) { rr.classList.remove('off'); const x = $('.x-btn', rr); if (x) x.disabled = false; } if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
 }
 function rowChange(r, t) {
@@ -1333,7 +1334,7 @@ function popHtml() {
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
     if (!n.hasKids && !n.milestone) h += progressHtml(r);
-    h += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
+    h += assigneeHtml(r);
     return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
   }
   if (pop.kind === 'today') {
@@ -1416,6 +1417,7 @@ popEl.addEventListener('click', e => {
     const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
     if (sb) { const f = sb.parentNode.dataset.f; setSetting(f === 'marker-style' ? 'markerStyle' : 'markerWidth', f === 'marker-style' ? sb.dataset.v : +sb.dataset.v); return; } // setSetting refreshes the popover (and the Design panel) itself
   }
+  if (e.target.closest('[data-act="assignee-clear"]') && pop && pop.kind === 'row') { clearAssignee(pop.id); return; }
   if (e.target.closest('[data-act="progress-clear"]') && pop && pop.kind === 'row') { setRowProgress(pop.id, null); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
@@ -1794,6 +1796,19 @@ function applySeed(hex) {
   state.settings.palette = list.find(p => p.id === key) || list[0];
   renderChart(); renderOutline(); syncDesign(); syncPop();
   commitSoon();
+}
+/** the Assignee field, with a ✕ that clears it */
+function assigneeHtml(r) {
+  return `<div class="field"><span>Assignee</span><div class="clearable"><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"><button class="x-btn" data-act="assignee-clear" title="Clear assignee" aria-label="Clear assignee"${r.assignee ? '' : ' hidden'}>✕</button></div></div>`;
+}
+function clearAssignee(id) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  r.assignee = '';
+  commit(); refresh();
+  $$('.clearable').forEach(c => { const i = $('input', c), b = $('.x-btn', c); if (b) b.hidden = !i.value; }); // a focused popover isn't rebuilt
+  const inp = $('.pop [data-f="assignee"]') || $(`.detail[data-id="${id}"] [data-f="assignee"]`);
+  if (inp) inp.focus(); // ready to type another name
 }
 /** progress for one bar: a slider, and a way to switch progress off for just this bar */
 function progressHtml(r) {
