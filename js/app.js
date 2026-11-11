@@ -57,6 +57,7 @@ function sanitize(st) {
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
   if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
+  if (old.todayLabel === '' && old.markerLabelOn == null) { st.settings.markerLabelOn = false; st.settings.todayLabel = 'Today'; } // an empty label used to mean none
   if (old.canvas == null) st.settings.canvas = old.width === 'compact' ? 'slide43' : 'slide169'; // the old Slide / Report formats
   delete st.settings.width;
   if (!had) { // plans saved with a primary / secondary colour become a palette
@@ -146,7 +147,7 @@ function sceneToSvg(sc, interactive) {
       if (it.hit) out += `<rect x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(Math.max(0, it.w))}" height="${n2(it.h)}" data-role="${it.role}"${it.id ? ` data-id="${esc(it.id)}"` : ''}${it.id && it.id === sel ? ' class="touchlock"' : ''}/>`;
       else out += `<rect x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(Math.max(0, it.w))}" height="${n2(it.h)}"${it.r ? ` rx="${n2(Math.min(it.r, it.w / 2, it.h / 2))}"` : ''} fill="${it.fill}"${it.opacity != null ? ` opacity="${it.opacity}"` : ''}${it.stroke ? ` stroke="${it.stroke}" stroke-width="${it.sw || 1}"` : ''}/>`;
     } else if (it.t === 'line') {
-      out += `<line x1="${n2(it.x1)}" y1="${n2(it.y1)}" x2="${n2(it.x2)}" y2="${n2(it.y2)}" stroke="${it.stroke}" stroke-width="${it.sw}"${it.dash ? ` stroke-dasharray="${it.dash.join(' ')}"` : ''}/>`;
+      out += `<line x1="${n2(it.x1)}" y1="${n2(it.y1)}" x2="${n2(it.x2)}" y2="${n2(it.y2)}" stroke="${it.stroke}" stroke-width="${it.sw}"${it.dash ? ` stroke-dasharray="${it.dash.join(' ')}"` : ''}${it.cap ? ` stroke-linecap="${it.cap}"` : ''}/>`;
     } else if (it.t === 'text') {
       const tx = fill => `<text x="${n2(it.x)}" y="${n2(it.y)}" font-size="${it.size}" font-weight="${it.weight}" fill="${fill}" text-anchor="${it.anchor}" dominant-baseline="central">${esc(it.text)}</text>`;
       if (it.split == null) out += tx(it.fill);
@@ -189,7 +190,7 @@ function drawScene(sc, scale) {
       if (it.stroke) { g.strokeStyle = it.stroke; g.lineWidth = it.sw || 1; g.stroke(); }
     } else if (it.t === 'line') {
       g.beginPath(); g.moveTo(it.x1, it.y1); g.lineTo(it.x2, it.y2);
-      g.strokeStyle = it.stroke; g.lineWidth = it.sw; if (it.dash) g.setLineDash(it.dash); g.stroke();
+      g.strokeStyle = it.stroke; g.lineWidth = it.sw; if (it.dash) g.setLineDash(it.dash); g.lineCap = it.cap || 'butt'; g.stroke(); g.lineCap = 'butt';
     } else if (it.t === 'text') {
       g.font = `${it.weight} ${it.size}px "${sc.font}", system-ui, sans-serif`;
       g.textAlign = it.anchor === 'middle' ? 'center' : it.anchor === 'end' ? 'right' : 'left';
@@ -856,9 +857,13 @@ const DESIGN = [
     { k: 'progress', type: 'toggle', label: 'Progress in bars' },
     { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
     { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
-    { k: 'todayLine', type: 'toggle', label: '“We are here” line' },
-    { k: 'todayLabel', type: 'text', label: 'Label', sub: true, ph: 'No label', when: s => s.todayLine },
+    { k: 'todayLine', type: 'toggle', label: 'Date marker' },
     { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
+    { k: 'markerLabelOn', type: 'toggle', label: 'Show label', sub: true, when: s => s.todayLine },
+    { k: 'todayLabel', type: 'text', label: 'Label text', sub: true, ph: 'Today', when: s => s.todayLine && s.markerLabelOn !== false },
+    { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
+    { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
+    { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, when: s => s.todayLine },
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
     { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under bars'], ['beside', 'Beside bars']], when: s => s.assignees },
@@ -908,6 +913,7 @@ function buildDesign() {
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
       else if (c.type === 'dur') html += `<div class="${cls}" data-w="${c.k}">${lbl}${durControl(0, 6, 'len-n', 'len-u')}</div>`;
       else if (c.type === 'info') html += `<p class="ctl-note" id="${c.id}" data-w="${c.k}"></p>`;
+      else if (c.type === 'markercolor') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="swatches mk-sw"></div></div>`;
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
@@ -920,6 +926,7 @@ function buildDesign() {
 function syncDesign() {
   const S = state.settings;
   syncPalette();
+  syncMarkerColor();
   // the gridline switches are named for what they actually draw at this scale
   const gc = $('[data-w="gridCells"] .lbl', designEl), gm = $('[data-w="gridMonths"] .lbl', designEl);
   if (gc) gc.textContent = { days: 'Day lines', weeks: 'Week lines', sprints: 'Sprint lines', months: 'Month lines', quarters: 'Quarter lines' }[S.scale] || 'Period lines';
@@ -964,6 +971,7 @@ function setSetting(k, v, soon) {
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
+  if (markerColorEvent(e, 'click')) return;
   const pb = e.target.closest('[data-palette]');
   if (pb) { applyPalette(PRESETS[+pb.dataset.palette]); return; }
   const sb = e.target.closest('[data-scheme]');
@@ -974,6 +982,7 @@ designEl.addEventListener('click', e => {
 });
 designEl.addEventListener('input', e => {
   const t = e.target, k = t.dataset.k;
+  if (markerColorEvent(e, 'input')) return;
   if (t.dataset.seed != null || t.dataset.seedpick != null) { const hex = parseColor(t.value); if (hex) applySeed(hex); return; }
   if (!k) return;
   if (t.type === 'checkbox') setSetting(k, t.checked);
@@ -1121,7 +1130,7 @@ async function exportPptx() {
   const seg = (a, b, it, arrow) => slide.addShape(pptx.ShapeType.line, {
     x: PX(Math.min(a[0], b[0])), y: PY(Math.min(a[1], b[1])), w: Math.abs(b[0] - a[0]) * k, h: Math.abs(b[1] - a[1]) * k,
     flipH: b[0] < a[0], flipV: b[1] < a[1],
-    line: Object.assign({ color: hx(it.stroke), width: Math.max(0.5, pt(it.sw)) }, it.dash ? { dashType: 'dash' } : {}, arrow ? { endArrowType: 'triangle' } : {}),
+    line: Object.assign({ color: hx(it.stroke), width: Math.max(0.5, pt(it.sw)) }, it.dash ? { dashType: it.dashType || 'dash' } : {}, arrow ? { endArrowType: 'triangle' } : {}),
   });
   for (const it of sc.items) {
     if (it.ui || it.hit || it.role === 'bg') continue;
@@ -1327,7 +1336,16 @@ function popHtml() {
     h += `<label class="field"><span>Assignee</span><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"></label>`;
     return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
   }
-  if (pop.kind === 'today') return `<h4>“We are here” line</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}<label class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="No label"></label>`;
+  if (pop.kind === 'today') {
+    const seg = (f, cur, opts) => `<div class="seg" data-f="${f}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const lab = S.markerLabelOn !== false;
+    return `<h4>Date marker</h4>${date('Date', 'todayDate', S.todayDate != null ? S.todayDate : todayDay())}
+      <div class="field"><span>Label</span><input class="inp" data-f="todayLabel" value="${esc(S.todayLabel)}" placeholder="Today"${lab ? '' : ' disabled'}></div>
+      <label class="check"><input type="checkbox" data-f="markerLabelOn"${lab ? ' checked' : ''}> Show label</label>
+      <div class="field"><span>Line</span>${seg('marker-style', S.markerStyle || 'solid', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']])}</div>
+      <div class="field"><span>Thickness</span>${seg('marker-width', S.markerWidth || 2, [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']])}</div>
+      <div class="field"><span>Colour</span><div class="swatches mk-sw" data-sig="${paletteOf(S).colors.join()}">${markerSwHtml()}</div></div>`;
+  }
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null;
   const [a, b] = fixed ? [S.rangeStart, S.rangeEnd] : autoSpan();
   return `<h4>Overall timeline</h4>
@@ -1376,6 +1394,7 @@ popEl.addEventListener('input', e => {
   if (!pop || !f) return;
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowInput(r, t); }
   else if (f === 'paste') { pop.text = t.value; syncPasteNote(); }
+  else if (markerColorEvent(e, 'input')) { /* handled */ }
   else if (f === 'todayLabel') setSetting('todayLabel', t.value, true);
 });
 popEl.addEventListener('change', e => {
@@ -1384,6 +1403,7 @@ popEl.addEventListener('change', e => {
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowChange(r, t); return; }
   const S = state.settings;
   if (f === 'todayDate') { const d = isoToDay(t.value); if (d != null) setSetting('todayDate', d === todayDay() ? null : d); }
+  else if (f === 'markerLabelOn') { setSetting('markerLabelOn', t.checked); const ti = $('[data-f="todayLabel"]', popEl); if (ti) ti.disabled = !t.checked; }
   else if (f === 'rangeStart' || f === 'rangeEnd' || f === 'len-n' || f === 'len-u') {
     if (S.rangeMode !== 'fixed' || S.rangeStart == null) { [S.rangeStart, S.rangeEnd] = autoSpan(); S.rangeMode = 'fixed'; }
     if (f[0] === 'l') setSetting('rangeEnd', durFromFields(t, S.rangeStart, 'len-n', 'len-u'));
@@ -1391,6 +1411,11 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  if (pop && pop.kind === 'today') {
+    if (markerColorEvent(e, 'click')) return;
+    const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
+    if (sb) { const f = sb.parentNode.dataset.f; setSetting(f === 'marker-style' ? 'markerStyle' : 'markerWidth', f === 'marker-style' ? sb.dataset.v : +sb.dataset.v); return; } // setSetting refreshes the popover (and the Design panel) itself
+  }
   if (e.target.closest('[data-act="progress-clear"]') && pop && pop.kind === 'row') { setRowProgress(pop.id, null); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
@@ -1796,6 +1821,40 @@ function setRowMs(id, v) {
   if (v) r.msAlign = v; else delete r.msAlign;
   commit(); refresh();
   if (pop && pop.kind === 'row') $$('.seg[data-f="ms-align"] button', popEl).forEach(b => b.classList.toggle('on', b.dataset.v === v));
+}
+// ---------------------------------------------------------------- the date marker's colour
+/** swatches for the marker: Auto, the palette, or any colour — the same kind of choice a bar gets */
+function markerSwHtml() {
+  const S = state.settings, cols = paletteOf(S).colors, v = S.markerColor, custom = typeof v === 'string';
+  return `<button class="sw auto${v == null ? ' on' : ''}" data-mk="auto" title="Automatic — the palette’s accent">Auto</button>${cols.map((c, i) => `<button class="sw${v === i ? ' on' : ''}" data-mk="${i}" style="background:${c}" aria-label="Colour ${i + 1}"></button>`).join('')}<label class="sw custom${custom ? ' on' : ''}" title="Any colour"${custom ? ` style="background:${v}"` : ''}><input type="color" data-f="mk-custom" value="${custom ? v : cols[0]}" aria-label="Pick any colour"></label><input class="inp sw-hex" data-f="mk-hex" placeholder="#hex" value="${custom ? v : ''}" maxlength="22" spellcheck="false" autocomplete="off" aria-label="Colour as hex">`;
+}
+/** bring every marker-colour control (Design panel, popover) up to date — in place, so a control being clicked or typed in is never replaced */
+function syncMarkerColor() {
+  const S = state.settings, cols = paletteOf(S).colors, v = S.markerColor, custom = typeof v === 'string', sig = cols.join();
+  $$('.mk-sw').forEach(box => {
+    if (box.dataset.sig !== sig) { box.innerHTML = markerSwHtml(); box.dataset.sig = sig; return; } // built again only when the palette changed
+    $$('.sw', box).forEach(b => b.classList.toggle('on', b.dataset.mk != null ? (b.dataset.mk === 'auto' ? v == null : v === +b.dataset.mk) : custom));
+    const cs = $('.sw.custom', box), pk = $('input[type="color"]', box), hx = $('.sw-hex', box);
+    if (cs) cs.style.background = custom ? v : '';
+    if (pk && pk !== document.activeElement) pk.value = custom ? v : cols[0];
+    if (hx && hx !== document.activeElement) hx.value = custom ? v : '';
+  });
+}
+function setMarkerColor(v, soon) {
+  state.settings.markerColor = v;
+  renderChart(); syncMarkerColor();
+  if (soon) commitSoon(); else commit();
+}
+/** clicks and typing in the marker-colour controls, wherever they are */
+function markerColorEvent(e, type) {
+  const t = e.target;
+  if (type === 'click') { const b = t.closest('[data-mk]'); if (b) { setMarkerColor(b.dataset.mk === 'auto' ? null : +b.dataset.mk); return true; } }
+  else if (t.dataset && (t.dataset.f === 'mk-custom' || t.dataset.f === 'mk-hex')) {
+    const hex = parseColor(t.value);
+    if (hex) { setMarkerColor(hex, true); if (t.dataset.f === 'mk-custom') { const h = $('.sw-hex', t.closest('.mk-sw')); if (h) h.value = hex; } else { const c = $('input[type="color"]', t.closest('.mk-sw')); if (c) c.value = hex; } }
+    return true;
+  }
+  return false;
 }
 function colorHtml(r) {
   const cols = paletteOf(state.settings).colors;

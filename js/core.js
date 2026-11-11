@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v36 · 11 Nov';
+const APP_VERSION = 'v37 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -290,7 +290,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
-  progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
+  progress: false, todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -721,7 +721,7 @@ function buildScene(state, opts) {
   const pal = paletteOf(S), palette = pal.colors;
   const baseOf = n => rowBaseColor(info, n, palette);
   const hi = palette[0]; // the colour used for selection and drop highlights
-  const accent = mix(palette[Math.min(1, palette.length - 1)], text, 0.12); // the "we are here" line
+  const accent = mix(palette[Math.min(1, palette.length - 1)], text, 0.12); // the date marker's automatic colour
 
   // metrics — sizes are px at 96 per inch, so text is in true points on the output
   const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
@@ -1243,17 +1243,20 @@ function buildScene(state, opts) {
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
   });
 
-  // ---- "we are here" line
+  // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
-    const label = S.todayLabel || '';
+    const label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
+    const mcol = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
+    const mw = { 1: 1.5, 2: 2, 3: 3.5 }[S.markerWidth] || 2;
+    const mdash = S.markerStyle === 'dashed' ? [mw * 3.5 + 3, mw * 2 + 3] : S.markerStyle === 'dotted' ? [0.01, mw * 2.2 + 2.5] : null; // dots are zero-length dashes with round caps
     const lw = label ? M(label, 11 * kk, 700) + 18 : 0;
     const px = clamp(tx - lw / 2, pad, W - pad - lw);
-    items.push({ t: 'line', x1: tx, y1: laneY + (label ? tlh : 4), x2: tx, y2: bodyEnd, stroke: accent, sw: 2 });
+    items.push({ t: 'line', x1: tx, y1: laneY + (label ? tlh : 4), x2: tx, y2: bodyEnd, stroke: mcol, sw: mw, dash: mdash, cap: S.markerStyle === 'dotted' ? 'round' : undefined, dashType: S.markerStyle === 'dotted' ? 'sysDot' : undefined });
     if (label) {
-      items.push({ t: 'rect', x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: accent });
-      items.push({ t: 'text', x: px + lw / 2, y: laneY + tlh / 2, text: label, size: 11 * kk, weight: 700, fill: onColor(accent), anchor: 'middle' });
-    } else items.push({ t: 'diamond', cx: tx, cy: laneY + 6, r: 5, fill: accent });
+      items.push({ t: 'rect', x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: mcol });
+      items.push({ t: 'text', x: px + lw / 2, y: laneY + tlh / 2, text: label, size: 11 * kk, weight: 700, fill: onColor(mcol), anchor: 'middle' });
+    } else items.push({ t: 'diamond', cx: tx, cy: laneY + 6, r: 5, fill: mcol });
     items.push({ t: 'rect', x: Math.min(px, tx - 7), y: laneY, w: Math.max(lw, 14), h: tlh + 2, hit: true, role: 'today' });
     items.push({ t: 'rect', x: tx - 6, y: laneY + tlh, w: 12, h: bodyEnd - laneY - tlh, hit: true, role: 'today' });
   }
