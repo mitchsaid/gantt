@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v64 · 11 Nov';
+const APP_VERSION = 'v65 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1356,9 +1356,11 @@ function buildScene(state, opts) {
       return;
     }
     // subtask bars are a lighter tint, but never so light that the label colour has to change
-    const subFill = pal.text === 'light' ? lightenFor(base, TEXT_LIGHT, 4.5) : pal.text === 'dark' ? mix(base, '#ffffff', 0.35) : mix(base, surface, 0.42);
+    // subtasks sit on a pale tint of their colour, with dark text, so they read as lighter detail under the solid task bars
+    const paleSub = !!n.sub && !lightText && S.barText !== 'light';
+    const subFill = paleSub ? mix(base, surface, pal.text === 'dark' ? 0.5 : 0.76) : pal.text === 'light' ? lightenFor(base, TEXT_LIGHT, 4.5) : pal.text === 'dark' ? mix(base, '#ffffff', 0.35) : mix(base, surface, 0.42);
     const full = n.sub ? subFill : base;
-    const soft = n.sub ? mix(base, surface, 0.8) : mix(base, surface, 0.62);
+    const soft = n.sub ? mix(base, surface, paleSub ? 0.9 : 0.8) : mix(base, surface, 0.62);
     const h = n.bh, by = n.cy - h / 2, r = radius(h);
     if (n.milestone) {
       const cx = msX(n), rr = h * 0.52;
@@ -1382,7 +1384,7 @@ function buildScene(state, opts) {
       const shaded = tracked && S.progressStyle === 'shade';
       let deep = full;
       if (shaded) {
-        const lightLabel = S.barText === 'light' || (S.barText !== 'dark' && (pal.text === 'light' || (pal.text === 'auto' && onColor(full) === '#ffffff'))); // a custom palette picks label colour bar by bar
+        const lightLabel = !paleSub && (S.barText === 'light' || (S.barText !== 'dark' && (pal.text === 'light' || (pal.text === 'auto' && onColor(full) === '#ffffff')))); // a custom palette picks label colour bar by bar
         let sh = 0.26;
         if (!lightLabel) while (sh > 0 && contrast(mix(full, '#0b1020', sh), '#0b1020') < 7) sh -= 0.04; // darker must not cost a dark label its contrast
         deep = mix(full, '#0b1020', Math.max(sh, 0));
@@ -1392,7 +1394,7 @@ function buildScene(state, opts) {
       const lsz = n.shrink || size;
       const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
       // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
-      let onFull = S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
+      let onFull = paleSub ? on(full) : S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
       // a colour chosen by hand may not suit the palette's label colour: switch to whichever reads better
       if (typeof colorIndexOf(info, n) === 'string' && S.barText !== 'light' && S.barText !== 'dark' && contrast(full, onFull) < 4.5) onFull = contrast(full, '#ffffff') >= contrast(full, '#0b1020') ? '#ffffff' : '#0b1020';
       if (n.inside && n.lines && n.lines.length > 1) {
