@@ -124,7 +124,7 @@ function areaPalette(primary, secondary, n) {
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, width: 'wide',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
-  deps: false, assignees: false, assigneeLevel: 'tasks',
+  deps: false, assignees: false, assigneeLevel: 'tasks', assigneePos: 'under',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null,
   primary: '#4f46e5', secondaryOn: true, secondary: '#ec4899', bg: '#ffffff', bgTransparent: false, textMode: 'auto',
@@ -556,6 +556,8 @@ function buildScene(state, opts) {
   const accent = S.secondaryOn ? S.secondary : text;
 
   // metrics
+  // owners written under the bars need a line of their own in every row
+  const subLine = S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? 15 : 0;
   let rowH = { compact: 30, regular: 38, roomy: 48 }[S.density];
   if (!rowH) {
     // auto: size rows so the chart fills a slide (16:9) — few items get tall bars, long plans stay compact
@@ -569,10 +571,12 @@ function buildScene(state, opts) {
     });
     const hh = (S.dateMode === 'relative' ? 1 : 2) * 26 + 8;
     const fixedH = 2 * pad + (S.showTitle && S.title ? 56 : 0) + (S.todayLine ? 26 : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
-    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, used.size)), 38, 68);
+    rowH = clamp(Math.floor((W * (S.width === 'compact' ? 0.5 : 9 / 16) - fixedH) / Math.max(1, used.size)) - subLine, 38, 68);
   }
   const fs = Math.round((rowH <= 38 ? 12.5 + (rowH - 30) * 0.1875 : Math.min(17, 14 + (rowH - 38) * 0.1)) * 2) / 2;
   const barH = Math.round(rowH * 0.64), subH = Math.round(rowH * 0.46);
+  const barMid = rowH / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
+  rowH += subLine;
   const radius = h => (S.corners === 'square' ? 2 : S.corners === 'pill' ? h / 2 : Math.min(7, h / 2));
   const isGroup = n => n.level === 0 && n.hasKids;
   const left = S.taskLabels === 'left' && !pack; // task names in a column on the left, otherwise on the bars
@@ -614,9 +618,9 @@ function buildScene(state, opts) {
   const rowY = {};
   info.forEach((n, i) => {
     n.h = rowH;
-    if (rowY[n.vrow] != null) { n.y = rowY[n.vrow]; n.cy = n.y + rowH / 2; return; } // shares a row with an earlier task
+    if (rowY[n.vrow] != null) { n.y = rowY[n.vrow]; n.cy = n.y + barMid; return; } // shares a row with an earlier task
     if (i > 0 && (isGroup(n) || (lanes && n.level === 0 && info[i - 1].level > 0))) { y += lanes ? 18 : 10; n.sep = lanes; }
-    n.y = rowY[n.vrow] = y; n.cy = y + rowH / 2;
+    n.y = rowY[n.vrow] = y; n.cy = y + barMid;
     if (lanes && isGroup(n)) { n.lane = true; return; } // no row of its own: its label spans the rows inside it
     y += rowH;
   });
@@ -644,13 +648,15 @@ function buildScene(state, opts) {
     cells = unitCells(S.scale, S.sprintWeeks, a, b, anchor, relative);
     rs = cells[0][0]; re = cells[cells.length - 1][1];
   };
-  if (opts.range) { rs = opts.range[0]; re = opts.range[1]; cells = unitCells(S.scale, S.sprintWeeks, rs, re - 1, anchor, relative); rs = Math.min(rs, cells[0][0]); re = Math.max(re, cells[cells.length - 1][1]); }
+  const clip = (a, b) => { rs = a; re = b; cells = cells.filter(c => c[1] > a && c[0] < b); cells[0][0] = a; cells[cells.length - 1][1] = b; };
+  if (opts.range) { cells = unitCells(S.scale, S.sprintWeeks, opts.range[0], opts.range[1] - 1, anchor, relative); clip(opts.range[0], opts.range[1]); }
   else {
     let a = dMin, b = dMax;
     // a fixed timeline is kept as set; it only grows if an item is placed outside it
     if (fixed) { a = Math.min(a, S.rangeStart); b = Math.max(b, S.rangeEnd); }
     else if (S.todayLine) { a = Math.min(a, todayD); b = Math.max(b, todayD); }
     setRange(a, b);
+    if (fixed) clip(a, b + 1);
   }
   let ppd = (x1 - x0) / (re - rs);
   const X = d => x0 + (d - rs) * ppd;
@@ -688,7 +694,14 @@ function buildScene(state, opts) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
         n.tail.push({ k: 'date', x: tx, w, text: t }); tx += w + 12;
       }
-      if (showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + 24 <= lim) {
+      n.who = null;
+      if (subLine && showAssignee(n)) {
+        const ws = Math.max(10, size - 2.5), wx = n.milestone ? X(n.start + 0.5) - h * 0.5 : bx + 2;
+        const maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity);
+        const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
+        if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + M(t, ws, 500) - x1); }
+      }
+      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + 24 <= lim) {
         const w = M(n.row.assignee, size - 1.5, 500);
         n.tail.push({ k: 'who', x: tx, w: w + 24 }); tx += w + 24 + 10;
       }
@@ -732,7 +745,7 @@ function buildScene(state, opts) {
       s = e;
     }
   }
-  const cellW = (cells[0][1] - cells[0][0]) * ppd;
+  const cellW = Math.max(...cells.map(c => c[1] - c[0])) * ppd;
   if (S.grid) {
     const every = cellW < 7 ? Math.ceil(7 / cellW) : 1;
     const weekly = S.scale === 'days' && cellW < 16;
@@ -777,6 +790,8 @@ function buildScene(state, opts) {
     cells.forEach((c, i) => {
       if (every > 1 && (S.scale === 'days' && !relative ? dow(c[0]) !== 0 && every <= 7 : (i - firstCell) % every !== 0)) return;
       if (i < firstCell && (relative || S.scale === 'sprints')) return;
+      const label = variants[i][Math.min(vi, variants[i].length - 1)];
+      if (every === 1 && X(c[1]) - X(c[0]) < M(label, 11.5, 500) + 4) return; // a clipped period at the edge with no room
       const cx = every > 1 ? X(c[0]) + 3 : (X(c[0]) + X(c[1])) / 2;
       items.push({ t: 'text', x: cx, y: unitY, text: variants[i][Math.min(vi, variants[i].length - 1)], size: 11.5, weight: 500, fill: muted, anchor: every > 1 ? 'start' : 'middle' });
     });
@@ -903,6 +918,7 @@ function buildScene(state, opts) {
         items.push({ t: 'text', x: t.x + d + 6, y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
     });
+    if (n.who) items.push({ t: 'text', x: n.who.x, y: n.cy + n.bh / 2 + subLine / 2 + 1, text: n.who.text, size: n.who.size, weight: 500, fill: muted, anchor: 'start' });
   });
 
   // ---- "we are here" line

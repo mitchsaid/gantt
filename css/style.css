@@ -186,6 +186,15 @@ input[type='range'] { width: 100%; accent-color: var(--accent); margin: 0; }
   .panel.collapsed .collapse-btn svg { transform: rotate(180deg); }
 }
 
+.ctl.disabled { opacity: 0.5; pointer-events: none; }
+.ctl-note { margin: -4px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.dialog { width: min(440px, 100%); }
+.dialog h2 { margin: 0; font-size: 16px; }
+.dialog-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.btn.danger { background: #c0262d; color: #fff; }
+.btn.danger:hover { filter: brightness(1.1); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+
 /* ---------- zoom */
 .zoombar { position: absolute; right: 16px; bottom: 16px; display: flex; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 14px rgba(20, 24, 40, 0.12); padding: 2px; z-index: 5; }
 .zoombar button { border: 0; background: none; height: 28px; min-width: 28px; border-radius: 7px; font-weight: 600; color: #3b4252; font-variant-numeric: tabular-nums; }

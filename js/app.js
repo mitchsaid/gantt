@@ -288,13 +288,68 @@ function shiftLevel(id, d) {
   normalizeLevels(rows);
   commit(); refresh();
 }
-function deleteRow(id) {
+function deleteRow(id, keepInside) {
   const rows = state.rows, i = rowIndex(id);
   if (i < 0) return;
-  const gone = rows.splice(i, blockEnd(rows, i) - i).map(r => r.id);
+  const j = blockEnd(rows, i);
+  if (keepInside) for (let k = i + 1; k < j; k++) rows[k].level -= 1;
+  const gone = rows.splice(i, keepInside ? 1 : j - i).map(r => r.id);
   rows.forEach(r => { r.deps = r.deps.filter(d => !gone.includes(d)); });
   normalizeLevels(rows);
   sel = rows.length ? rows[Math.min(i, rows.length - 1)].id : null;
+  commit(); refresh();
+}
+/** small confirmation dialog: buttons are [label, style, action] */
+function dialog(title, text, buttons) {
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal dialog" role="alertdialog" aria-modal="true"><h2>${esc(title)}</h2><p class="modal-sub">${esc(text)}</p><div class="dialog-btns">${buttons.map((b, i) => `<button class="btn ${b[1]}" data-i="${i}">${esc(b[0])}</button>`).join('')}</div></div>`;
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  back.addEventListener('click', e => {
+    const b = e.target.closest('[data-i]');
+    if (b) { close(); const fn = buttons[+b.dataset.i][2]; if (fn) fn(); } else if (e.target === back) close();
+  });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(back);
+  back.querySelector('[data-i]:last-child').focus();
+}
+/** delete a row; if it holds other items, ask whether those should go too */
+function askDelete(id) {
+  const n = derive(state.rows)[rowIndex(id)];
+  if (!n) return;
+  if (!n.hasKids) { deleteRow(id); return; }
+  const count = blockEnd(state.rows, n.i) - n.i - 1, area = n.level === 0;
+  const inside = area ? (count === 1 ? 'task' : 'tasks') : (count === 1 ? 'subtask' : 'subtasks');
+  dialog(`Delete “${n.row.name || 'Untitled'}”?`, `This ${area ? 'area' : 'task'} contains ${count} ${count === 1 ? 'item' : 'items'}. You can remove just the ${area ? 'area' : 'task'} and keep what is inside it.`, [
+    [`Delete with its ${inside}`, 'danger', () => deleteRow(id)],
+    [`Keep the ${inside}`, 'ghost', () => deleteRow(id, true)],
+    ['Cancel', 'ghost', null],
+  ]);
+}
+/** switch an item between area, task and milestone */
+function setType(id, to) {
+  const rows = state.rows, i = rowIndex(id);
+  if (i < 0) return;
+  const info = derive(rows), n = info[i], r = n.row, j = blockEnd(rows, i);
+  const isArea = n.level === 0 && n.hasKids;
+  if (to === 'area') {
+    if (isArea) return;
+    const d = r.level;
+    for (let k = i; k < j; k++) rows[k].level -= d; // to the top level, taking its subtasks along
+    r.type = 'task';
+    // tasks listed after it become its tasks: former siblings do so by position, top-level ones are adopted until the next area
+    if (d === 0 && !n.hasKids) for (let k = j; k < rows.length && rows[k].level === 0 && !info[k].hasKids; k++) rows[k].level = 1;
+    normalizeLevels(rows);
+    if (blockEnd(rows, i) === i + 1) rows.splice(i + 1, 0, newRow({ level: 1, name: 'New task', start: r.start, end: Math.max(r.end, r.start + 4) }));
+  } else {
+    if (n.hasKids && !isArea && to === 'milestone') return;
+    if (isArea) for (let k = i + 1; k < j; k++) rows[k].level -= 1; // its tasks stay, one level up
+    const was = r.type;
+    r.type = to === 'milestone' ? 'milestone' : 'task';
+    if (r.type === 'milestone') r.end = r.start; else if (was === 'milestone' || r.end < r.start) r.end = r.start + 4;
+  }
+  normalizeLevels(rows);
   commit(); refresh();
 }
 function addRow(kind, afterId, asSibling, onChart) {
@@ -356,9 +411,10 @@ function detailHtml(n, info, rows) {
   const r = n.row;
   let html = '';
   html += `<div class="detail" data-id="${r.id}">`;
+  const isArea = n.level === 0 && n.hasKids, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
+  html += `<div class="seg" data-f="type">${[['area', 'Area'], ['task', 'Task'], ['milestone', 'Milestone']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !isArea ? ' disabled title="Remove its subtasks first"' : ''}>${o[1]}</button>`).join('')}</div>`;
   if (n.hasKids) html += `<p class="note">${fmtRange(n)} · ${Math.round(n.progress)}% — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
   else {
-    html += `<div class="seg" data-f="type"><button data-v="task" class="${n.milestone ? '' : 'on'}">Task</button><button data-v="milestone" class="${n.milestone ? 'on' : ''}">Milestone</button></div>`;
     html += n.milestone
       ? `<label class="field"><span>Date</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label>`
       : `<div class="two"><label class="field"><span>Start</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label><label class="field"><span>End</span><input class="inp" type="date" data-f="end" value="${dayToIso(r.end)}"></label></div>`;
@@ -427,19 +483,14 @@ outline.addEventListener('click', e => {
     const a = act.dataset.act;
     if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
-    else if (a === 'del') deleteRow(id);
+    else if (a === 'del') askDelete(id);
     else if (a === 'dup') duplicateRow(id);
     else if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== act.dataset.dep); commit(); refresh(); }
     return;
   }
   const segBtn = e.target.closest('.seg[data-f="type"] button');
   if (segBtn) {
-    const r = state.rows[rowIndex(id)];
-    if (r.type !== segBtn.dataset.v) {
-      r.type = segBtn.dataset.v;
-      r.end = r.type === 'milestone' ? r.start : r.start + 4;
-      commit(); refresh();
-    }
+    if (!segBtn.classList.contains('on')) setType(id, segBtn.dataset.v);
     return;
   }
   if (host.classList.contains('orow') && !e.target.closest('input,.grip')) select(id);
@@ -467,6 +518,7 @@ outline.addEventListener('keydown', e => {
   const i = rowIndex(id);
   if (e.key === 'Enter') { e.preventDefault(); commit(); addRow(state.rows[i].type === 'milestone' ? 'task' : 'task', id, e.shiftKey); }
   else if (e.key === 'Tab') { e.preventDefault(); shiftLevel(id, e.shiftKey ? -1 : 1); }
+  else if (e.key === 'Backspace' && t.value === '' && state.rows.length > 1 && blockEnd(state.rows, i) > i + 1) { e.preventDefault(); askDelete(id); }
   else if (e.key === 'Backspace' && t.value === '' && state.rows.length > 1) { e.preventDefault(); const prev = state.rows[i - 1] || state.rows[i + 1]; deleteRow(id); if (prev && rowIndex(prev.id) >= 0) { sel = prev.id; refresh(); focusName(prev.id); } }
   else if (e.key === 'ArrowDown' && state.rows[i + 1]) { e.preventDefault(); focusName(state.rows[i + 1].id); }
   else if (e.key === 'ArrowUp' && state.rows[i - 1]) { e.preventDefault(); focusName(state.rows[i - 1].id); }
@@ -613,7 +665,8 @@ const DESIGN = [
     { k: 'pack', type: 'seg', label: 'Rows', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
   ]],
   ['Labels', [
-    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']], when: s => !s.pack },
+    { k: 'taskLabels', type: 'seg', label: 'Tasks', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
     { k: 'areaLabels', type: 'seg', label: 'Areas', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.level === 0 && n.hasKids) },
   ]],
@@ -634,6 +687,7 @@ const DESIGN = [
     { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
     { k: 'assignees', type: 'toggle', label: 'Assignees' },
+    { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under bars'], ['beside', 'Beside bars']], when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
   ]],
@@ -669,6 +723,7 @@ function buildDesign() {
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
+      else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
       else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"></label>`;
@@ -681,6 +736,10 @@ function syncDesign() {
   const S = state.settings;
   $$('[data-w]', designEl).forEach(w => { const c = designCtl[w.dataset.w]; w.hidden = !!(c.when && !c.when(S)); });
   $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(S[seg.dataset.k]) === b.dataset.v)));
+  // in-sequence rows always carry names on the bars: show that, and lock the choice
+  const tl = $('[data-w="taskLabels"]', designEl);
+  tl.classList.toggle('disabled', !!S.pack);
+  if (S.pack) $$('button', tl).forEach(b => b.classList.toggle('on', b.dataset.v === 'bars'));
   $$('input[data-k], select[data-k]', designEl).forEach(inp => {
     const k = inp.dataset.k;
     if (inp.type === 'checkbox') inp.checked = !!S[k];
@@ -929,7 +988,7 @@ document.addEventListener('keydown', e => {
   if (!modal.hidden) return;
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
-  else if (!inField && sel && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteRow(sel); }
+  else if (!inField && sel && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDelete(sel); }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     // nudge the selected item (and anything inside it) by a day; Shift = a week
     e.preventDefault();

@@ -16,7 +16,8 @@ python3 -m http.server 8000
 - **Timeline first** — click the date header (or use Design → Timeline) to fix the overall span, then spread the tasks across it. An undated list pasted onto a fixed timeline is laid out to fill it.
 - **Presentation options** — task names on the left or on the bars; area names as heading rows or down the side spanning their tasks; optional title; days, weeks, sprints (1–4 weeks), months or quarters; calendar dates or numbered periods ("Week 1"); dates at the top, bottom or both.
 - **Rows** — one row per task, or "in sequence": tasks that follow one another within an area share a row, with names on the bars.
-- **Optional layers** — dependency lines, assignees (tasks, subtasks or both), progress inside bars, a draggable "We are here" line, milestone guide lines.
+- **Item types** — switch any item between area, task and milestone; deleting an area or a task with subtasks asks whether to keep what is inside.
+- **Optional layers** — dependency lines, assignees (under or beside the bars; for tasks, subtasks or both), progress inside bars, a draggable "We are here" line, milestone guide lines.
 - **Styling** — primary and optional secondary colour (the palette for each area is derived from them), background colour or transparent, Google Fonts, corner style, row height (automatic by default: short plans get taller bars so the chart fills a slide), gridlines, stripes, and a slide or report format.
 - **Import** — paste an outline (tabs, spaces, bullets, numbering, Markdown headings, CSV/TSV, rows copied from a spreadsheet) or upload `.xlsx` / `.csv`. Dates, durations, owners and percentages are detected; undated lists are laid out as a waterfall.
 - **Export** — PowerPoint (native, editable shapes), PDF, PNG (3×), copy image to clipboard, and a `.json` project file.
