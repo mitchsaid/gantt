@@ -1489,6 +1489,47 @@ $$('.panel').forEach(p => {
 });
 syncPanels();
 
+// ---------------------------------------------------------------- resizable panels
+const PANEL_LIMITS = { plan: [260, 560], design: [300, 600] };
+const panelEl = which => $(which === 'plan' ? '#panel-plan' : '#panel-design');
+const panelCss = which => (which === 'plan' ? '--plan-w' : '--design-w');
+/** set a panel's width, within its limits and always leaving room for the chart */
+function setPanelWidth(which, w) {
+  const other = which === 'plan' ? (ui.hideDesign ? 44 : panelEl('design').getBoundingClientRect().width) : (ui.hidePlan ? 44 : panelEl('plan').getBoundingClientRect().width);
+  const [lo, hi] = PANEL_LIMITS[which];
+  w = Math.round(clamp(w, lo, Math.max(lo, Math.min(hi, innerWidth - other - 420))));
+  document.documentElement.style.setProperty(panelCss(which), w + 'px');
+  return w;
+}
+function resetPanelWidth(which) { document.documentElement.style.removeProperty(panelCss(which)); delete ui[which + 'W']; saveUi(); }
+$$('.resizer').forEach(h => {
+  const which = h.dataset.for;
+  h.addEventListener('pointerdown', e => {
+    if (e.button) return;
+    e.preventDefault();
+    const x0 = e.clientX, w0 = panelEl(which).getBoundingClientRect().width;
+    h.setPointerCapture(e.pointerId); h.classList.add('active'); document.body.classList.add('resizing');
+    const move = ev => setPanelWidth(which, w0 + (which === 'plan' ? ev.clientX - x0 : x0 - ev.clientX));
+    const up = () => {
+      h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+      h.classList.remove('active'); document.body.classList.remove('resizing');
+      ui[which + 'W'] = Math.round(panelEl(which).getBoundingClientRect().width); saveUi();
+    };
+    h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+  });
+  h.addEventListener('dblclick', () => resetPanelWidth(which));
+  h.addEventListener('keydown', e => { // arrow keys nudge (Shift = bigger steps); Home goes back to the default
+    const step = (e.shiftKey ? 48 : 16) * (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0) * (which === 'plan' ? 1 : -1);
+    if (e.key === 'Home') { e.preventDefault(); resetPanelWidth(which); return; }
+    if (!step) return;
+    e.preventDefault();
+    ui[which + 'W'] = setPanelWidth(which, panelEl(which).getBoundingClientRect().width + step); saveUi();
+  });
+});
+const applyPanelWidths = () => { ['plan', 'design'].forEach(w => { if (ui[w + 'W']) setPanelWidth(w, ui[w + 'W']); }); }; // the saved widths, held within the window
+applyPanelWidths();
+addEventListener('resize', applyPanelWidths);
+
 // ---------------------------------------------------------------- quick add: paste several items
 /** where pasted items go: after the selected row (inside an area when one is selected), or in place of an empty row */
 function pastePlace(parsed, afterId, hole) {
