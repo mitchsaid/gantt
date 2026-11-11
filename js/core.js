@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v45 · 11 Nov';
+const APP_VERSION = 'v46 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -289,7 +289,7 @@ function canvasOf(S) {
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
-  deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
+  deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   progress: false, todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
@@ -731,8 +731,9 @@ function buildScene(state, opts) {
   const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
   const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, 14.5, 20) * 2) / 2);
   const tierOf = f => Math.round(26 * f / 14);
-  const avOn = S.assigneeAvatar !== false; // the little initials circle beside an owner's name
-  const subLineOf = f => (S.assignees && S.assigneePos !== 'beside' && info.some(n => n.row.assignee) ? Math.round((avOn ? 18 : 14) * f / 14) : 0); // owners under the bars take a line of their own
+  const avOn = S.assigneeAvatar !== false || S.assigneePos === 'bars'; // (on the bars the avatar is the point, so it is always on)
+  // the little initials circle beside an owner's name
+  const subLineOf = f => (S.assignees && (S.assigneePos || 'under') === 'under' && info.some(n => n.row.assignee) ? Math.round((avOn ? 18 : 14) * f / 14) : 0); // owners under the bars take a line of their own
   const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
   let rowH = 0;
   { // the baseline (Auto): size rows so the chart fills its canvas — few items get tall bars, long plans stay compact
@@ -949,17 +950,23 @@ function buildScene(state, opts) {
         over = Math.max(over, n.tailEnd - x1);
         return;
       }
+      // assignees "on the bar": a round avatar at the bar's right end when the bar can hold it (otherwise it sits just outside, like beside-bar owners)
+      const onBars = S.assigneePos === 'bars';
+      let avD = 0;
+      if (onBars && !n.milestone && showAssignee(n)) { const d = Math.round(Math.min(h - 2 * Math.max(3, h * 0.1), 36 * kk)); if (d >= Math.round(15 * kk) && bw >= d + 16) avD = d; }
+      n.avD = avD;
+      const bwL = bw - (avD ? avD + 4 : 0); // room left for the name
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         const ip = padFor(h); n.ip = ip;
         // keep the name on the bar (wrapped, shrunk or shortened) — or, if "move outside" is chosen and it can't be shown whole, put it beside the bar
-        const lf = !n.milestone && w + 2 * ip > bw && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bw - 2 * ip), size, 500, h >= size * 2 + 4) : null;
-        if (!n.milestone && w + 2 * ip <= bw) n.inside = true;
+        const lf = !n.milestone && w + 2 * ip > bwL && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bwL - 2 * ip), size, 500, h >= size * 2 + 4) : null;
+        if (!n.milestone && w + 2 * ip <= bwL) n.inside = true;
         else if (lf && (overflow !== 'outside' || lf.full)) {
           n.inside = true;
           n.lines = lf.lines; n.shrink = lf.size !== size ? lf.size : null;
         } else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
-        else { n.inside = true; n.fit = Math.max(0, bw - 1.6 * ip); } // no room beside it: shorten the name to fit the bar
+        else { n.inside = true; n.fit = Math.max(0, bwL - 1.6 * ip); } // no room beside it: shorten the name to fit the bar
       } else if (n.milestone && !relative) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
         n.tail.push({ k: 'date', x: tx, w, text: t }); tx += w + 12;
@@ -971,9 +978,12 @@ function buildScene(state, opts) {
         const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
         if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + av + M(t, ws, 500) - x1); }
       }
-      if (!subLine && showAssignee(n) && tx + M(n.row.assignee, size - 1.5, 500) + (avOn ? dd + 6 : 0) <= lim) {
-        const w = M(n.row.assignee, size - 1.5, 500);
-        n.tail.push({ k: 'who', x: tx, w: w + (avOn ? dd + 6 : 0) }); tx += w + (avOn ? dd + 6 : 0) + 10;
+      if (!subLine && showAssignee(n)) {
+        const nm = onBars ? !!S.assigneeNames : true, av = onBars ? !avD : avOn; // on the bar: the name stays outside, to the right, and is optional
+        if (nm || av) {
+          const w = (nm ? M(n.row.assignee, size - 1.5, 500) : 0) + (av ? dd + (nm ? 6 : 0) : 0);
+          if (tx + w <= lim) { n.tail.push({ k: 'who', x: tx, w, av, nm }); tx += w + 10; }
+        }
       }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
       n.tailStart = n.milestone ? msX(n) - h * 0.52 - 4 : bx;
@@ -1233,6 +1243,11 @@ function buildScene(state, opts) {
           items.push(it);
         }
       }
+      if (n.avD) { // the owner's avatar, ringed in white so it reads on any bar colour
+        const d = n.avD, g = (h - d) / 2, ax = n.bx + n.bw - inset - g - d, fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
+        items.push({ t: 'rect', x: ax, y: by + g, w: d, h: d, r: d / 2, fill: fillA, stroke: '#ffffff', sw: 1.5 });
+        items.push({ t: 'text', x: ax + d / 2, y: by + h / 2, text: initials(row.assignee).slice(0, 2), size: Math.max(7, Math.round(d * 0.38 * 2) / 2), weight: 700, fill: contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', anchor: 'middle' });
+      }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
         if (tracked) {
@@ -1248,11 +1263,11 @@ function buildScene(state, opts) {
       else if (t.k === 'date') items.push({ t: 'text', x: t.x, y: n.cy, text: t.text, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       else {
         const d = dd;
-        if (avOn) {
+        if (t.av) {
           items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
           items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
         }
-        items.push({ t: 'text', x: t.x + (avOn ? d + 6 : 0), y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
+        if (t.nm) items.push({ t: 'text', x: t.x + (t.av ? d + 6 : 0), y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
     });
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
