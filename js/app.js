@@ -1224,6 +1224,7 @@ $$('.panel').forEach(p => {
 syncPanels();
 
 // ---------------------------------------------------------------- go
+$('#version').textContent = APP_VERSION;
 buildDesign();
 syncUndo();
 ensureFont();
