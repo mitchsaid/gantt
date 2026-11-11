@@ -910,6 +910,8 @@ const DESIGN = [
     { k: 'taskLabels', type: 'seg', label: 'Task names', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
     { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'areaLabels', type: 'seg', label: 'Area names', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
+    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
+    { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { type: 'head', label: 'Extras' },
     { k: 'progress', type: 'toggle', label: 'Progress in bars' },
     { k: 'progressSource', type: 'seg', label: 'Progress from', sub: true, col: true, opts: [['manual', 'Set per bar'], ['marker', 'Date marker']], when: s => s.progress },
@@ -939,8 +941,6 @@ const DESIGN = [
     { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
     { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
     { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
-    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
-    { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
     { k: '_textInfo', type: 'info', id: 'text-info' },
   ]],
 ];
