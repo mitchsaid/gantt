@@ -383,12 +383,12 @@ function setType(id, to) {
   normalizeLevels(rows);
   commit(); refresh();
 }
-function addRow(kind, afterId, asSibling, onChart) {
+function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
   const info = derive(rows);
   let i = afterId ? rowIndex(afterId) : -1;
-  let at, level, ref;
+  let at, level, ref, childOf = null;
   if (kind === 'area') {
     ref = info.length ? Math.max(...info.map(n => n.end)) : mondayOf(todayDay()) - 1;
     const s = nextWorkday(ref + 1);
@@ -401,13 +401,18 @@ function addRow(kind, afterId, asSibling, onChart) {
   else {
     const n = info[i];
     ref = n;
-    if (n.hasKids && (n.level === 0 || !asSibling)) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
+    if (asChild && !n.milestone && n.level < 2) { // a subtask: inside this item, after what it already holds
+      at = blockEnd(rows, i); level = n.level + 1;
+      if (n.hasKids) ref = info[at - 1]; else childOf = n; // a task that had no items inside keeps its own dates through its first one
+    }
+    else if (n.hasKids && (n.level === 0 || !asSibling)) { at = blockEnd(rows, i); level = n.level + 1; ref = info[at - 1]; }
     else { at = blockEnd(rows, i); level = n.level; }
   }
   const S0 = state.settings;
   const emptyStart = S0.rangeMode === 'fixed' && S0.rangeStart != null ? S0.rangeStart : mondayOf(todayDay());
   const row = newRow({ level, name: '', type: kind === 'milestone' ? 'milestone' : 'task' });
   if (kind === 'milestone') { row.start = row.end = ref ? ref.end : emptyStart; row.name = 'Milestone'; }
+  else if (childOf) { row.start = childOf.start; row.end = childOf.end; row.name = ''; }
   else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
   rows.splice(at, 0, row);
   normalizeLevels(rows);
@@ -1210,10 +1215,10 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
-  else if (!inField && !mod && !e.altKey && !e.shiftKey && e.key === 'Enter' && selIds().length && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Enter adds a new item under the selection
+  else if (!inField && !mod && !e.altKey && e.key === 'Enter' && selIds().length && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Enter adds a new item under the selection; Shift+Enter adds a subtask inside it
     e.preventDefault();
     const picked = selIds();
-    commit(); addRow('task', picked[picked.length - 1], true, true);
+    commit(); addRow('task', picked[picked.length - 1], true, true, e.shiftKey);
   }
   else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
   else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
