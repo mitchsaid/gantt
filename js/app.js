@@ -1046,6 +1046,12 @@ function setSetting(k, v, soon) {
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
+  const peBtn = e.target.closest('[data-pe]');
+  if (peBtn) { peUi.sel = +peBtn.dataset.pe; syncPalEditor(); return; }
+  const peAct = e.target.closest('[data-act^="pe-"]');
+  if (peAct && !peAct.disabled) { peAction(peAct); return; }
+  const mineBtn = e.target.closest('[data-mine]');
+  if (mineBtn) { const m = (ui.myPalettes || [])[+mineBtn.dataset.mine]; if (m) { peUi.sel = 0; peCommit(m.colors.slice()); } return; }
   const gh = e.target.closest('[data-sec-toggle]');
   if (gh) { setSectionOpen(gh.dataset.secToggle, gh.getAttribute('aria-expanded') !== 'true'); return; }
   if (markerColorEvent(e, 'click')) return;
@@ -1061,6 +1067,8 @@ designEl.addEventListener('click', e => {
 designEl.addEventListener('input', e => {
   const t = e.target, k = t.dataset.k;
   if (markerColorEvent(e, 'input')) return;
+  if (t.dataset.pehex != null) { const hex = parseColor(t.value); if (hex) peEdit(hex); return; }
+  if (t.dataset.pecolor != null) { peEdit(t.value); return; }
   if (t.dataset.seed != null || t.dataset.seedpick != null) { const hex = parseColor(t.value); if (hex) applySeed(hex); return; }
   if (!k) return;
   if (t.type === 'checkbox') setSetting(k, t.checked);
@@ -1847,10 +1855,76 @@ function paletteHtml() {
     <div class="color seed-row"><input class="inp hex seed-in" data-seed placeholder="#4f46e5" spellcheck="false" autocomplete="off" aria-label="Colour"><input type="color" data-seedpick value="#4f46e5" aria-label="Pick a colour"></div></div>
     <div class="sugg" id="sugg" hidden></div>
     <span class="lbl">Ready-made palettes</span>
-    <div class="pal-grid">${PRESETS.map((p, i) => `<button class="pal" data-palette="${i}" title="${esc(p.name)}">${strip(p.colors)}<span class="pn">${esc(p.name)}</span></button>`).join('')}</div>`;
+    <div class="pal-grid">${PRESETS.map((p, i) => `<button class="pal" data-palette="${i}" title="${esc(p.name)}">${strip(p.colors)}<span class="pn">${esc(p.name)}</span></button>`).join('')}</div>
+    <div class="pe" id="pe"></div>`;
+}
+// ---------------------------------------------------------------- your own palette
+// Any number of colours (up to 16), starting from whichever palette is showing. Colours are kept exactly as chosen, and each bar picks
+// whichever label colour reads best on it. Palettes can be saved by name and reused.
+const peUi = { sel: 0, inplace: false };
+const peColors = () => paletteOf(state.settings).colors;
+function peCommit(colors, soon) {
+  state.settings.palette = { id: 'custom', name: 'Custom', text: 'auto', colors };
+  renderChart(); renderOutline(); syncDesign(); syncPop();
+  if (soon) commitSoon(); else commit();
+}
+const peSig = () => peColors().join(',') + '|' + peUi.sel + '|' + (ui.myPalettes || []).map(m => m.name + m.colors.join('')).join(';');
+function peHtml() {
+  const cols = peColors(), sel = peUi.sel, mine = ui.myPalettes || [], ms = cols.length >= 3 ? cols.length - 1 : -1;
+  const here = cols.join(',');
+  return `<span class="lbl">Your palette</span>
+    <p class="ctl-note">Starts from the palette above. Edit a colour, add more or remove some. Items take the colours in order, then repeat${ms >= 0 ? '; milestones use the last one (◆)' : ''}.</p>
+    <div class="pe-row">${cols.map((c, i) => `<button class="pe-sw${i === sel ? ' on' : ''}${i === ms ? ' ms' : ''}" data-pe="${i}" style="--c:${c}" title="Colour ${i + 1}${i === ms ? ' — used for milestones' : ''}" aria-label="Colour ${i + 1}, ${c}"></button>`).join('')}${cols.length < 16 ? '<button class="pe-add" data-act="pe-add" title="Add a colour" aria-label="Add a colour">+</button>' : ''}</div>
+    <div class="color pe-sel"><input class="inp hex" data-pehex maxlength="7" spellcheck="false" value="${cols[sel]}" aria-label="Hex colour"><input type="color" data-pecolor value="${cols[sel]}" aria-label="Pick a colour">
+      <button class="x-btn" data-act="pe-left" title="Move earlier"${sel === 0 ? ' disabled' : ''}>◀</button><button class="x-btn" data-act="pe-right" title="Move later"${sel === cols.length - 1 ? ' disabled' : ''}>▶</button><button class="x-btn" data-act="pe-del" title="Remove this colour"${cols.length < 2 ? ' disabled' : ''}>✕</button></div>
+    <div class="pe-save"><input class="inp" data-pename placeholder="Name it to save this palette" maxlength="24" autocomplete="off"><button class="btn ghost" data-act="pe-save">Save</button></div>
+    ${mine.length ? `<span class="lbl">Your saved palettes</span><div class="pal-grid">${mine.map((m, i) => `<span class="pal-wrap"><button class="pal${m.colors.join(',') === here ? ' on' : ''}" data-mine="${i}" title="${esc(m.name)}">${strip(m.colors)}<span class="pn">${esc(m.name)}</span></button><button class="x-btn pal-x" data-act="pe-forget" data-i="${i}" title="Delete “${esc(m.name)}”" aria-label="Delete ${esc(m.name)}">✕</button></span>`).join('')}</div>` : ''}`;
+}
+function syncPalEditor() {
+  const box = $('#pe', designEl);
+  if (!box) return;
+  const cols = peColors();
+  peUi.sel = clamp(peUi.sel, 0, cols.length - 1);
+  if (peUi.inplace) { // typing a colour: update what is shown without rebuilding (which would drop the cursor)
+    $$('.pe-sw', box).forEach((b, i) => { if (cols[i]) b.style.setProperty('--c', cols[i]); });
+    const pc = $('[data-pecolor]', box), ph = $('[data-pehex]', box);
+    if (pc) pc.value = cols[peUi.sel];
+    if (ph && ph !== document.activeElement) ph.value = cols[peUi.sel];
+    box.dataset.sig = peSig();
+    return;
+  }
+  const sig = peSig();
+  if (box.dataset.sig === sig) return;
+  box.innerHTML = peHtml();
+  box.dataset.sig = sig;
+}
+function peEdit(hex) {
+  const cols = peColors().slice();
+  cols[peUi.sel] = hex;
+  peUi.inplace = true;
+  try { peCommit(cols, true); } finally { peUi.inplace = false; }
+}
+function peAction(btn) {
+  const a = btn.dataset.act, cols = peColors().slice(), i = peUi.sel;
+  if (a === 'pe-add' && cols.length < 16) {
+    const [L, C, H] = toOklch(cols[cols.length - 1]);
+    cols.push(okHex(L, C, H + 50 * D2R)); peUi.sel = cols.length - 1; peCommit(cols);
+  } else if (a === 'pe-del' && cols.length > 1) { cols.splice(i, 1); peUi.sel = Math.min(i, cols.length - 1); peCommit(cols); }
+  else if (a === 'pe-left' && i > 0) { [cols[i - 1], cols[i]] = [cols[i], cols[i - 1]]; peUi.sel = i - 1; peCommit(cols); }
+  else if (a === 'pe-right' && i < cols.length - 1) { [cols[i + 1], cols[i]] = [cols[i], cols[i + 1]]; peUi.sel = i + 1; peCommit(cols); }
+  else if (a === 'pe-save') {
+    const inp = $('[data-pename]', designEl), name = (inp ? inp.value : '').trim();
+    if (!name) { if (inp) { inp.focus(); inp.classList.add('bad'); setTimeout(() => inp.classList.remove('bad'), 900); } return; }
+    ui.myPalettes = (ui.myPalettes || []).filter(m => m.name.toLowerCase() !== name.toLowerCase());
+    ui.myPalettes.unshift({ name, colors: cols });
+    ui.myPalettes = ui.myPalettes.slice(0, 12); saveUi();
+    syncPalEditor();
+    const again = $('[data-pename]', designEl); if (again) again.value = '';
+  } else if (a === 'pe-forget') { (ui.myPalettes || []).splice(+btn.dataset.i, 1); saveUi(); syncPalEditor(); }
 }
 function syncPalette() {
   const pal = paletteOf(state.settings);
+  syncPalEditor();
   $$('[data-palette]', designEl).forEach(b => b.classList.toggle('on', PRESETS[+b.dataset.palette].id === pal.id));
   const inp = $('[data-seed]', designEl), pick = $('[data-seedpick]', designEl), sg = $('#sugg', designEl);
   if (!inp || !sg) return;

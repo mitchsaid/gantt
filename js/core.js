@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v54 · 11 Nov';
+const APP_VERSION = 'v55 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1380,7 +1380,7 @@ function buildScene(state, opts) {
       const shaded = tracked && S.progressStyle === 'shade';
       let deep = full;
       if (shaded) {
-        const lightLabel = S.barText === 'light' || (S.barText !== 'dark' && pal.text !== 'dark');
+        const lightLabel = S.barText === 'light' || (S.barText !== 'dark' && (pal.text === 'light' || (pal.text === 'auto' && onColor(full) === '#ffffff'))); // a custom palette picks label colour bar by bar
         let sh = 0.26;
         if (!lightLabel) while (sh > 0 && contrast(mix(full, '#0b1020', sh), '#0b1020') < 7) sh -= 0.04; // darker must not cost a dark label its contrast
         deep = mix(full, '#0b1020', Math.max(sh, 0));
