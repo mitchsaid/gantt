@@ -738,6 +738,7 @@ const DESIGN = [
     { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
     { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
     { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
+    { k: '_len', type: 'dur', label: 'Or length from start', sub: true, col: true, when: s => s.rangeMode === 'fixed' },
     { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', when: s => s.rangeMode === 'fixed' },
   ]],
   ['Show', [
@@ -784,6 +785,7 @@ function buildDesign() {
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
+      else if (c.type === 'dur') html += `<div class="${cls}" data-w="${c.k}">${lbl}${durControl(0, 6, 'len-n', 'len-u')}</div>`;
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
@@ -801,6 +803,12 @@ function syncDesign() {
   const tl = $('[data-w="taskLabels"]', designEl);
   tl.classList.toggle('disabled', !!S.pack);
   if (S.pack) $$('button', tl).forEach(b => b.classList.toggle('on', b.dataset.v === 'bars'));
+  // the timeline's length, in the unit it divides into most naturally (weeks, sprints, months…)
+  if (S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null) {
+    const [n, u] = spanUnits(S.rangeStart, S.rangeEnd), ln = $('[data-f="len-n"]', designEl), lu = $('[data-f="len-u"]', designEl);
+    if (ln && ln !== document.activeElement) ln.value = n;
+    if (lu && lu !== document.activeElement) lu.value = u;
+  }
   $$('input[data-k], select[data-k]', designEl).forEach(inp => {
     const k = inp.dataset.k;
     if (inp.type === 'checkbox') inp.checked = !!S[k];
@@ -844,7 +852,15 @@ designEl.addEventListener('input', e => {
   else if (t.tagName === 'SELECT') setSetting(k, t.value);
   else setSetting(k, t.value, true);
 });
-designEl.addEventListener('change', () => { commit(); syncDesign(); });
+designEl.addEventListener('change', e => {
+  const f = e.target.dataset.f;
+  if (f === 'len-n' || f === 'len-u') { // "from the start date, for N days / weeks / sprints / months"
+    const S = state.settings;
+    if (S.rangeStart != null) setSetting('rangeEnd', durFromFields(e.target, S.rangeStart, 'len-n', 'len-u'));
+    return;
+  }
+  commit(); syncDesign();
+});
 
 // ---------------------------------------------------------------- import
 const modal = $('#import-modal');
