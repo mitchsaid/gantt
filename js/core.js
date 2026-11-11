@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v23 · 11 Nov';
+const APP_VERSION = 'v25 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -256,7 +256,7 @@ function canvasOf(S) {
 
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
-  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside',
+  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false,
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
@@ -816,23 +816,40 @@ function buildScene(state, opts) {
   const X = d => x0 + (d - rs) * ppd;
 
   // long names: what happens when a name doesn't fit its space (Design → Long names)
-  const overflow = S.overflow || 'outside';
+  const overflow = S.overflow === 'wrap' ? 'shrink' : (S.overflow || 'outside'); // what to do when a name still doesn't fit ("wrap" was once a choice here)
+  const wrapOn = !!S.wrapNames || S.overflow === 'wrap';
+  /** greedy two-line split at one size; `full` says whether both lines fit without cutting anything */
+  const wrapAt = (name, maxW, sz, weight) => {
+    const words = name.trim().split(/\s+/);
+    if (words.length < 2) return null; // a single word can't be wrapped
+    let l1 = '', wi = 0;
+    while (wi < words.length) { const t = l1 ? l1 + ' ' + words[wi] : words[wi]; if (l1 && M(t, sz, weight) > maxW) break; l1 = t; wi++; }
+    const rest = words.slice(wi).join(' ');
+    return { l1, rest, full: !rest ? M(l1, sz, weight) <= maxW : M(l1, sz, weight) <= maxW && M(rest, sz, weight) <= maxW };
+  };
+  const twoLines = (w, maxW, sz, weight) => (w.rest ? [fitText(w.l1, maxW, sz, weight, font), fitText(w.rest, maxW, sz, weight, font)] : [fitText(w.l1, maxW, sz, weight, font)]);
+  /** how a name sits in a space of width maxW: wrapped first if that's switched on, then shrunk / shortened as chosen. `full` = nothing was cut. */
   const labelFit = (name, maxW, size, weight, canWrap) => {
-    if (M(name, size, weight) <= maxW) return { lines: [name], size };
-    if (overflow === 'wrap' && canWrap) { // two lines in slightly smaller type, the second shortened if it still runs over
-      const ws = Math.round(size * 0.88 * 2) / 2, words = name.split(/\s+/);
-      let l1 = '', wi = 0;
-      while (wi < words.length) { const t = l1 ? l1 + ' ' + words[wi] : words[wi]; if (l1 && M(t, ws, weight) > maxW) break; l1 = t; wi++; }
-      const rest = words.slice(wi).join(' ');
-      return { lines: rest ? [fitText(l1, maxW, ws, weight, font), fitText(rest, maxW, ws, weight, font)] : [fitText(l1, maxW, ws, weight, font)], size: ws };
+    if (M(name, size, weight) <= maxW) return { lines: [name], size, full: true };
+    let w = null, ws = size;
+    if (wrapOn && canWrap) { // two lines, in slightly smaller type so they fit the height
+      ws = Math.round(size * 0.88 * 2) / 2;
+      w = wrapAt(name, maxW, ws, weight);
+      if (w && w.full) return { lines: twoLines(w, maxW, ws, weight), size: ws, full: true };
     }
-    if (overflow === 'shrink' || overflow === 'wrap') { // smaller type, down to a floor, then shortened
-      const min = Math.max(8, size * 0.62);
-      let s = size;
-      while (s > min && M(name, s, weight) > maxW) s -= 0.5;
-      return { lines: [fitText(name, maxW, s, weight, font)], size: s };
+    const min = Math.max(8, size * 0.62);
+    if (overflow === 'shrink') { // smaller type, down to a floor, then shortened
+      let s = w ? ws : size;
+      while (s > min) {
+        if (w) { const t = wrapAt(name, maxW, s, weight); if (t && t.full) return { lines: twoLines(t, maxW, s, weight), size: s, full: true }; } else if (M(name, s, weight) <= maxW) break;
+        s -= 0.5;
+      }
+      s = Math.max(s, min);
+      if (w) { const t = wrapAt(name, maxW, s, weight); return { lines: twoLines(t, maxW, s, weight), size: s, full: false }; }
+      return { lines: [fitText(name, maxW, s, weight, font)], size: s, full: M(name, s, weight) <= maxW };
     }
-    return { lines: [fitText(name, maxW, size, weight, font)], size }; // truncate ("move outside" has nowhere to go here)
+    // truncate — and "move outside", which has nowhere to go here (bars decide that for themselves from `full`)
+    return w ? { lines: twoLines(w, maxW, ws, weight), size: ws, full: false } : { lines: [fitText(name, maxW, size, weight, font)], size, full: false };
   };
 
   // what goes to the right of each bar (labels that don't fit, owners)
@@ -881,10 +898,11 @@ function buildScene(state, opts) {
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         const ip = padFor(h); n.ip = ip;
+        // keep the name on the bar (wrapped, shrunk or shortened) — or, if "move outside" is chosen and it can't be shown whole, put it beside the bar
+        const lf = !n.milestone && w + 2 * ip > bw && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bw - 2 * ip), size, 500, h >= size * 2 + 4) : null;
         if (!n.milestone && w + 2 * ip <= bw) n.inside = true;
-        else if (!n.milestone && overflow !== 'outside') { // keep the name on the bar: wrapped, shrunk or shortened
+        else if (lf && (overflow !== 'outside' || lf.full)) {
           n.inside = true;
-          const lf = labelFit(name, Math.max(0, bw - 2 * ip), size, 500, h >= size * 2 + 4);
           n.lines = lf.lines; n.shrink = lf.size !== size ? lf.size : null;
         } else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
         else { n.inside = true; n.fit = Math.max(0, bw - 1.6 * ip); } // no room beside it: shorten the name to fit the bar

@@ -56,6 +56,7 @@ function sanitize(st) {
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
   if (old.canvas == null) st.settings.canvas = old.width === 'compact' ? 'slide43' : 'slide169'; // the old Slide / Report formats
   delete st.settings.width;
   if (!had) { // plans saved with a primary / secondary colour become a palette
@@ -567,7 +568,11 @@ outline.addEventListener('pointerdown', e => {
   const id = grip.closest('.orow').dataset.id;
   const i = rowIndex(id), j = blockEnd(state.rows, i);
   const els = $$('.orow', outline);
-  els.slice(i, j).forEach(el => el.classList.add('dragging'));
+  // dragging one of several selected rows takes them all
+  const picked = selIds(), group = picked.length > 1 && picked.includes(id);
+  if (group) { const moving = new Set(selectedBlocks().map(r => r.id)); state.rows.forEach((r, q) => { if (moving.has(r.id)) els[q].classList.add('dragging'); }); }
+  else els.slice(i, j).forEach(el => el.classList.add('dragging'));
+  let gplan = null;
   const line = document.createElement('div');
   line.className = 'drop-line'; line.hidden = true;
   outline.appendChild(line);
@@ -580,22 +585,33 @@ outline.addEventListener('pointerdown', e => {
     for (let x = 0; x < els.length; x++) { const b = els[x].getBoundingClientRect(); if (y < b.top + b.height / 2) { k = x; break; } }
     const ob = outline.getBoundingClientRect();
     const ref = k < els.length ? els[k].getBoundingClientRect().top : els[els.length - 1].getBoundingClientRect().bottom;
-    // dragging sideways changes the level: an area dropped under another becomes a task, its tasks subtasks
-    lv = dropLevelFor(i, k, lv0 + Math.round((ev.clientX - x0) / 20));
-    const stay = k >= i && k <= j;
-    line.hidden = stay && lv === lv0;
-    line.style.top = (stay ? els[i].getBoundingClientRect().top : ref) - ob.top - 2 + 'px';
-    line.style.left = 28 + lv * 14 + 'px';
-    // outline the row it would land inside
     $$('.orow.drop-into', outline).forEach(el => el.classList.remove('drop-into'));
-    const pi = dropParentIndex(i, k, lv);
-    if (pi >= 0 && !line.hidden && pi !== derive(state.rows)[i].parent) els[pi].classList.add('drop-into');
+    if (group) {
+      gplan = planGroupMove(k, lv0 + Math.round((ev.clientX - x0) / 20), false);
+      lv = gplan.level;
+      line.hidden = !gplan.changed;
+      line.style.top = ref - ob.top - 2 + 'px';
+      line.style.left = 28 + lv * 14 + 'px';
+      const gp = gplan.parentId ? rowIndex(gplan.parentId) : -1;
+      if (gp >= 0 && gplan.changed && gp !== derive(state.rows)[i].parent) els[gp].classList.add('drop-into');
+    } else {
+      // dragging sideways changes the level: an area dropped under another becomes a task, its tasks subtasks
+      lv = dropLevelFor(i, k, lv0 + Math.round((ev.clientX - x0) / 20));
+      const stay = k >= i && k <= j;
+      line.hidden = stay && lv === lv0;
+      line.style.top = (stay ? els[i].getBoundingClientRect().top : ref) - ob.top - 2 + 'px';
+      line.style.left = 28 + lv * 14 + 'px';
+      // outline the row it would land inside
+      const pi = dropParentIndex(i, k, lv);
+      if (pi >= 0 && !line.hidden && pi !== derive(state.rows)[i].parent) els[pi].classList.add('drop-into');
+    }
     const bb = body.getBoundingClientRect();
     if (y < bb.top + 30) body.scrollTop -= 12; else if (y > bb.bottom - 30) body.scrollTop += 12;
   };
   const up = () => {
     grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
-    if (moveBlock(i, k, lv)) { sel = id; commit(); }
+    if (group) { if (gplan && gplan.changed) { applyGroupMove(gplan); commit(); } }
+    else if (moveBlock(i, k, lv)) { sel = id; commit(); }
     refresh();
   };
   grip.setPointerCapture(e.pointerId);
@@ -650,6 +666,60 @@ function pointerLevel(y, fallback) {
   if (under.level === 0 && under.hasKids && y >= under.cy) return 1; // the lower half of an area's own heading row counts as inside it
   return under.level;
 }
+/** where the selected items (each with what is inside it) would land if dropped before row k, at the level `want` asks for */
+function planGroupMove(k, want, existingOnly) {
+  const rows = state.rows, blocks = selectedBlocks(), inSel = new Set(blocks.map(r => r.id));
+  const rest = rows.filter(r => !inSel.has(r.id));
+  const pos = rows.slice(0, k).filter(r => !inSel.has(r.id)).length; // the slot among the rows left behind
+  const prev = rest[pos - 1], next = rest[pos], idx = new Map(rows.map((r, i) => [r.id, i]));
+  const max = prev ? Math.min(2, prev.level + 1) : 0;
+  const origParents = new Set(); // what the selection came out of still counts as an existing parent
+  let rootEnd = -1;
+  blocks.forEach(r => {
+    const i = idx.get(r.id);
+    if (i < rootEnd) return;
+    rootEnd = blockEnd(rows, i);
+    for (let q = i - 1; q >= 0; q--) if (rows[q].level < r.level) { origParents.add(rows[q].id); break; }
+  });
+  const parentOf = lv => { for (let q = pos - 1; q >= 0; q--) if (rest[q].level < lv) return q; return -1; };
+  let level = clamp(want, 0, max);
+  if (next && next.level > level) level = Math.min(next.level, max); // dropped in front of deeper rows, it joins them rather than adopting them
+  if (existingOnly) while (level > 0) { // never turn a plain row into an area
+    const p = parentOf(level);
+    if (p < 0 || origParents.has(rest[p].id) || blockEnd(rest, p) > p + 1) break;
+    level = rest[p].level;
+  }
+  const pi = level > 0 ? parentOf(level) : -1;
+  const levels = new Map();
+  let delta = 0; rootEnd = -1; // every selected item lands on that level, taking its contents along
+  blocks.forEach(r => {
+    const i = idx.get(r.id);
+    if (i >= rootEnd) { delta = level - r.level; rootEnd = blockEnd(rows, i); }
+    levels.set(r.id, clamp(r.level + delta, 0, 2));
+  });
+  const order = rest.slice(0, pos).concat(blocks, rest.slice(pos));
+  return { order, levels, level, parentId: pi >= 0 ? rest[pi].id : null, changed: order.some((r, i) => r !== rows[i]) || blocks.some(r => levels.get(r.id) !== r.level) };
+}
+function applyGroupMove(plan) {
+  plan.order.forEach(r => { if (plan.levels.has(r.id)) r.level = plan.levels.get(r.id); });
+  state.rows = plan.order;
+  normalizeLevels(state.rows);
+}
+/** dragging several selected bars up or down the chart: show where they would all land */
+function reorderGroup(y) {
+  const info = scene.info;
+  let k = info.length;
+  for (let x = 0; x < info.length; x++) if (y < (info[x].dropCy != null ? info[x].dropCy : info[x].cy)) { k = x; break; }
+  const want = pointerLevel(y, drag.lv0), plan = planGroupMove(k, want, true);
+  drag.k2 = k; drag.gwant = want; drag.dropLevel = plan.level;
+  drag.dropY = !plan.changed ? null : k < info.length ? info[k].y - (info[k].level === 0 && info[k].hasKids && k > 0 ? 5 : 0) : info[info.length - 1].y + scene.rowH;
+  drag.dropBox = null;
+  const pi = plan.parentId ? state.rows.findIndex(r => r.id === plan.parentId) : -1;
+  if (plan.changed && pi >= 0 && pi !== info[drag.i].parent) {
+    const blk = info.slice(pi, blockEnd(state.rows, pi));
+    drag.dropBox = { id: plan.parentId, y0: Math.min(...blk.map(n => n.y)), y1: Math.max(...blk.map(n => (n.lane ? n.y + n.h : n.y + scene.rowH))) };
+  }
+}
 function reorderTarget(dx, y) {
   const info = scene.info;
   let k = info.length;
@@ -682,8 +752,8 @@ svg.addEventListener('pointermove', e => {
   if (drag.role === 'move') {
     const pack = state.settings.pack;
     // a mostly-sideways drag moves the item in time; a mostly-vertical one moves it between rows and areas
-    if (!pack && drag.mode == null) drag.mode = !drag.multi && Math.abs(dy) > Math.abs(dx) ? 'reorder' : 'time';
-    if (!pack && drag.mode === 'reorder') { reorderTarget(dx, py); drag.reorder = true; }
+    if (!pack && drag.mode == null) drag.mode = Math.abs(dy) > Math.abs(dx) ? 'reorder' : 'time';
+    if (!pack && drag.mode === 'reorder') { if (drag.multi) reorderGroup(py); else reorderTarget(dx, py); drag.reorder = true; }
     else {
       drag.block.forEach(b => { b.r.start = b.s + dd; b.r.end = b.e + dd; });
       // with tasks in sequence, dragging up or down picks which row the task continues,
@@ -714,7 +784,10 @@ function endDrag() {
   svg.classList.remove('dragging');
   if (d.moved) {
     if (d.role === 'row' && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
-    if (d.role === 'move' && d.reorder && d.k2 != null) moveBlock(d.i, d.k2, d.dropLevel);
+    if (d.role === 'move' && d.reorder && d.k2 != null) {
+      if (d.multi) { const plan = planGroupMove(d.k2, d.gwant, true); if (plan.changed) applyGroupMove(plan); } // several selected bars move together
+      else moveBlock(d.i, d.k2, d.dropLevel);
+    }
     if (d.role === 'move' && d.toRow != null) {
       // list it straight after the task it should follow on that row (or before the row's first task)
       const me = scene.info.find(n => n.row.id === d.id);
@@ -794,7 +867,8 @@ const DESIGN = [
     { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
     { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
     { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
-    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate'], ['wrap', 'Wrap']] },
+    { k: 'wrapNames', type: 'toggle', label: 'Wrap long names' },
+    { k: 'overflow', type: 'seg', label: 'If it still doesn’t fit', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
     { k: '_textInfo', type: 'info', id: 'text-info' },
   ]],
   ['Style', [
