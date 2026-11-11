@@ -855,6 +855,7 @@ const DESIGN = [
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
+    { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
   ]],
   ['Colour', [
     { type: 'palette' },

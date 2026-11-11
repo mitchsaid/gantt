@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v25 · 11 Nov';
+const APP_VERSION = 'v26 · 11 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -256,7 +256,7 @@ function canvasOf(S) {
 
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
-  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false,
+  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under',
   progress: false, todayLine: false, todayDate: null, todayLabel: 'We are here', msLines: true,
@@ -814,6 +814,17 @@ function buildScene(state, opts) {
   }
   let ppd = (x1 - x0) / (re - rs);
   const X = d => x0 + (d - rs) * ppd;
+  // where a milestone sits within its day: the start of the day lines up with a bar that starts then, the end with a bar that finishes then
+  // Auto: the end of the day if a task finishes then (a completion), else the start if one begins then (a kick-off), else the middle
+  const fixedOff = { start: 0, middle: 0.5, end: 1 }[S.msAlign];
+  info.forEach(n => {
+    if (!n.milestone) return;
+    if (fixedOff != null) { n.msOff = fixedOff; return; }
+    let ends = false, starts = false;
+    info.forEach(o => { if (o !== n && !o.milestone && !o.hasKids) { if (o.end === n.start) ends = true; if (o.start === n.start) starts = true; } });
+    n.msOff = ends ? 1 : starts ? 0 : 0.5;
+  });
+  const msX = n => X(n.start + n.msOff);
 
   // long names: what happens when a name doesn't fit its space (Design → Long names)
   const overflow = S.overflow === 'wrap' ? 'shrink' : (S.overflow || 'outside'); // what to do when a name still doesn't fit ("wrap" was once a choice here)
@@ -862,7 +873,7 @@ function buildScene(state, opts) {
       info.forEach(n => { (byRow[n.vrow] = byRow[n.vrow] || []).push(n); });
       Object.values(byRow).forEach(list => list.sort((a, b) => a.start - b.start).forEach((n, k) => {
         const nx = list[k + 1];
-        room[n.row.id] = nx ? (nx.milestone ? X(nx.start + 0.5) - Math.min(barH, msCap) * 0.52 : X(nx.start)) - 8 : Infinity;
+        room[n.row.id] = nx ? (nx.milestone ? msX(nx) - Math.min(barH, msCap) * 0.52 : X(nx.start)) - 8 : Infinity;
       }));
     }
     info.forEach(n => {
@@ -872,7 +883,7 @@ function buildScene(state, opts) {
       const h = n.milestone ? Math.min(n.level === 2 ? subH : barH, msCap) : n.level === 2 ? subH : barH;
       const bx = X(n.start), bw = Math.max(X(n.end + 1) - bx, 4);
       n.bx = bx; n.bw = bw; n.bh = h; n.inside = false; n.tail = [];
-      let tx = n.milestone ? X(n.start + 0.5) + h * 0.5 + 8 : bx + bw + 8;
+      let tx = n.milestone ? msX(n) + h * 0.5 + 8 : bx + bw + 8;
       const name = n.row.name || 'Untitled';
       if (n.lane) { n.tailEnd = bx; return; }
       if (isGroup(n)) {
@@ -912,7 +923,7 @@ function buildScene(state, opts) {
       }
       n.who = null;
       if (subLine && showAssignee(n)) {
-        const ws = Math.max(10, size - 2.5), wx = n.milestone ? X(n.start + 0.5) - h * 0.5 : bx + 2;
+        const ws = Math.max(10, size - 2.5), wx = n.milestone ? msX(n) - h * 0.5 : bx + 2;
         const maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity);
         const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
         if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + M(t, ws, 500) - x1); }
@@ -922,7 +933,7 @@ function buildScene(state, opts) {
         n.tail.push({ k: 'who', x: tx, w: w + dd + 6 }); tx += w + dd + 6 + 10;
       }
       n.tailEnd = n.tail.length ? tx - 10 : bx + bw;
-      n.tailStart = n.milestone ? X(n.start + 0.5) - h * 0.52 - 4 : bx;
+      n.tailStart = n.milestone ? msX(n) - h * 0.52 - 4 : bx;
       if (fixed && n.tail.length && n.tailEnd > x1) { // no room on a fixed timeline: put the text before the bar instead
         const shift = n.tailStart - 6 - (n.tailEnd - n.tail[0].x) - n.tail[0].x;
         n.tail.forEach(t => { t.x += shift; });
@@ -1035,20 +1046,20 @@ function buildScene(state, opts) {
 
   // ---- milestone guide lines
   if (S.msLines) info.forEach(n => {
-    if (n.milestone) items.push({ t: 'line', x1: X(n.start + 0.5), y1: bodyY, x2: X(n.start + 0.5), y2: bodyEnd, stroke: faint, sw: 1, dash: [3, 4] });
+    if (n.milestone) items.push({ t: 'line', x1: msX(n), y1: bodyY, x2: msX(n), y2: bodyEnd, stroke: faint, sw: 1, dash: [3, 4] });
   });
 
   // ---- dependency lines
   if (S.deps) {
     const byId = {};
     info.forEach(n => { byId[n.row.id] = n; });
-    const edge = (n, side) => (n.milestone ? X(n.start + 0.5) + (side * n.bh) / 2 : side > 0 ? n.bx + n.bw : n.bx);
+    const edge = (n, side) => (n.milestone ? msX(n) + (side * n.bh) / 2 : side > 0 ? n.bx + n.bw : n.bx);
     info.forEach(n => (n.row.deps || []).forEach(pid => {
       const p = byId[pid];
       if (!p || p === n) return;
       // leave from the underside of the predecessor so the line stays clear of labels beside it
       const down = n.cy >= p.cy;
-      const sx = p.milestone ? X(p.start + 0.5) : Math.max(p.bx + p.bw - 10, p.bx + p.bw / 2);
+      const sx = p.milestone ? msX(p) : Math.max(p.bx + p.bw - 10, p.bx + p.bw / 2);
       const ex = edge(n, -1) - 2;
       const pts = [[sx, p.cy + (down ? 1 : -1) * (p.bh / 2 - 1)]];
       if (n.cy === p.cy) { pts[0] = [edge(p, 1), p.cy]; }
@@ -1114,7 +1125,7 @@ function buildScene(state, opts) {
     const soft = n.level === 2 ? mix(base, surface, 0.8) : mix(base, surface, 0.62);
     const h = n.bh, by = n.cy - h / 2, r = radius(h);
     if (n.milestone) {
-      const cx = X(n.start + 0.5), rr = h * 0.52;
+      const cx = msX(n), rr = h * 0.52;
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mix(base, text, 0.3), stroke: surface });
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: rowH, hit: true, id, role: 'move' });
     } else {
