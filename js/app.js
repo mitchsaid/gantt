@@ -238,12 +238,8 @@ function renderChart() {
   placeSelBar();
   syncQuickStatus();
   const sp = $('#chart-spread');
-  if (sp) {
-    sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
-    const on = !sp.hidden && isSpread();
-    sp.setAttribute('aria-pressed', String(on));
-    sp.textContent = on ? '↔ Spread across the timeline — click to undo' : '↔ Spread tasks across the timeline';
-  }
+  if (sp) sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
+  syncMarkerJump();
   const co = $('#chart-out');
   if (co) {
     const out = outsideRows();
@@ -260,7 +256,7 @@ function syncAddNote() {
   syncSelBar();
 }
 
-$('#chart-spread').addEventListener('click', toggleSpread);
+$('#chart-spread').addEventListener('click', fitPlan);
 $('#chart-out').addEventListener('click', e => { if (e.target.closest('[data-act="pull"]')) outsideDialog(); });
 
 // ---------------------------------------------------------------- fonts
@@ -1224,6 +1220,7 @@ function setSetting(k, v, soon) {
       S.todayLine = true; ensureMarkerInView();
     } else if (S.markerAuto && S.todayLine) { S.todayLine = false; S.markerAuto = false; }
     refresh(); commit();
+    if (v === 'marker') setTimeout(() => scrollToMarker(true), 60); // progress up to the marker: make sure the marker is on screen
     return;
   }
   if (k === 'canvas' && v === 'custom') { const c = canvasOf(S); S.canvasW = Math.round(c.w * 100) / 100; S.canvasH = Math.round(c.h * 100) / 100; }
@@ -1232,7 +1229,7 @@ function setSetting(k, v, soon) {
   if ((k === 'rangeStart' || k === 'rangeEnd' || k === 'todayDate') && v != null && !plausibleDay(v)) return; // half-typed years are ignored
   if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart); // a later start carries the end along
   if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) return; // an end can't come before the start: nothing changes (a date being typed passes through such values)
-  if (k === 'todayLine') S.markerAuto = false; // the marker is now something the user chose
+  if (k === 'todayLine') { S.markerAuto = false; if (v) setTimeout(() => scrollToMarker(true), 80); } // a marker switched on should be where you can see it // the marker is now something the user chose
   if (k === 'showChanges' && v && !hasBaseline()) setBaseline(); // the first time, the baseline is the plan as it stands
   if (k === 'progressSource' && v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
   state.settings[k] = v;
@@ -1643,19 +1640,14 @@ function outsideDialog() {
     ['Cancel', 'ghost', null],
   ]);
 }
-/** remembers the dates from before a spread, so the chart's button can toggle it off again */
-let spreadMemo = null;
-const datesNow = () => Object.fromEntries(derive(state.rows).filter(n => !n.hasKids).map(n => [n.row.id, [n.row.start, n.row.end]])); // items with nothing inside them: an area's dates follow its contents
 const sameDates = (a, b) => !!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => b[k] && b[k][0] === a[k][0] && b[k][1] === a[k][1]);
 const isSpread = () => !!spreadMemo && sameDates(spreadMemo.after, datesNow());
 function fitPlan() {
   const S = state.settings;
   if (S.rangeMode !== 'fixed' || S.rangeStart == null || !state.rows.length) return;
-  const before = datesNow();
   fitRows(state.rows, S.rangeStart, S.rangeEnd);
-  spreadMemo = { before, after: datesNow() };
   commit(); refresh();
-  toast('Tasks spread across the timeline — click the button again, or Undo, to revert');
+  toast('Tasks spread across the timeline — Undo reverts');
 }
 /** the chart's button: spread across the fixed timeline, and a second click puts the dates back */
 function toggleSpread() {
@@ -2459,6 +2451,28 @@ function syncSelBar() {
   bar.hidden = n < 2;
   if (n >= 2) { $('#selbar-count').textContent = `${n} selected`; placeSelBar(); }
 }
+/** the date marker can be scrolled or zoomed out of view: a small pill at the edge of the canvas says which way, and brings it back */
+function markerOffscreen() {
+  if (!scene || scene.markerX == null) return 0;
+  const r = svg.getBoundingClientRect(), sr = $('#stage').getBoundingClientRect(), x = r.left + scene.markerX * (r.width / scene.w);
+  return x < sr.left + 4 ? -1 : x > sr.right - 4 ? 1 : 0;
+}
+function syncMarkerJump() {
+  const b = $('#marker-jump');
+  if (!b) return;
+  const side = markerOffscreen();
+  b.hidden = !side;
+  if (side) b.textContent = side < 0 ? '← Date marker' : 'Date marker →';
+}
+function scrollToMarker(onlyIfHidden) {
+  const side = markerOffscreen();
+  if (onlyIfHidden && !side) return;
+  const r = svg.getBoundingClientRect(), sr = $('#stage').getBoundingClientRect(), x = r.left + scene.markerX * (r.width / scene.w);
+  $('#stage').scrollBy({ left: x - (sr.left + sr.width / 2), behavior: 'smooth' });
+}
+$('#marker-jump').addEventListener('click', () => scrollToMarker(false));
+$('#stage').addEventListener('scroll', () => requestAnimationFrame(syncMarkerJump), { passive: true });
+window.addEventListener('resize', () => requestAnimationFrame(syncMarkerJump));
 /** quick toggles beside the chart: progress on/off, and a baseline (set it, see that one exists, show or hide its changes) */
 function syncQuickStatus() {
   const S = state.settings, prog = $('#qs-progress'), base = $('#qs-base');
@@ -2472,7 +2486,7 @@ function syncQuickStatus() {
   const cnt = $('#qs-base-count');
   cnt.hidden = !changed; cnt.textContent = changed;
   base.title = has ? (on ? 'Baseline shown — click to hide its changes' : 'A baseline exists — click to show changes from it') : 'Save the dates as they are now, to see what changes later';
-  $('#qs-base-menu').hidden = !has;
+  $('#qs-base-menu').disabled = !has; // always there, so nothing shifts when a baseline is set
 }
 $('#qs-progress').addEventListener('click', () => setSetting('progressMode', state.settings.progress ? 'off' : state.settings.progressSource === 'marker' ? 'marker' : 'manual'));
 $('#qs-base').addEventListener('click', () => {

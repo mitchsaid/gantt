@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=91">
+<link rel="stylesheet" href="css/style.css?v=92">
 </head>
 <body>
 <header class="topbar">
@@ -88,11 +88,11 @@
           <span class="chart-add-note" id="chart-add-note"></span>
           <span class="chart-warn" id="chart-warn" hidden></span>
           <span class="chart-warn" id="chart-out" hidden></span>
-          <button class="chip-btn" id="chart-spread" hidden title="Rescale every item to fill the fixed timeline">↔ Spread tasks across the timeline</button>
+          <button class="link-btn quiet" id="chart-spread" hidden title="Rescale every item to fill the fixed timeline">↔ Spread across the timeline</button>
           <span class="qs" role="group" aria-label="Progress and baseline">
             <button class="qs-btn" id="qs-progress" aria-pressed="false" title="Show progress in the bars">Progress</button>
             <button class="qs-btn" id="qs-base" aria-pressed="false"><span class="qs-dot"></span><span id="qs-base-text">Set baseline</span><span class="qs-count" id="qs-base-count" hidden></span></button>
-            <button class="qs-btn qs-more" id="qs-base-menu" aria-label="Update or remove the baseline" title="Update or remove the baseline" hidden>⋯</button>
+            <button class="qs-btn qs-more" id="qs-base-menu" aria-label="Update or remove the baseline" title="Update or remove the baseline" disabled>⋯</button>
           </span>
         </div>
       </div>
@@ -103,6 +103,7 @@
       <button class="selbar-btn primary" data-sel="group" title="Group them into a new area (Ctrl/⌘+G)">Add to new area</button>
       <button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>
     </div>
+    <button class="marker-jump" id="marker-jump" hidden title="Bring the date marker into view">Date marker →</button>
     <div class="zoombar" role="group" aria-label="Zoom">
       <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
       <button id="zoom-val" title="Reset zoom">100%</button>
@@ -150,7 +151,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=91"></script>
-<script src="js/app.js?v=91"></script>
+<script src="js/core.js?v=92"></script>
+<script src="js/app.js?v=92"></script>
 </body>
 </html>

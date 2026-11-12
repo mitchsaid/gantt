@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v91 · 12 Nov';
+const APP_VERSION = 'v92 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1528,9 +1528,11 @@ function buildScene(state, opts) {
   }
 
   // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
+  let markerXpos = null; // the marker's x, so the app can tell when it is scrolled out of view
   let markerPill = null; // where the marker's label (or its diamond) sits, so the plan's days-left can go beside it
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
+    markerXpos = tx;
     const label = S.markerLabelOn !== false ? (S.todayLabel || '') : '';
     const mcol = S.markerColor == null ? accent : typeof S.markerColor === 'string' ? S.markerColor : palette[S.markerColor % palette.length];
     const mw = { 1: 1.5, 2: 2, 3: 3.5 }[S.markerWidth] || 2;
@@ -1563,7 +1565,7 @@ function buildScene(state, opts) {
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
