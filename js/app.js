@@ -56,6 +56,7 @@ function sanitize(st) {
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  if (!STATUS[st.settings.projectStatus]) st.settings.projectStatus = '';
   st.settings.daysOff = (Array.isArray(st.settings.daysOff) ? st.settings.daysOff : []).filter(r => r && Number.isFinite(+r.from)).slice(0, 60).map(r => { const f = Math.round(+r.from); return { from: f, to: Math.max(f, Number.isFinite(+r.to) ? Math.round(+r.to) : f), label: String(r.label || '').slice(0, 40) }; });
   if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
   if (old.todayLabel === '' && old.markerLabelOn == null) { st.settings.markerLabelOn = false; st.settings.todayLabel = 'Today'; } // an empty label used to mean none
@@ -79,6 +80,7 @@ function sanitize(st) {
     row.name = String(row.name || ''); row.assignee = String(row.assignee || '');
     if (row.baseline && Number.isFinite(+row.baseline.s) && Number.isFinite(+row.baseline.e)) row.baseline = { s: Math.round(+row.baseline.s), e: Math.round(+row.baseline.e) }; else delete row.baseline;
     if (typeof row.changeNote === 'string' && row.changeNote.trim()) row.changeNote = row.changeNote.slice(0, 140); else delete row.changeNote;
+    if (!['green', 'amber', 'red'].includes(row.status)) delete row.status; // RAG: on track / at risk / off track
     if (row.blocked === true) row.blocked = true; else delete row.blocked; // flagged as blocked, with an optional reason for the legend
     if (typeof row.blockedNote === 'string' && row.blockedNote.trim()) row.blockedNote = row.blockedNote.slice(0, 140); else delete row.blockedNote;
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
@@ -545,6 +547,14 @@ const acc = (id, title, summary, body) => `<div class="acc${accOpen(id) ? ' open
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
   return `<div class="pop-foot"><span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+}
+const statusSummary = n => n.stat ? `<span class="dotc" style="background:${STATUS[n.stat][1]}"></span>${STATUS[n.stat][0]}${n.statRolled ? ' (from inside)' : ''}` : 'Not set';
+const statusHtml = (r, n) => `<div class="field"><div class="seg status-seg" data-f="status">${[['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']].map(([v, l]) => `<button type="button" data-v="${v}" class="${(r.status || '') === v ? 'on' : ''}">${v ? `<span class="dotc" style="background:${STATUS[v][1]}"></span>` : ''}${l}</button>`).join('')}</div>${n.statRolled ? `<p class="note">Showing the worst status of the items inside it. Pick one to set it yourself.</p>` : ''}</div>`;
+function setRowStatus(ids, v) {
+  commit();
+  ids.forEach(id => { const r = state.rows[rowIndex(id)]; if (r) { if (v) r.status = v; else delete r.status; } });
+  if (v && !state.settings.showStatus) state.settings.showStatus = true;
+  commit(); refresh();
 }
 const blockedHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="blocked"${r.blocked ? ' checked' : ''}> This is blocked <kbd class="kb">Alt B</kbd></label><input class="inp" data-f="blockedNote" value="${esc(r.blockedNote || '')}" placeholder="What is it waiting on? Shown in the legend" maxlength="140" autocomplete="off"${r.blocked ? '' : ' disabled'}></div>`;
 /** Alt+B: flag the selected tasks as blocked (or clear it when they all are already) */
@@ -1029,7 +1039,7 @@ const DESIGN = [
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
     { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
     { k: 'periodMonths', type: 'seg', label: 'Month names', sub: true, opts: [['full', 'Full'], ['short', 'Abbreviated']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
-    { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, opts: [['always', 'Always'], ['change', 'When it changes'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
+    { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, opts: [['always', 'Always'], ['change', 'Only across years'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
     { k: 'dateFormat', type: 'select', label: 'Date format', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
     { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
     { k: '_dateEx', type: 'info', id: 'date-ex' },
@@ -1062,6 +1072,8 @@ const DESIGN = [
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
     { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
     { k: 'deps', type: 'toggle', label: 'Dependency lines' },
+    { k: 'criticalPath', type: 'toggle', label: 'Highlight the critical path', sub: true, when: s => s.deps },
+    { k: '_critNote', type: 'note', label: 'Traced back from the item that finishes last, through the dependency that finishes latest each time: the chain that decides the end date. Bars get a deep red edge and the links turn thicker.', when: s => s.deps && s.criticalPath },
   ]],
   ['progress', 'Progress', [
     { type: 'head', label: 'Date marker' },
@@ -1083,6 +1095,10 @@ const DESIGN = [
     { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
     { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
     { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
+    { type: 'head', label: 'Status' },
+    { k: 'showStatus', type: 'toggle', label: 'Green / amber / red dots' },
+    { k: 'projectStatus', type: 'seg', label: 'Overall status', sub: true, col: true, opts: [['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']], when: s => s.showStatus },
+    { k: '_statNote', type: 'note', label: 'Set a status on any item from its popover. Areas show the worst status of what is inside them unless you set one. The overall status sits beside the title.', when: s => s.showStatus },
     { type: 'head', label: 'Blocked items' },
     { k: 'blockedWaiting', type: 'toggle', label: 'Show what is waiting on them' },
     { k: 'blockedLegend', type: 'toggle', label: 'Legend and reasons' },
@@ -1090,6 +1106,7 @@ const DESIGN = [
     { type: 'head', label: 'Changes from original' },
     { k: 'showChanges', type: 'toggle', label: 'Changes from original' },
     { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, when: s => s.showChanges },
+    { k: 'slipChip', type: 'toggle', label: 'Finish vs baseline beside the title', sub: true, when: s => s.showChanges },
     { k: '_baseInfo', type: 'info', id: 'base-info', when: s => s.showChanges },
     { k: '_baseBtn', type: 'button', label: 'Update or remove baseline…', sub: true, act: 'baseline', when: s => s.showChanges },
   ]],
@@ -1714,17 +1731,19 @@ function popHtml() {
     let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">` + typeSegHtml(n);
     const names = splitNames(r.assignee), swatch = `<span class="dotc" style="background:${rowBaseColor(pinfo, n, paletteOf(S).colors)}"></span>`, secs = [];
     const colourSec = acc('colour', 'Colour', swatch + (r.color == null ? 'Auto' : 'Custom'), colorHtml(r));
+    const statSec = acc('status', 'Status', statusSummary(n), statusHtml(r, n));
     const whoSec = acc('assignees', 'Assignees', names.length ? esc(names.join(', ')) : 'None', assigneeHtml(r));
     if (n.isArea) { // an area: what is in it, who owns it, its colour, and quick actions
       const inside = blockEnd(state.rows, n.i) - n.i - 1;
       return h + `<p class="note">${fmtRange(n)} · ${inside} ${inside === 1 ? 'item' : 'items'}${S.progress && n.progress != null ? ' · ' + Math.round(n.progress) + '% done' : ''}. Its dates follow what is inside it; drag its bar to shift everything together.</p>`
-        + `<div class="accs">${whoSec}${colourSec}</div>`
+        + `<div class="accs">${statSec}${whoSec}${colourSec}</div>`
         + `<div class="pop-btns"><button class="btn ghost" data-act="area-del">Delete…</button><button class="btn primary" data-act="area-add">+ Task here</button></div>`;
     }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
     // everything else sits in collapsible sections (open or closed as you left them), each with its current value on the right
+    secs.push(statSec);
     secs.push(acc('blocked', 'Blocked', r.blocked ? `<span class="dotc" style="background:#d92d20"></span>${r.blockedNote && r.blockedNote.trim() ? esc(r.blockedNote.trim()) : 'Yes'}` : 'No', blockedHtml(r)));
     if (!n.hasKids && !n.milestone) secs.push(acc('progress', 'Progress', S.progress && S.progressSource === 'marker' ? 'Follows the marker' : r.progress == null ? 'Off' : Math.round(r.progress) + '%', progressHtml(r)));
     secs.push(whoSec);
@@ -1758,10 +1777,16 @@ function openPop(kind, rect, id, x) {
   popEl.innerHTML = popHtml();
   popEl.classList.toggle('wide', kind === 'paste');
   popEl.hidden = false;
+  popEl.style.maxHeight = '';
   const w = popEl.offsetWidth, h = popEl.offsetHeight;
   let top = rect.bottom + 8;
   if (kind === 'today') top = rect.top + 30;
-  if (top + h > innerHeight - 8) top = Math.max(8, rect.top - h - 8);
+  if (top + h > innerHeight - 8) {
+    // it belongs under what it describes: scroll inside it when there is a fair amount of room, and only go above when there is hardly any
+    const room = innerHeight - 8 - top;
+    if (room >= 240) popEl.style.maxHeight = room + 'px';
+    else top = Math.max(8, rect.top - h - 8);
+  }
   popEl.style.top = top + 'px';
   popEl.style.left = clamp(x != null ? Math.max(x, rect.left) : rect.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
   if (kind === 'paste') { syncPasteNote(); const ta = $('#pop-paste'); if (ta) ta.focus(); }
@@ -1835,8 +1860,13 @@ popEl.addEventListener('click', e => {
     ui.popOpen[id] = !ui.popOpen[id]; saveUi();
     accH.closest('.acc').classList.toggle('open', !!ui.popOpen[id]);
     accH.setAttribute('aria-expanded', String(!!ui.popOpen[id]));
-    const pr = popEl.getBoundingClientRect(); // a section that opens must not push the popover off the bottom of the window
-    if (pr.bottom > innerHeight - 8) popEl.style.top = Math.max(8, innerHeight - 8 - pr.height) + 'px';
+    const pr = popEl.getBoundingClientRect(); // a section that opens must not push the popover off the bottom of the window: it scrolls instead, staying under its item
+    popEl.style.maxHeight = '';
+    if (pr.top + popEl.scrollHeight > innerHeight - 8) {
+      const room = innerHeight - 8 - pr.top;
+      if (room >= 240) popEl.style.maxHeight = room + 'px';
+      else popEl.style.top = Math.max(8, innerHeight - 8 - Math.min(popEl.scrollHeight, innerHeight - 16)) + 'px';
+    }
     return;
   }
   const rowAct = e.target.closest('.row-actions [data-act], .pop-foot [data-act], [data-act="dep-rm"]');
@@ -1856,6 +1886,8 @@ popEl.addEventListener('click', e => {
   if (tb && pop && pop.kind === 'row') { if (!tb.classList.contains('on') && !tb.disabled) setTypes([pop.id], tb.dataset.v); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
+  const stb = e.target.closest('.seg[data-f="status"] button');
+  if (stb && pop && pop.kind === 'row') { setRowStatus([pop.id], stb.dataset.v); return; }
   const sw = e.target.closest('.sw');
   if (sw && pop && pop.kind === 'row') { if (sw.dataset.color != null) setRowColor(pop.id, sw.dataset.color); return; }
   if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }

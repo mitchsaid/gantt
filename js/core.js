@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v95 · 12 Nov';
+const APP_VERSION = 'v96 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -306,8 +306,8 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', periodMonths: 'full', periodYear: 'always', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
-  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
+  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -330,6 +330,8 @@ function normalizeLevels(rows) {
 }
 
 /** Per-row derived info: children, rolled-up dates and progress, top-level index. */
+const STATUS = { green: ['On track', '#1f9d55'], amber: ['At risk', '#d97706'], red: ['Off track', '#d92d20'] };
+const STATUS_ORDER = [null, 'green', 'amber', 'red']; // least to most worrying
 function derive(rows) {
   const info = rows.map((row, i) => ({ row, i, level: row.level, kids: [], parent: -1, root: i, start: row.start, end: row.end, progress: row.progress == null ? null : row.progress || 0 })); // null = progress isn't tracked for this bar
   const stack = [];
@@ -359,6 +361,13 @@ function derive(rows) {
       n.start = s; n.end = e; n.weight = w; n.progress = w ? pw / w : null;
     }
     if (n.end < n.start) n.end = n.start;
+    n.stat = STATUS[n.row.status] ? n.row.status : null; // green / amber / red, set by hand…
+    n.statRolled = false;
+    if (!n.stat && n.hasKids) { // …or, for something that holds items, the worst of theirs
+      let worst = 0;
+      n.kids.forEach(k => { const o = STATUS_ORDER.indexOf(info[k].stat); if (o > worst) worst = o; });
+      if (worst) { n.stat = STATUS_ORDER[worst]; n.statRolled = true; }
+    }
   }
   return info;
 }
@@ -391,6 +400,12 @@ function daysLeftBetween(from, to, weekdaysOnly, off) { // `off`: [{ from, to }]
   return n;
 }
 /** compare every item with its baseline (the dates it was set to when the baseline was taken); parents compare their rolled-up span */
+/** how far an item has moved from its baseline, in words: "ends 4d later", "starts 2d earlier" */
+function slipText(n) {
+  if (n.bs == null) return '';
+  const dd = n.start - n.bs, de = n.end - n.be, pick = n.milestone ? dd : de || dd, what = n.milestone ? '' : de ? 'ends ' : 'starts ';
+  return pick ? `${what}${Math.abs(pick)}d ${pick > 0 ? 'later' : 'earlier'}` : '';
+}
 function markChanges(info) {
   for (let i = info.length - 1; i >= 0; i--) {
     const n = info[i], b = n.row.baseline;
@@ -887,8 +902,32 @@ function buildScene(state, opts) {
   }
   const blockedOn = S.blockedLegend !== false && blockedIds.size > 0;
   const bnoted = blockedOn ? info.filter(n => blockedIds.has(n.row.id) && String(n.row.blockedNote || '').trim()) : [];
-  const legendKey = legendOn || blockedOn;
+  const statusOn = S.showStatus !== false;
+  const usedStats = statusOn ? ['green', 'amber', 'red'].filter(c => info.some(n => n.stat === c)) : [];
+  // the critical path: from the item that finishes last, back through whichever dependency finished latest
+  const CRIT = '#b91c1c', critIds = new Set(), critEdges = new Set();
+  if (S.criticalPath) {
+    const byId = new Map(info.map(n => [n.row.id, n])), leaves = info.filter(n => !n.hasKids);
+    const last = leaves.length ? Math.max(...leaves.map(n => n.end)) : 0;
+    const chainFrom = n => {
+      const out = [n], seen = new Set([n.row.id]);
+      for (let cur = n; ;) {
+        const ds = (cur.row.deps || []).map(d => byId.get(d)).filter(d => d && !d.hasKids && !seen.has(d.row.id));
+        if (!ds.length) break;
+        const best = ds.reduce((a, b) => (b.end > a.end || (b.end === a.end && b.start < a.start) ? b : a));
+        out.push(best); seen.add(best.row.id); cur = best;
+      }
+      return out;
+    };
+    let best = [];
+    leaves.filter(n => n.end === last).forEach(n => { const c = chainFrom(n); if (c.length > best.length) best = c; });
+    if (best.length > 1) { best.forEach(n => critIds.add(n.row.id)); for (let i = 0; i + 1 < best.length; i++) critEdges.add(best[i + 1].row.id + '>' + best[i].row.id); }
+  }
   const BLOCK_RED = '#d92d20';
+  const statDot = (cx, cy, r, code) => { // a green / amber / red disc, ringed in the chart's background
+    items.push({ t: 'rect', x: cx - r - 1.5, y: cy - r - 1.5, w: 2 * r + 3, h: 2 * r + 3, r: r + 1.5, fill: S.bgTransparent ? '#ffffff' : S.bg });
+    items.push({ t: 'rect', x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, r, fill: STATUS[code][1] });
+  };
   const blockBadge = (cx, cy, r) => { // a red "!" disc ringed in the chart's background, so it reads on any bar colour
     items.push({ t: 'rect', x: cx - r - 1.5, y: cy - r - 1.5, w: 2 * r + 3, h: 2 * r + 3, r: r + 1.5, fill: S.bgTransparent ? '#ffffff' : S.bg });
     items.push({ t: 'rect', x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, r, fill: BLOCK_RED });
@@ -1027,6 +1066,34 @@ function buildScene(state, opts) {
     const tt = fitText(S.title, W - 2 * pad, tsz, 700, font);
     items.push({ t: 'text', x: pad, y: y + tsz * 0.53, text: tt, size: tsz, weight: 700, fill: text, anchor: 'start' });
     items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, tsz, 700) + 12, h: tsz * 1.45, hit: true, role: 'title' });
+    // chips at the right of the title: the plan's overall status, and where the finish stands against the baseline
+    const chips = [];
+    if (statusOn && STATUS[S.projectStatus]) chips.push({ dot: STATUS[S.projectStatus][1], label: 'Status: ' + STATUS[S.projectStatus][0] });
+    if (showChg && S.slipChip !== false) {
+      const leaves = info.filter(n => !n.hasKids), based = leaves.filter(n => n.bs != null);
+      if (based.length) {
+        const fin = Math.max(...leaves.map(n => n.end)), was = Math.max(...based.map(n => n.be)), slip = fin - was;
+        chips.push({ dot: slip <= 0 ? '#1f9d55' : slip <= 7 ? '#d97706' : '#d92d20', label: `Finish ${fmtDate(fin)} · ${slip === 0 ? 'on baseline' : `${Math.abs(slip)} day${Math.abs(slip) === 1 ? '' : 's'} ${slip > 0 ? 'later' : 'earlier'} than baseline`}` });
+      }
+    }
+    if (chips.length) {
+      const cs = clamp(Math.round(tsz * 0.42 * 2) / 2, 11, 16), chH = Math.round(cs * 2), padX = Math.round(cs * 0.8), dd = Math.round(cs * 0.6), cy = y + tsz * 0.53;
+      const sized = chips.map(c => Object.assign(c, { w: padX * 2 + dd + 7 + M(c.label, cs, 600) }));
+      let room = W - 2 * pad - M(tt, tsz, 700) - 24;
+      const shown = [];
+      for (let i = 0; i < sized.length; i++) { // keep what fits, the first chip before the later ones
+        if (sized[i].w <= room) { shown.push(sized[i]); room -= sized[i].w + 8; }
+      }
+      let cx = W - pad;
+      for (let i = shown.length - 1; i >= 0; i--) {
+        const c = shown[i];
+        cx -= c.w;
+        items.push({ t: 'rect', x: cx, y: cy - chH / 2, w: c.w, h: chH, r: S.corners === 'square' ? 4 : chH / 2, fill: mix(c.dot, S.bgTransparent ? '#ffffff' : S.bg, 0.9) });
+        items.push({ t: 'rect', x: cx + padX, y: cy - dd / 2, w: dd, h: dd, r: dd / 2, fill: c.dot });
+        items.push({ t: 'text', x: cx + padX + dd + 7, y: cy, text: c.label, size: cs, weight: 600, fill: text, anchor: 'start' });
+        cx -= 8;
+      }
+    }
     y += tsz + 26;
   }
   const lane = S.todayLine || S.planDaysLeft ? Math.round(26 * kk) : 0;
@@ -1061,8 +1128,25 @@ function buildScene(state, opts) {
   const headBotY = y;
   if (showBottom) y += headH;
   const ls = Math.max(10.5, Math.round((fs - 3) * 2) / 2), lh = Math.round(ls * 1.9);
+  const legendKeys = []; // what the marks on the chart mean; they wrap onto more rows when they don't fit across
+  const kSw = 28, kSh = Math.round(ls * 1.1), kRad = S.corners === 'square' ? 0 : kSh / 2;
+  const addKey = (label, drawMark, markW) => legendKeys.push({ w: markW + 8 + M(label, ls, 500), draw: (lx, ly) => { drawMark(lx, ly); items.push({ t: 'text', x: lx + markW + 8, y: ly, text: label, size: ls, weight: 500, fill: muted, anchor: 'start' }); } });
+  if (legendOn) {
+    addKey('Original dates', (lx, ly) => { const c = palette[0]; items.push({ t: 'line', x1: lx, y1: ly, x2: lx + 28, y2: ly, stroke: c, sw: 2, dash: [4, 3] }, { t: 'line', x1: lx, y1: ly - 4, x2: lx, y2: ly + 4, stroke: c, sw: 1.5 }, { t: 'line', x1: lx + 28, y1: ly - 4, x2: lx + 28, y2: ly + 4, stroke: c, sw: 1.5 }); }, 28);
+    addKey('Moved or extended', (lx, ly) => items.push({ t: 'rect', x: lx, y: ly - 2, w: 28, h: 4, r: 2, fill: mix(palette[0], surface, 0.5) }), 28);
+  }
+  const stripeKey = (lx, ly, strong) => { const k0 = palette[0], dark = onColor(k0) === '#ffffff'; items.push({ t: 'rect', x: lx, y: ly - kSh / 2, w: kSw, h: kSh, r: kRad, fill: k0 }); hatchLines(lx, ly - kSh / 2, kSw, kSh, kRad, mix(k0, dark ? '#ffffff' : '#0b1020', strong ? 0.3 : 0.16), strong ? 1.4 : 1, strong ? 6 : 9).forEach(l => items.push(l)); };
+  if (blockedOn) {
+    addKey('Blocked', (lx, ly) => stripeKey(lx, ly, true), kSw);
+    if (waitingIds.size) addKey('Waiting on a blocked item', (lx, ly) => stripeKey(lx, ly, false), kSw);
+  }
+  usedStats.forEach(c => addKey(STATUS[c][0], (lx, ly) => items.push({ t: 'rect', x: lx, y: ly - kSh * 0.3, w: kSh * 0.6, h: kSh * 0.6, r: kSh * 0.3, fill: STATUS[c][1] }), kSh * 0.6));
+  if (critIds.size) addKey('Critical path', (lx, ly) => { items.push({ t: 'rect', x: lx, y: ly - kSh / 2 - 1.5, w: kSw, h: kSh + 3, r: kRad + 1.5, fill: CRIT }); items.push({ t: 'rect', x: lx + 1.5, y: ly - kSh / 2, w: kSw - 3, h: kSh, r: kRad, fill: palette[0] }); }, kSw);
+  const keyRows = [];
+  legendKeys.forEach(k => { const last = keyRows[keyRows.length - 1]; if (last && last.w + 24 + k.w <= W - 2 * pad) { last.keys.push(k); last.w += 24 + k.w; } else keyRows.push({ keys: [k], w: k.w }); });
+  const legendKey = keyRows.length > 0, noteStart = keyRows.length;
   let legendY = 0;
-  if (legendKey) { legendY = y + 10; y += 10 + lh * (1 + (legendOn ? noted.length : 0) + bnoted.length) + 4; }
+  if (legendKey) { legendY = y + 10; y += 10 + lh * (keyRows.length + (legendOn ? noted.length : 0) + bnoted.length) + 4; }
   const Hc = Math.round(y + pad - (showBottom && !legendKey ? 8 : 0)); // what the content needs
   const H = fixedPx ? Math.max(Hc, fixedPx) : Hc;
 
@@ -1388,8 +1472,9 @@ function buildScene(state, opts) {
       }
       pts.push([ex, n.cy]);
       const dep = mix(baseOf(p), text, 0.18); // the predecessor's colour, a little deepened, so a line reads as coming from that task
-      items.push({ t: 'poly', pts: roundPath(pts, 7), stroke: dep, sw: 1.5, arrow: true });
-      if (n.cy !== p.cy) items.push({ t: 'rect', x: pts[0][0] - 2.5, y: pts[0][1] - 2.5, w: 5, h: 5, r: 2.5, fill: dep }); // where it leaves
+      const crit = critEdges.has(pid + '>' + n.row.id);
+      items.push({ t: 'poly', pts: roundPath(pts, 7), stroke: crit ? CRIT : dep, sw: crit ? 2.6 : 1.5, arrow: true });
+      if (n.cy !== p.cy) items.push({ t: 'rect', x: pts[0][0] - 2.5, y: pts[0][1] - 2.5, w: 5, h: 5, r: 2.5, fill: crit ? CRIT : dep }); // where it leaves
     }));
   }
 
@@ -1446,6 +1531,7 @@ function buildScene(state, opts) {
         if (avOn) avGroup(a.names, a.x, ay, d, mix(base, surface, 0.78), mix(base, text, 0.5), surface, 8 * kk);
         items.push({ t: 'text', x: a.x + (avOn ? avSpan(a.names.length, d) + 6 : 0), y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
       }
+      if (statusOn && n.stat) statDot(n.bx + n.bw, left ? n.cy : n.y + rowH - 5, 5, n.stat);
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: Math.max(n.bw, left ? 0 : n.tailEnd - n.bx), h: rowH - 4, hit: true, id, role: 'move' });
       if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2, base);
       return;
@@ -1467,7 +1553,9 @@ function buildScene(state, opts) {
         if (Math.abs(ox - cx) > 1) items.push({ t: 'line', x1: ox, y1: n.cy, x2: cx, y2: n.cy, stroke: base, sw: 1.5, dash: [4, 3] });
         items.push({ t: 'diamond', cx: ox, cy: n.cy, r: rr, fill: mix(base, surface, 0.8), stroke: base });
       }
+      if (critIds.has(id)) items.push({ t: 'diamond', cx, cy: n.cy, r: rr + 3, fill: CRIT });
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mark, stroke: surface });
+      if (statusOn && n.stat) statDot(cx + rr * 0.9, n.cy + rr * 0.9, Math.max(4, Math.min(5.5, rr * 0.55)), n.stat);
       if (blockedIds.has(id)) blockBadge(cx + rr * 0.9, n.cy - rr * 0.9, Math.max(5.5, Math.min(7.5, rr * 0.8)));
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: n.h, hit: true, id, role: 'move' });
     } else {
@@ -1485,6 +1573,7 @@ function buildScene(state, opts) {
         if (!lightLabel) while (sh > 0 && contrast(mix(full, '#0b1020', sh), '#0b1020') < 7) sh -= 0.04; // darker must not cost a dark label its contrast
         deep = mix(full, '#0b1020', Math.max(sh, 0));
       }
+      if (critIds.has(id)) items.push({ t: 'rect', x: gx - 2, y: by - 2, w: gw + 4, h: h + 4, r: r + 2, fill: CRIT }); // the critical path: a deep red edge round the bar
       if (tracked) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: shaded ? full : soft });
       if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: shaded ? deep : full });
       const darkBar = onColor(full) === '#ffffff';
@@ -1522,6 +1611,7 @@ function buildScene(state, opts) {
         const own = namesOf(n), d = n.avD, g = (h - d) / 2, mg = S.corners === 'pill' ? g : Math.max(g, h * 0.2), ax = n.bx + n.bw - inset - mg - avSpan(own.length, d), fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
         avGroup(own, ax, by + h / 2, d, fillA, contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', '#ffffff', Math.max(7, Math.round(d * 0.38 * 2) / 2), true);
       }
+      if (statusOn && n.stat) statDot(n.bx + n.bw + 1, by, Math.max(4, Math.min(6, h * 0.26)), n.stat);
       if (blockedIds.has(id)) blockBadge(n.bx - 1, by, Math.max(5.5, Math.min(8, h * 0.34))); // on the bar's top-left corner, clear of its label and the arrows
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
@@ -1548,40 +1638,18 @@ function buildScene(state, opts) {
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
   });
 
-  // ---- legend: how to read the change marks, then a numbered reason for each change that has one
+  // ---- legend: how to read the marks, then a numbered reason for each change that has one, then the reasons things are blocked
   if (legendKey) {
-    const k0 = palette[0], tint = mix(k0, surface, 0.5), ly = legendY + lh / 2;
-    let lx = pad;
-    if (legendOn) {
-    items.push({ t: 'line', x1: lx, y1: ly, x2: lx + 28, y2: ly, stroke: k0, sw: 2, dash: [4, 3] });
-    items.push({ t: 'line', x1: lx, y1: ly - 4, x2: lx, y2: ly + 4, stroke: k0, sw: 1.5 }, { t: 'line', x1: lx + 28, y1: ly - 4, x2: lx + 28, y2: ly + 4, stroke: k0, sw: 1.5 });
-    items.push({ t: 'text', x: lx + 36, y: ly, text: 'Original dates', size: ls, weight: 500, fill: muted, anchor: 'start' });
-    lx += 36 + M('Original dates', ls, 500) + 24;
-    items.push({ t: 'rect', x: lx, y: ly - 2, w: 28, h: 4, r: 2, fill: tint });
-    items.push({ t: 'text', x: lx + 36, y: ly, text: 'Moved or extended', size: ls, weight: 500, fill: muted, anchor: 'start' });
-    lx += 36 + M('Moved or extended', ls, 500) + 24;
-    }
-    if (blockedOn) {
-      const sw = 28, sh = Math.round(ls * 1.1), stripe = mix(k0, '#0b1020', 0.3);
-      items.push({ t: 'rect', x: lx, y: ly - sh / 2, w: sw, h: sh, r: S.corners === 'square' ? 0 : sh / 2, fill: k0 });
-      hatchLines(lx, ly - sh / 2, sw, sh, S.corners === 'square' ? 0 : sh / 2, onColor(k0) === '#ffffff' ? mix(k0, '#ffffff', 0.3) : stripe, 1.4, 6).forEach(l => items.push(l));
-      items.push({ t: 'text', x: lx + sw + 8, y: ly, text: 'Blocked', size: ls, weight: 500, fill: muted, anchor: 'start' });
-      lx += sw + 8 + M('Blocked', ls, 500) + 24;
-      if (waitingIds.size) {
-        items.push({ t: 'rect', x: lx, y: ly - sh / 2, w: sw, h: sh, r: S.corners === 'square' ? 0 : sh / 2, fill: k0 });
-        hatchLines(lx, ly - sh / 2, sw, sh, S.corners === 'square' ? 0 : sh / 2, onColor(k0) === '#ffffff' ? mix(k0, '#ffffff', 0.16) : mix(k0, '#0b1020', 0.16), 1, 9).forEach(l => items.push(l));
-        items.push({ t: 'text', x: lx + sw + 8, y: ly, text: 'Waiting on a blocked item', size: ls, weight: 500, fill: muted, anchor: 'start' });
-      }
-    }
+    keyRows.forEach((row, ri) => { let lx = pad; row.keys.forEach(k => { k.draw(lx, legendY + lh * ri + lh / 2); lx += k.w + 24; }); });
     (legendOn ? noted : []).forEach((n, i) => {
-      const cy = legendY + lh * (i + 1) + lh / 2, d = Math.round(ls * 1.5), b = baseOf(n);
-      const was = n.milestone ? shortDate(n.bs) : shortDate(n.bs) + ' – ' + shortDate(n.be);
+      const cy = legendY + lh * (noteStart + i) + lh / 2, d = Math.round(ls * 1.5), b = baseOf(n);
+      const was = n.milestone ? shortDate(n.bs) : shortDate(n.bs) + ' – ' + shortDate(n.be), slip = slipText(n);
       items.push({ t: 'rect', x: pad, y: cy - d / 2, w: d, h: d, r: d / 2, fill: b });
       items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.noteNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
-      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
+      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + (slip ? ' · ' + slip : '') + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
     bnoted.forEach((n, i) => {
-      const cy = legendY + lh * ((legendOn ? noted.length : 0) + i + 1) + lh / 2, d = Math.round(ls * 1.5);
+      const cy = legendY + lh * (noteStart + (legendOn ? noted.length : 0) + i) + lh / 2, d = Math.round(ls * 1.5);
       blockBadge(pad + d / 2, cy, d / 2 - 0.5);
       items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.blockedNote).trim(), W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
