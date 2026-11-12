@@ -126,6 +126,11 @@ svg { display: block; }
 .row-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .row-actions button { height: 28px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line-strong); background: #fff; font-size: 12px; font-weight: 500; }
 .row-actions button:hover { background: #f6f7fa; }
+.pop { overflow-x: hidden; }
+.pop > * { min-width: 0; }
+.pop .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.pop .row-actions { gap: 3px; flex-wrap: nowrap; }
+.pop .row-actions button { padding: 0 6px; font-size: 11.5px; white-space: nowrap; }
 .row-actions button.danger { color: #c0262d; margin-left: auto; }
 .row-actions button:disabled { opacity: 0.4; cursor: default; }
 .add-row { display: flex; gap: 6px; margin: 14px 0 10px 22px; flex-wrap: wrap; }
@@ -335,7 +340,7 @@ body.resizing * { cursor: col-resize !important; }
 /* ---------- editing on the chart */
 #chart [data-role='timeline'] { cursor: pointer; }
 #chart [data-role='title'] { cursor: text; }
-.pop { position: fixed; z-index: 90; width: 268px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 40px rgba(20, 24, 40, 0.2); padding: 12px; display: grid; gap: 10px; }
+.pop { position: fixed; z-index: 90; width: 268px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 40px rgba(20, 24, 40, 0.2); padding: 12px; display: grid; gap: 10px; max-height: calc(100vh - 16px); overflow-y: auto; }
 .pop h4 { margin: 0; font-size: 12.5px; }
 .pop .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pop .note { margin: 0; color: var(--muted); font-size: 12px; }

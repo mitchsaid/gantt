@@ -540,6 +540,17 @@ function fmtRange(n) {
   if (n.milestone) return '◆ ' + shortDate(n.start);
   return shortDate(n.start) + ' – ' + shortDate(n.end);
 }
+/** what an item depends on: removable chips and a picker to add another (not for items that hold others) */
+function depsHtml(n, info, rows) {
+  const r = n.row;
+  if (n.hasKids) return '';
+  const others = info.filter(o => o.row.id !== r.id && !o.isArea && !r.deps.includes(o.row.id));
+  return `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
+    <select class="inp" data-f="dep-add"><option value="">Add a dependency…</option>${others.map(o => `<option value="${o.row.id}">${'  '.repeat(o.level)}${esc(o.row.name || 'Untitled')}</option>`).join('')}</select></div>`;
+}
+function rowActionsHtml(n, rows) {
+  return `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${canIndent(rows, n.i) ? '' : 'disabled'}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div>`;
+}
 function detailHtml(n, info, rows) {
   const r = n.row;
   if (state.settings.showChanges) markChanges(info);
@@ -560,12 +571,8 @@ function detailHtml(n, info, rows) {
   html += changeHtml(n);
   html += colorHtml(r);
   html += assigneeHtml(r);
-  if (!n.hasKids) {
-    const others = info.filter(o => o.row.id !== r.id && !o.isArea && !r.deps.includes(o.row.id));
-    html += `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
-      <select class="inp" data-f="dep-add"><option value="">Add a dependency…</option>${others.map(o => `<option value="${o.row.id}">${'  '.repeat(o.level)}${esc(o.row.name || 'Untitled')}</option>`).join('')}</select></div>`;
-  }
-  html += `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${canIndent(rows, n.i) ? '' : 'disabled'}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div></div>`;
+  html += depsHtml(n, info, rows);
+  html += rowActionsHtml(n, rows) + '</div>';
   return html;
 }
 function renderOutline() {
@@ -1687,7 +1694,7 @@ function popHtml() {
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
     if (!n.hasKids && !n.milestone) h += progressHtml(r);
     h += assigneeHtml(r) + changeHtml(n);
-    return h + (n.milestone ? msHtml(r) : '') + colorHtml(r);
+    return h + (n.milestone ? msHtml(r) : '') + depsHtml(n, pinfo, state.rows) + colorHtml(r) + rowActionsHtml(n, state.rows);
   }
   if (pop.kind === 'today') {
     const seg = (f, cur, opts) => `<div class="seg" data-f="${f}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -1780,6 +1787,16 @@ popEl.addEventListener('click', e => {
       while (last > i && state.rows[last].level > 1) last--; // after the last task, not inside its subtasks
       commit(); addRow('task', state.rows[last].id, true, true);
     }
+    return;
+  }
+  const rowAct = e.target.closest('.row-actions [data-act], [data-act="dep-rm"]');
+  if (rowAct && pop && pop.kind === 'row' && !rowAct.disabled) {
+    const id = pop.id, a = rowAct.dataset.act;
+    if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== rowAct.dataset.dep); commit(); refresh(); }
+    else if (a === 'del') { closePop(); askDelete(id); }
+    else if (a === 'dup') { closePop(); duplicateRow(id); }
+    else if (a === 'indent') shiftLevel(id, 1);
+    else if (a === 'outdent') shiftLevel(id, -1);
     return;
   }
   const adel = e.target.closest('[data-act="assignee-del"]');
