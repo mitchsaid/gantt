@@ -537,6 +537,13 @@ function fmtRange(n) {
   return shortDate(n.start) + ' – ' + shortDate(n.end);
 }
 /** what an item depends on: removable chips and a picker to add another (not for items that hold others) */
+const accOpen = id => !!(ui.popOpen && ui.popOpen[id]);
+/** a collapsible section of the popover: a title, its current value, and the controls underneath */
+const acc = (id, title, summary, body) => `<div class="acc${accOpen(id) ? ' open' : ''}" data-acc="${id}"><button class="acc-h" data-acc-toggle="${id}" aria-expanded="${accOpen(id)}"><span class="acc-t">${title}</span><span class="acc-s">${summary}</span><i class="chev" aria-hidden="true"></i></button><div class="acc-b">${body}</div></div>`;
+/** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
+function popFootHtml(n, rows) {
+  return `<div class="pop-foot"><span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+}
 function depsHtml(n, info, rows) {
   const r = n.row;
   if (n.hasKids) return '';
@@ -1529,8 +1536,9 @@ window.addEventListener('beforeunload', commit);
 
 // ---------------------------------------------------------------- durations & timeline
 const UI_KEY = 'gantt:ui';
-const ui = Object.assign({ durUnit: 'weeks', hidePlan: false, hideDesign: false, designOpen: {} }, (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })());
+const ui = Object.assign({ durUnit: 'weeks', hidePlan: false, hideDesign: false, designOpen: {}, popOpen: {} }, (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })());
 if (!ui.designOpen || typeof ui.designOpen !== 'object') ui.designOpen = {};
+if (!ui.popOpen || typeof ui.popOpen !== 'object') ui.popOpen = {};
 const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* storage unavailable */ } };
 const DUR_UNITS = [['days', 'days'], ['weeks', 'weeks'], ['sprints', 'sprints'], ['months', 'months']];
 
@@ -1583,7 +1591,7 @@ function rowInput(r, t) {
     commitSoon();
   }
   else if (f === 'assignee-add') { if (/[,;]/.test(t.value)) { addAssignees(r.id, t.value); t.value = ''; } } // a comma finishes a name
-  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; const rr = t.closest('.range-row'); if (rr) { rr.classList.remove('off'); const x = $('.x-btn', rr); if (x) x.disabled = false; } if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
+  else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; const accEl = t.closest('.acc'); if (accEl) $('.acc-s', accEl).textContent = t.value + '%'; const rr = t.closest('.range-row'); if (rr) { rr.classList.remove('off'); const x = $('.x-btn', rr); if (x) x.disabled = false; } if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
@@ -1675,18 +1683,27 @@ function popHtml() {
     if (!n) return '';
     const r = n.row;
     let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">` + typeSegHtml(n);
+    const names = splitNames(r.assignee), swatch = `<span class="dotc" style="background:${rowBaseColor(pinfo, n, paletteOf(S).colors)}"></span>`, secs = [];
+    const colourSec = acc('colour', 'Colour', swatch + (r.color == null ? 'Auto' : 'Custom'), colorHtml(r));
+    const whoSec = acc('assignees', 'Assignees', names.length ? esc(names.join(', ')) : 'None', assigneeHtml(r));
     if (n.isArea) { // an area: what is in it, who owns it, its colour, and quick actions
       const inside = blockEnd(state.rows, n.i) - n.i - 1;
       return h + `<p class="note">${fmtRange(n)} · ${inside} ${inside === 1 ? 'item' : 'items'}${S.progress && n.progress != null ? ' · ' + Math.round(n.progress) + '% done' : ''}. Its dates follow what is inside it; drag its bar to shift everything together.</p>`
-        + assigneeHtml(r) + colorHtml(r)
+        + `<div class="accs">${whoSec}${colourSec}</div>`
         + `<div class="pop-btns"><button class="btn ghost" data-act="area-del">Delete…</button><button class="btn primary" data-act="area-add">+ Task here</button></div>`;
     }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
-    if (!n.hasKids && !n.milestone) h += progressHtml(r);
-    h += assigneeHtml(r) + changeHtml(n);
-    return h + (n.milestone ? msHtml(r) : '') + depsHtml(n, pinfo, state.rows) + colorHtml(r) + rowActionsHtml(n, state.rows);
+    // everything else sits in collapsible sections (open or closed as you left them), each with its current value on the right
+    if (!n.hasKids && !n.milestone) secs.push(acc('progress', 'Progress', S.progress && S.progressSource === 'marker' ? 'Follows the marker' : r.progress == null ? 'Off' : Math.round(r.progress) + '%', progressHtml(r)));
+    secs.push(whoSec);
+    if (!n.hasKids) secs.push(acc('deps', 'Depends on', r.deps.length ? `${r.deps.length} ${r.deps.length === 1 ? 'item' : 'items'}` : 'None', depsHtml(n, pinfo, state.rows)));
+    const ch = changeHtml(n);
+    if (ch) { const dd = n.start - n.bs, de = n.end - n.be; secs.push(acc('change', 'Changed from original', n.milestone ? `${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}` : (de ? `ends ${Math.abs(de)}d ${de > 0 ? 'later' : 'earlier'}` : `starts ${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}`), ch)); }
+    if (n.milestone) secs.push(acc('ms', 'Sits in its day', { '': 'Default', auto: 'Auto', start: 'Start', middle: 'Middle', end: 'End' }[r.msAlign || ''], msHtml(r)));
+    secs.push(colourSec);
+    return h + `<div class="accs">${secs.join('')}</div>` + popFootHtml(n, state.rows);
   }
   if (pop.kind === 'today') {
     const seg = (f, cur, opts) => `<div class="seg" data-f="${f}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -1728,7 +1745,7 @@ function syncPop() {
   const html = popHtml();
   if (!html) { closePop(); return; }
   const act = document.activeElement;
-  if (!popEl.contains(act)) { popEl.innerHTML = html; return; }
+  if (!popEl.contains(act) || /^(BUTTON|SELECT)$/.test(act.tagName)) { popEl.innerHTML = html; return; } // nothing being typed in: show the fresh version
   // keep the field being typed in; refresh the others from a fresh copy
   const fresh = document.createElement('div');
   fresh.innerHTML = html;
@@ -1737,6 +1754,7 @@ function syncPop() {
     if (!src || el === act) return;
     if (el.classList.contains('seg')) el.innerHTML = src.innerHTML; else el.value = src.value;
   });
+  $$('.acc', fresh).forEach(a => { const real = $(`.acc[data-acc="${a.dataset.acc}"] .acc-s`, popEl); if (real) real.innerHTML = $('.acc-s', a).innerHTML; }); // the values on the right of each section follow what is being typed
   const fit = $('[data-act="fit"]', popEl), fit2 = $('[data-act="fit"]', fresh);
   if (fit && fit2) fit.disabled = fit2.disabled;
 }
@@ -1781,7 +1799,17 @@ popEl.addEventListener('click', e => {
     }
     return;
   }
-  const rowAct = e.target.closest('.row-actions [data-act], [data-act="dep-rm"]');
+  const accH = e.target.closest('[data-acc-toggle]');
+  if (accH) {
+    const id = accH.dataset.accToggle;
+    ui.popOpen[id] = !ui.popOpen[id]; saveUi();
+    accH.closest('.acc').classList.toggle('open', !!ui.popOpen[id]);
+    accH.setAttribute('aria-expanded', String(!!ui.popOpen[id]));
+    const pr = popEl.getBoundingClientRect(); // a section that opens must not push the popover off the bottom of the window
+    if (pr.bottom > innerHeight - 8) popEl.style.top = Math.max(8, innerHeight - 8 - pr.height) + 'px';
+    return;
+  }
+  const rowAct = e.target.closest('.row-actions [data-act], .pop-foot [data-act], [data-act="dep-rm"]');
   if (rowAct && pop && pop.kind === 'row' && !rowAct.disabled) {
     const id = pop.id, a = rowAct.dataset.act;
     if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== rowAct.dataset.dep); commit(); refresh(); }
