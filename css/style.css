@@ -60,6 +60,12 @@ svg { display: block; }
 .chart-col { margin: auto; flex: none; width: 100%; max-width: 1280px; }
 .chart-add { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 12px 2px 0; position: sticky; left: 0; width: max-content; max-width: 100%; }
 .chart-add .chip-btn { background: #fff; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 32px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; padding: 3px 5px; }
+.chips:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14); }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 3px 1px 9px; font-size: 12.5px; font-weight: 600; }
+.chip-x { border: 0; background: none; color: inherit; opacity: 0.6; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; padding: 0; line-height: 1; }
+.chip-x:hover { opacity: 1; background: rgba(79, 70, 229, 0.15); }
+.chip-in { flex: 1; min-width: 70px; border: 0; outline: none; background: none; font: inherit; padding: 3px 4px; }
 .qs { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; }
 .qs-btn { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: #fff; color: #3b4252; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
 .qs-btn:hover { border-color: var(--accent); color: var(--accent); }

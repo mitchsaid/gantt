@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v73 · 12 Nov';
+const APP_VERSION = 'v74 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -802,6 +802,8 @@ function fitText(text, maxW, size, weight, font) {
   }
   return lo ? text.slice(0, lo).trimEnd() + '…' : '';
 }
+/** an item's assignees: names separated by commas, semicolons or " & " */
+const splitNames = s => { const seen = new Set(); return String(s || '').split(/\s*(?:[,;]|\s&\s)\s*/).map(x => x.trim()).filter(x => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase())); };
 const initials = name => name.trim().split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 
 // ---------------------------------------------------------------- time scale
@@ -897,6 +899,17 @@ function buildScene(state, opts) {
   const tierOf = f => Math.round(26 * f / 14);
   const avOn = S.assigneeAvatar !== false || S.assigneePos === 'bars'; // (on the bars the avatar is the point, so it is always on)
   // the little initials circle beside an owner's name
+  const namesOf = n => splitNames(n.row.assignee);
+  const avSpan = (k, d) => d + (Math.min(k, 3) - 1) * Math.round(d * 0.8); // the width of k overlapping avatars: three at most, more show "+N"
+  /** overlapping initials circles, the first on top; with more than three, two and a "+N" */
+  const avGroup = (names, x, cy, d, fill, ink, ring, fsz, always) => {
+    const k = names.length, c = Math.min(k, 3), step = Math.round(d * 0.8);
+    for (let q = c - 1; q >= 0; q--) {
+      const label = k > 3 && q === 2 ? '+' + (k - 2) : initials(names[q]).slice(0, 2);
+      items.push({ t: 'rect', x: x + q * step, y: cy - d / 2, w: d, h: d, r: d / 2, fill, stroke: c > 1 || always ? ring : undefined, sw: 1.5 });
+      items.push({ t: 'text', x: x + q * step + d / 2, y: cy, text: label, size: fsz, weight: 700, fill: ink, anchor: 'middle' });
+    }
+  };
   const subLineOf = f => (S.assignees && (S.assigneePos || 'under') === 'under' && info.some(n => n.row.assignee) ? Math.round((avOn ? 18 : 14) * f / 14) : 0); // owners under the bars take a line of their own
   const titleOf = f => Math.round(30 * f / 14 * (+S.titleScale || 1));
   let rowH = 0;
@@ -945,7 +958,7 @@ function buildScene(state, opts) {
   let labelW = 0, laneW = 0;
   const indentOf = n => (lanes ? Math.max(0, n.level - 1) : n.level) * 16;
   if (lanes) {
-    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(nameOf(n), fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(n.row.assignee, fs - 1.5, 500) + (avOn ? Math.round(16 * kk) + 6 : 0) : 0); });
+    info.forEach(n => { if (isGroup(n)) laneW = Math.max(laneW, M(nameOf(n), fs + 1, 700), S.assignees && S.assigneeAreas !== false && n.row.assignee ? M(namesOf(n).join(', '), fs - 1.5, 500) + (avOn ? avSpan(namesOf(n).length, Math.round(16 * kk)) + 6 : 0) : 0); });
     laneW = clamp(laneW, 70, W * 0.2) + 28;
   }
   if (left) {
@@ -1102,18 +1115,18 @@ function buildScene(state, opts) {
       if (isGroup(n)) {
         n.tailEnd = left ? bx + bw : Math.max(bx + bw, bx + M(name, fs + 1, 700));
         if (showAssignee(n)) {
-          const who = n.row.assignee, cs = fs - 1.5;
+          const wn = namesOf(n), who = wn.join(', '), cs = fs - 1.5;
           if (!left) { // heading above its line: the owner follows the name
             const x = bx + M(name, fs + 1, 700) + 14;
-            n.areaWho = { x, text: who, size: cs };
-            n.tailEnd = Math.max(n.tailEnd, x + (avOn ? dd + 6 : 0) + M(who, cs, 500));
+            n.areaWho = { x, text: who, names: wn, size: cs };
+            n.tailEnd = Math.max(n.tailEnd, x + (avOn ? avSpan(wn.length, dd) + 6 : 0) + M(who, cs, 500));
           } else if (subLine) { // under its summary bar, like a task
             const ws = Math.max(10, fs - 2.5);
-            n.who = { x: bx + 2, text: who, size: ws, area: true };
-            n.tailEnd = Math.max(n.tailEnd, bx + 2 + (avOn ? dU + 6 : 0) + M(who, ws, 500));
+            n.who = { x: bx + 2, text: who, names: wn, size: ws, area: true };
+            n.tailEnd = Math.max(n.tailEnd, bx + 2 + (avOn ? avSpan(wn.length, dU) + 6 : 0) + M(who, ws, 500));
           } else {
-            n.areaWho = { x: bx + bw + 8, text: who, size: cs };
-            n.tailEnd = bx + bw + 8 + (avOn ? dd + 6 : 0) + M(who, cs, 500);
+            n.areaWho = { x: bx + bw + 8, text: who, names: wn, size: cs };
+            n.tailEnd = bx + bw + 8 + (avOn ? avSpan(wn.length, dd) + 6 : 0) + M(who, cs, 500);
           }
         }
         over = Math.max(over, n.tailEnd - x1);
@@ -1122,9 +1135,9 @@ function buildScene(state, opts) {
       // assignees "on the bar": a round avatar at the bar's right end when the bar can hold it (otherwise it sits just outside, like beside-bar owners)
       const onBars = S.assigneePos === 'bars';
       let avD = 0;
-      if (onBars && !n.milestone && showAssignee(n)) { const d = Math.round(Math.min(h - 2 * Math.max(3, h * 0.1), 36 * kk)); if (d >= Math.round(15 * kk) && bw >= d + 16) avD = d; }
+      if (onBars && !n.milestone && showAssignee(n)) { const d = Math.round(Math.min(h - 2 * Math.max(3, h * 0.1), 36 * kk)); if (d >= Math.round(15 * kk) && bw >= avSpan(namesOf(n).length, d) + 16) avD = d; }
       n.avD = avD;
-      const bwL = bw - (avD ? avD + 4 : 0); // room left for the name
+      const bwL = bw - (avD ? avSpan(namesOf(n).length, avD) + 4 : 0); // room left for the name
       if (n.noteNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.noteNo }); tx += bd + 10; } // the change's number, right after the bar
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
@@ -1144,14 +1157,14 @@ function buildScene(state, opts) {
       n.who = null;
       if (subLine && showAssignee(n)) {
         const ws = Math.max(10, size - 2.5), wx = n.milestone ? msX(n) - h * 0.5 : bx + 2;
-        const av = avOn ? dU + 6 : 0, maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity) - av;
-        const t = isFinite(maxW) ? fitText(n.row.assignee, Math.max(0, maxW), ws, 500, font) : n.row.assignee;
-        if (t) { n.who = { x: wx, text: t, size: ws }; over = Math.max(over, wx + av + M(t, ws, 500) - x1); }
+        const wn = namesOf(n), av = avOn ? avSpan(wn.length, dU) + 6 : 0, maxW = Math.min(pack ? lim - wx : Infinity, fixed ? x1 - wx : Infinity) - av;
+        const t = isFinite(maxW) ? fitText(wn.join(', '), Math.max(0, maxW), ws, 500, font) : wn.join(', ');
+        if (t) { n.who = { x: wx, text: t, names: wn, size: ws }; over = Math.max(over, wx + av + M(t, ws, 500) - x1); }
       }
       if (!subLine && showAssignee(n)) {
         const nm = onBars ? !!S.assigneeNames : true, av = onBars ? !avD : avOn; // on the bar: the name stays outside, to the right, and is optional
         if (nm || av) {
-          const w = (nm ? M(n.row.assignee, size - 1.5, 500) : 0) + (av ? dd + (nm ? 6 : 0) : 0);
+          const wn = namesOf(n), w = (nm ? M(wn.join(', '), size - 1.5, 500) : 0) + (av ? avSpan(wn.length, dd) + (nm ? 6 : 0) : 0);
           if (tx + w <= lim) { n.tail.push({ k: 'who', x: tx, w, av, nm }); tx += w + 10; }
         }
       }
@@ -1306,11 +1319,9 @@ function buildScene(state, opts) {
   // an owner under a bar: a gap, then (optionally) the initials circle and the name
   const drawWho = (w, bottom, base) => {
     const cy = bottom + Math.round(6 * kk) + (avOn ? dU : w.size) / 2;
-    if (avOn) {
-      items.push({ t: 'rect', x: w.x, y: cy - dU / 2, w: dU, h: dU, r: dU / 2, fill: mix(base, surface, 0.78) });
-      items.push({ t: 'text', x: w.x + dU / 2, y: cy, text: initials(w.full || w.text).slice(0, 2), size: 7 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-    }
-    items.push({ t: 'text', x: w.x + (avOn ? dU + 6 : 0), y: cy, text: w.text, size: w.size, weight: 500, fill: muted, anchor: 'start' });
+    const names = w.names || splitNames(w.full || w.text);
+    if (avOn) avGroup(names, w.x, cy, dU, mix(base, surface, 0.78), mix(base, text, 0.5), surface, 7 * kk);
+    items.push({ t: 'text', x: w.x + (avOn ? avSpan(names.length, dU) + 6 : 0), y: cy, text: w.text, size: w.size, weight: 500, fill: muted, anchor: 'start' });
   };
 
   // ---- rows
@@ -1323,15 +1334,12 @@ function buildScene(state, opts) {
     if (n.sep) items.push({ t: 'line', x1: pad, y1: n.y - 9, x2: x1, y2: n.y - 9, stroke: gridStrong, sw: 1 });
     if (n.lane) {
       n.lx = pad;
-      const ow = showAssignee(n) ? row.assignee : '';
-      const lf = labelFit(name, laneW - 22, fs + 1, 700, true), nl = lf.lines.length, off = ow ? -8 * kk : 0;
+      const own = showAssignee(n) ? namesOf(n) : [], ow = own.join(', ');
+      const lf = labelFit(name, laneW - 22, fs + 1, 700, true), nl = lf.lines.length, off = ow ? -11 * kk : 0;
       lf.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: pad, y: n.cy + off + (li - (nl - 1) / 2) * lf.size * 1.15, text: ln, size: lf.size, weight: 700, fill: mix(base, text, 0.25), anchor: 'start' }));
       if (ow) {
-        const oy = n.cy + (9 + (nl - 1) * lf.size * 0.6) * kk, d = dU, av = avOn ? d + 6 : 0;
-        if (avOn) {
-          items.push({ t: 'rect', x: pad, y: oy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-          items.push({ t: 'text', x: pad + d / 2, y: oy, text: initials(ow).slice(0, 2), size: 7.5 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-        }
+        const oy = n.cy + (14 + (nl - 1) * lf.size * 0.6) * kk, d = dU, av = avOn ? avSpan(own.length, d) + 6 : 0;
+        if (avOn) avGroup(own, pad, oy, d, mix(base, surface, 0.78), mix(base, text, 0.5), surface, 7.5 * kk);
         items.push({ t: 'text', x: pad + av, y: oy, text: fitText(ow, laneW - 22 - av, fs - 1.5, 500, font), size: fs - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
       items.push({ t: 'rect', x: pad + laneW - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
@@ -1358,11 +1366,8 @@ function buildScene(state, opts) {
       }
       if (n.areaWho) {
         const a = n.areaWho, d = dd, ay = left ? n.cy : n.cy - 4;
-        if (avOn) {
-          items.push({ t: 'rect', x: a.x, y: ay - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-          items.push({ t: 'text', x: a.x + d / 2, y: ay, text: initials(a.text).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-        }
-        items.push({ t: 'text', x: a.x + (avOn ? d + 6 : 0), y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
+        if (avOn) avGroup(a.names, a.x, ay, d, mix(base, surface, 0.78), mix(base, text, 0.5), surface, 8 * kk);
+        items.push({ t: 'text', x: a.x + (avOn ? avSpan(a.names.length, d) + 6 : 0), y: ay, text: a.text, size: a.size, weight: 500, fill: muted, anchor: 'start' });
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: Math.max(n.bw, left ? 0 : n.tailEnd - n.bx), h: rowH - 4, hit: true, id, role: 'move' });
       if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2, base);
@@ -1433,9 +1438,8 @@ function buildScene(state, opts) {
         items.push({ t: 'line', x1: ox0, y1: gy - gh, x2: ox0, y2: gy + gh, stroke: base, sw: 1.5 }, { t: 'line', x1: ox1, y1: gy - gh, x2: ox1, y2: gy + gh, stroke: base, sw: 1.5 });
       }
       if (n.avD) { // the owner's avatar, ringed in white so it reads on any bar colour
-        const d = n.avD, g = (h - d) / 2, ax = n.bx + n.bw - inset - g - d, fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
-        items.push({ t: 'rect', x: ax, y: by + g, w: d, h: d, r: d / 2, fill: fillA, stroke: '#ffffff', sw: 1.5 });
-        items.push({ t: 'text', x: ax + d / 2, y: by + h / 2, text: initials(row.assignee).slice(0, 2), size: Math.max(7, Math.round(d * 0.38 * 2) / 2), weight: 700, fill: contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', anchor: 'middle' });
+        const own = namesOf(n), d = n.avD, g = (h - d) / 2, ax = n.bx + n.bw - inset - g - avSpan(own.length, d), fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
+        avGroup(own, ax, by + h / 2, d, fillA, contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', '#ffffff', Math.max(7, Math.round(d * 0.38 * 2) / 2), true);
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
@@ -1454,12 +1458,9 @@ function buildScene(state, opts) {
         items.push({ t: 'rect', x: t.x, y: n.cy - t.w / 2, w: t.w, h: t.w, r: t.w / 2, fill: base });
         items.push({ t: 'text', x: t.x + t.w / 2, y: n.cy, text: String(t.no), size: Math.max(8, Math.round(8.5 * kk * 2) / 2), weight: 700, fill: onColor(base), anchor: 'middle' });
       } else {
-        const d = dd;
-        if (t.av) {
-          items.push({ t: 'rect', x: t.x, y: n.cy - d / 2, w: d, h: d, r: d / 2, fill: mix(base, surface, 0.78) });
-          items.push({ t: 'text', x: t.x + d / 2, y: n.cy, text: initials(row.assignee).slice(0, 2), size: 8 * kk, weight: 700, fill: mix(base, text, 0.5), anchor: 'middle' });
-        }
-        if (t.nm) items.push({ t: 'text', x: t.x + (t.av ? d + 6 : 0), y: n.cy, text: row.assignee, size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
+        const d = dd, own = namesOf(n);
+        if (t.av) avGroup(own, t.x, n.cy, d, mix(base, surface, 0.78), mix(base, text, 0.5), surface, 8 * kk);
+        if (t.nm) items.push({ t: 'text', x: t.x + (t.av ? avSpan(own.length, d) + 6 : 0), y: n.cy, text: own.join(', '), size: size - 1.5, weight: 500, fill: muted, anchor: 'start' });
       }
     });
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
@@ -1523,4 +1524,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

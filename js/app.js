@@ -527,7 +527,7 @@ function renderOutline() {
   const rows = state.rows, info = derive(rows), S = state.settings;
   const palette = paletteOf(S).colors;
   if (S.colorBy === 'row' && scene && scene.cidx) info.forEach(n => { if (scene.cidx[n.row.id] != null) n.colorIdx = scene.cidx[n.row.id]; }); // the same colours as the chart
-  const who = Array.from(new Set(rows.map(r => r.assignee).filter(Boolean)));
+  const who = Array.from(new Set(rows.flatMap(r => splitNames(r.assignee))));
   const picked = new Set(selIds());
   let html = '';
   info.forEach(n => {
@@ -574,7 +574,7 @@ outline.addEventListener('click', e => {
     const a = act.dataset.act;
     if (a === 'toggle') { detailId = detailId === id ? null : id; renderOutline(); const d = $(`.detail[data-id="${id}"]`); if (d && detailId) d.scrollIntoView({ block: 'nearest' }); }
     else if (a === 'progress-clear') setRowProgress(id, null);
-    else if (a === 'assignee-clear') clearAssignee(id);
+    else if (a === 'assignee-del') removeAssignee(id, +act.dataset.i);
     else if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
     else if (a === 'del') askDelete(id);
@@ -617,6 +617,7 @@ outline.addEventListener('change', e => {
 });
 outline.addEventListener('keydown', e => {
   const t = e.target;
+  if (t.dataset && t.dataset.f === 'assignee-add') { const host = t.closest('[data-id]'); if (host) assigneeKey(e, host.dataset.id); return; }
   if (!t.classList.contains('nm')) return;
   const id = t.closest('.orow').dataset.id;
   const i = rowIndex(id);
@@ -1514,11 +1515,12 @@ function rowInput(r, t) {
     }
     commitSoon();
   }
-  else if (f === 'assignee') { r.assignee = t.value; if (t.value.trim()) ensureAssigneeShown(r); const x = t.parentNode.querySelector('.x-btn'); if (x) x.hidden = !t.value; renderChart(); commitSoon(); }
+  else if (f === 'assignee-add') { if (/[,;]/.test(t.value)) { addAssignees(r.id, t.value); t.value = ''; } } // a comma finishes a name
   else if (f === 'progress') { r.progress = +t.value; t.nextElementSibling.textContent = t.value + '%'; const rr = t.closest('.range-row'); if (rr) { rr.classList.remove('off'); const x = $('.x-btn', rr); if (x) x.disabled = false; } if (!state.settings.progress) { state.settings.progress = true; syncDesign(); } renderChart(); commitSoon(); }
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
+  if (f === 'assignee-add') { if (t.value.trim()) addAssignees(r.id, t.value); t.value = ''; return; }
   if (f === 'start' || f === 'end') {
     const d = isoToDay(t.value);
     if (d == null) return;
@@ -1681,7 +1683,8 @@ popEl.addEventListener('click', e => {
     const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
     if (sb) { const f = sb.parentNode.dataset.f; setSetting(f === 'marker-style' ? 'markerStyle' : 'markerWidth', f === 'marker-style' ? sb.dataset.v : +sb.dataset.v); return; } // setSetting refreshes the popover (and the Design panel) itself
   }
-  if (e.target.closest('[data-act="assignee-clear"]') && pop && pop.kind === 'row') { clearAssignee(pop.id); return; }
+  const adel = e.target.closest('[data-act="assignee-del"]');
+  if (adel && pop && pop.kind === 'row') { removeAssignee(pop.id, +adel.dataset.i); return; }
   if (e.target.closest('[data-act="progress-clear"]') && pop && pop.kind === 'row') { setRowProgress(pop.id, null); return; }
   const tb = e.target.closest('.seg[data-f="type"] button');
   if (tb && pop && pop.kind === 'row') { if (!tb.classList.contains('on') && !tb.disabled) setTypes([pop.id], tb.dataset.v); return; }
@@ -1701,6 +1704,7 @@ popEl.addEventListener('keydown', e => {
     else if (e.key === 'Tab') { e.preventDefault(); const t = e.target; t.setRangeText('\t', t.selectionStart, t.selectionEnd, 'end'); t.dispatchEvent(new Event('input', { bubbles: true })); }
     return;
   }
+  if (pop && pop.kind === 'row' && assigneeKey(e, pop.id)) return;
   if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.target.blur(); if (e.target.dataset.f === 'name') closePop(); }
 });
 
@@ -2130,8 +2134,51 @@ function applySeed(hex) {
   commitSoon();
 }
 /** the Assignee field, with a ✕ that clears it */
-function assigneeHtml(r) {
+function assigneeHtmlOld(r) {
   return `<div class="field"><span>Assignee</span><div class="clearable"><input class="inp" data-f="assignee" list="who-list" value="${esc(r.assignee)}" placeholder="Name" autocomplete="off"><button class="x-btn" data-act="assignee-clear" title="Clear assignee" aria-label="Clear assignee"${r.assignee ? '' : ' hidden'}>✕</button></div></div>`;
+}
+/** assignees as removable chips plus a box to add more (names are stored comma-separated) */
+const chipsHtml = names => names.map((n, i) => `<span class="chip"><span>${esc(n)}</span><button class="chip-x" data-act="assignee-del" data-i="${i}" title="Remove ${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('');
+function assigneeHtml(r) {
+  const names = splitNames(r.assignee);
+  return `<div class="field"><span>Assignees</span><div class="chips" data-chips>${chipsHtml(names)}<input class="chip-in" data-f="assignee-add" list="who-list" placeholder="${names.length ? 'Add another' : 'Name'}" autocomplete="off" aria-label="Add an assignee"></div></div>`;
+}
+function setAssignees(id, names, keepFocus) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  r.assignee = names.join(', ');
+  if (names.length) ensureAssigneeShown(r);
+  renderChart(); renderOutline(); commitSoon();
+  const boxes = [];
+  if (pop && pop.kind === 'row' && pop.id === id) boxes.push(...$$('[data-chips]', popEl));
+  const d = $(`.detail[data-id="${id}"] [data-chips]`);
+  if (d) boxes.push(d);
+  boxes.forEach(box => { // update the chips in place (the popover is not rebuilt while you are typing in it)
+    $$('.chip', box).forEach(c => c.remove());
+    const inp = $('.chip-in', box);
+    inp.insertAdjacentHTML('beforebegin', chipsHtml(names));
+    inp.placeholder = names.length ? 'Add another' : 'Name';
+    if (keepFocus) inp.focus();
+  });
+}
+function addAssignees(id, text) {
+  const r = state.rows[rowIndex(id)];
+  if (r) setAssignees(id, splitNames((r.assignee ? r.assignee + ', ' : '') + text), true);
+}
+function removeAssignee(id, i) {
+  const r = state.rows[rowIndex(id)];
+  if (!r) return;
+  const names = splitNames(r.assignee);
+  names.splice(i, 1);
+  setAssignees(id, names, true);
+}
+/** Backspace in an empty assignee box removes the last name */
+function assigneeKey(e, id) {
+  const t = e.target;
+  if (!t.dataset || t.dataset.f !== 'assignee-add') return false;
+  if (e.key === 'Backspace' && !t.value) { const r = state.rows[rowIndex(id)]; const n = r ? splitNames(r.assignee) : []; if (n.length) { e.preventDefault(); removeAssignee(id, n.length - 1); } return true; }
+  if (e.key === 'Enter') { e.preventDefault(); if (t.value.trim()) { addAssignees(id, t.value); t.value = ''; } return true; }
+  return false;
 }
 function clearAssignee(id) {
   const r = state.rows[rowIndex(id)];
