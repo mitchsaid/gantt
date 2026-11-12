@@ -918,7 +918,9 @@ function endDrag() {
     const now = Date.now(), dbl = lastClick.id === d.id && now - lastClick.t < 450;
     lastClick = { id: d.id, t: now };
     if (sel !== d.id) select(d.id);
-    if (d.role === 'row') { if (dbl) editRowName(d.id, d.rect); }
+    const isArea = !!(scene.info.find(n => n.row.id === d.id) || {}).isArea;
+    if (d.role === 'row' && !isArea) { if (dbl) editRowName(d.id, d.rect); } // an area's name or heading opens its popover too
+    else if (d.role === 'row' && dbl) editRowName(d.id, d.rect);
     else { openPop('row', d.rect, d.id, d.x - 60); if (dbl) { const inp = $('#pop-name'); if (inp) inp.select(); } }
   }
 }
@@ -1597,6 +1599,12 @@ function popHtml() {
     if (!n) return '';
     const r = n.row;
     let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">` + typeSegHtml(n);
+    if (n.isArea) { // an area: what is in it, who owns it, its colour, and quick actions
+      const inside = blockEnd(state.rows, n.i) - n.i - 1;
+      return h + `<p class="note">${fmtRange(n)} · ${inside} ${inside === 1 ? 'item' : 'items'}${S.progress && n.progress != null ? ' · ' + Math.round(n.progress) + '% done' : ''}. Its dates follow what is inside it; drag its bar to shift everything together.</p>`
+        + assigneeHtml(r) + colorHtml(r)
+        + `<div class="pop-btns"><button class="btn ghost" data-act="area-del">Delete…</button><button class="btn primary" data-act="area-add">+ Task here</button></div>`;
+    }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
@@ -1683,6 +1691,19 @@ popEl.addEventListener('click', e => {
     if (markerColorEvent(e, 'click')) return;
     const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
     if (sb) { const f = sb.parentNode.dataset.f; setSetting(f === 'marker-style' ? 'markerStyle' : 'markerWidth', f === 'marker-style' ? sb.dataset.v : +sb.dataset.v); return; } // setSetting refreshes the popover (and the Design panel) itself
+  }
+  const aa = e.target.closest('[data-act="area-add"], [data-act="area-del"]');
+  if (aa && pop && pop.kind === 'row') {
+    const id = pop.id;
+    closePop();
+    if (aa.dataset.act === 'area-del') askDelete(id);
+    else {
+      const i = rowIndex(id);
+      let last = blockEnd(state.rows, i) - 1;
+      while (last > i && state.rows[last].level > 1) last--; // after the last task, not inside its subtasks
+      commit(); addRow('task', state.rows[last].id, true, true);
+    }
+    return;
   }
   const adel = e.target.closest('[data-act="assignee-del"]');
   if (adel && pop && pop.kind === 'row') { removeAssignee(pop.id, +adel.dataset.i); return; }
