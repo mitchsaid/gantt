@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v89 · 12 Nov';
+const APP_VERSION = 'v90 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1317,6 +1317,22 @@ function buildScene(state, opts) {
   });
 
   // ---- dependency lines
+  /** the same path with each corner rounded off (a quadratic curve through the corner) */
+  const roundPath = (pts, r) => {
+    if (pts.length < 3) return pts;
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+      const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]), rr = Math.min(r, l1 / 2, l2 / 2);
+      if (rr < 1) { out.push(b); continue; }
+      const p1 = [b[0] + (a[0] - b[0]) / l1 * rr, b[1] + (a[1] - b[1]) / l1 * rr], p2 = [b[0] + (c[0] - b[0]) / l2 * rr, b[1] + (c[1] - b[1]) / l2 * rr];
+      out.push(p1);
+      for (let t = 1; t < 6; t++) { const u = t / 6; out.push([(1 - u) * (1 - u) * p1[0] + 2 * (1 - u) * u * b[0] + u * u * p2[0], (1 - u) * (1 - u) * p1[1] + 2 * (1 - u) * u * b[1] + u * u * p2[1]]); }
+      out.push(p2);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
   if (S.deps) {
     const byId = {};
     info.forEach(n => { byId[n.row.id] = n; });
@@ -1336,7 +1352,9 @@ function buildScene(state, opts) {
         pts.push([sx, my], [ex - 10, my], [ex - 10, n.cy]);
       }
       pts.push([ex, n.cy]);
-      items.push({ t: 'poly', pts, stroke: muted, sw: 1.5, arrow: true });
+      const dep = mix(baseOf(p), text, 0.18); // the predecessor's colour, a little deepened, so a line reads as coming from that task
+      items.push({ t: 'poly', pts: roundPath(pts, 7), stroke: dep, sw: 1.5, arrow: true });
+      if (n.cy !== p.cy) items.push({ t: 'rect', x: pts[0][0] - 2.5, y: pts[0][1] - 2.5, w: 5, h: 5, r: 2.5, fill: dep }); // where it leaves
     }));
   }
 

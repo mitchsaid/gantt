@@ -164,9 +164,9 @@ function sceneToSvg(sc, interactive) {
     } else if (it.t === 'poly') {
       const pts = it.pts.map(p => p.slice());
       const [ex, ey] = pts[pts.length - 1];
-      if (it.arrow) pts[pts.length - 1][0] -= 5;
+      if (it.arrow) pts[pts.length - 1][0] -= 4;
       out += `<polyline points="${pts.map(p => n2(p[0]) + ',' + n2(p[1])).join(' ')}" fill="none" stroke="${it.stroke}" stroke-width="${it.sw}" stroke-linejoin="round" stroke-linecap="round"/>`;
-      if (it.arrow) out += `<polygon points="${n2(ex)},${n2(ey)} ${n2(ex - 7)},${n2(ey - 4)} ${n2(ex - 7)},${n2(ey + 4)}" fill="${it.stroke}"/>`;
+      if (it.arrow) out += `<polygon points="${n2(ex)},${n2(ey)} ${n2(ex - 6)},${n2(ey - 3.5)} ${n2(ex - 6)},${n2(ey + 3.5)}" fill="${it.stroke}" stroke="${it.stroke}" stroke-width="1" stroke-linejoin="round"/>`;
     }
   }
   return out;
@@ -212,10 +212,10 @@ function drawScene(sc, scale) {
     } else if (it.t === 'poly') {
       const pts = it.pts.map(p => p.slice());
       const [ex, ey] = pts[pts.length - 1];
-      if (it.arrow) pts[pts.length - 1][0] -= 5;
+      if (it.arrow) pts[pts.length - 1][0] -= 4;
       g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
       g.strokeStyle = it.stroke; g.lineWidth = it.sw; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke();
-      if (it.arrow) { g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - 7, ey - 4); g.lineTo(ex - 7, ey + 4); g.closePath(); g.fillStyle = it.stroke; g.fill(); }
+      if (it.arrow) { g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - 6, ey - 3.5); g.lineTo(ex - 6, ey + 3.5); g.closePath(); g.fillStyle = it.stroke; g.strokeStyle = it.stroke; g.lineWidth = 1; g.lineJoin = 'round'; g.fill(); g.stroke(); }
     }
   }
   return c;
