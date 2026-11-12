@@ -439,6 +439,18 @@ function typeSegHtml(n) {
   const alt = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌥' : 'Alt';
   return `<div class="seg" data-f="type">${[['area', 'Area', 'A'], ['task', 'Task', 'T'], ['milestone', 'Milestone', 'M']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !n.isArea ? ' disabled title="Remove its subtasks first"' : ` title="${o[1]} (${alt}+${o[2]})"`}>${o[1]}</button>`).join('')}</div>`;
 }
+/** how long a new task is by default: about an eighth of the timeline, so a short timeline gets short tasks and a long one gets weeks, and never most of it */
+function defaultTaskDays() {
+  const S = state.settings;
+  const fixed = S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null;
+  let span = 0;
+  if (fixed) span = S.rangeEnd - S.rangeStart + 1;
+  else { const info = derive(state.rows); if (info.length) span = Math.max(...info.map(n => n.end)) - Math.min(...info.map(n => n.start)) + 1; }
+  let d = span / 8;
+  d = d < 7 ? Math.round(d) : Math.round(d / 7) * 7; // days on a short timeline, whole weeks on a long one
+  d = Math.max(1, Math.min(d, Math.floor(span / 3)));
+  return fixed ? d : Math.max(5, d); // with the timeline fitting the tasks there is no fixed span to size against, so five days at least
+}
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
@@ -447,9 +459,9 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   let at, level, ref, childOf = null;
   if (kind === 'area') {
     ref = info.length ? Math.max(...info.map(n => n.end)) : mondayOf(todayDay()) - 1;
-    const s = nextWorkday(ref + 1);
+    const s = addWorkdays(ref, 2); // one working day clear of the last item
     const area = newRow({ level: 0, name: 'New area' });
-    rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + 4 }));
+    rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + defaultTaskDays() - 1 }));
     sel = area.id; commit(); refresh(); show(area.id);
     return;
   }
@@ -470,7 +482,11 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   const row = newRow({ level, name: '', type: kind === 'milestone' ? 'milestone' : 'task' });
   if (kind === 'milestone') { row.start = row.end = ref ? ref.end : emptyStart; row.name = 'Milestone'; }
   else if (childOf) { row.start = childOf.start; row.end = childOf.end; row.name = ''; }
-  else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
+  else { // a new task follows the one before it with a working day between them, and is sized to the timeline (and stays inside a fixed one)
+    const days = defaultTaskDays();
+    row.start = ref ? addWorkdays(ref.end, 2) : emptyStart; row.end = row.start + days - 1; row.name = '';
+    if (S0.rangeMode === 'fixed' && S0.rangeStart != null && S0.rangeEnd != null && row.end > S0.rangeEnd) { row.end = S0.rangeEnd; row.start = Math.max(S0.rangeStart, row.end - days + 1); }
+  }
   rows.splice(at, 0, row);
   if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
   normalizeLevels(rows);
@@ -1911,7 +1927,7 @@ function insertParsed(parsed, afterId, replaceId, selectAll) {
   if (parsed.dated === false) { // undated lists carry on from the row before them
     const S = state.settings;
     const leaf = parsed.filter((r, k) => !(parsed[k + 1] && parsed[k + 1].level > r.level));
-    const target = place.ref ? nextWorkday(place.ref.end + 1) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
+    const target = place.ref ? addWorkdays(place.ref.end, 2) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
     const delta = target - Math.min(...leaf.map(r => r.start));
     parsed.forEach(r => { r.start += delta; r.end += delta; });
   }
