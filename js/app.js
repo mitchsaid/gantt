@@ -428,7 +428,8 @@ function setTypes(ids, to) {
 /** the Area / Task / Milestone switch, in the Plan panel's details and in the popover on the item */
 function typeSegHtml(n) {
   const kind = n.isArea ? 'area' : n.milestone ? 'milestone' : 'task';
-  return `<div class="seg" data-f="type">${[['area', 'Area', 'A'], ['task', 'Task', 'T'], ['milestone', 'Milestone', 'M']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !n.isArea ? ' disabled title="Remove its subtasks first"' : ` title="${o[1]} (press ${o[2]})"`}>${o[1]}</button>`).join('')}</div>`;
+  const alt = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌥' : 'Alt';
+  return `<div class="seg" data-f="type">${[['area', 'Area', 'A'], ['task', 'Task', 'T'], ['milestone', 'Milestone', 'M']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !n.isArea ? ' disabled title="Remove its subtasks first"' : ` title="${o[1]} (${alt}+${o[2]})"`}>${o[1]}</button>`).join('')}</div>`;
 }
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
@@ -1429,9 +1430,9 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
-  else if (!inField && !mod && !e.altKey && !e.shiftKey && selIds().length && /^[atm]$/i.test(e.key) && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // A / T / M: make the selection an area, a task or a milestone
+  else if (!inField && !mod && e.altKey && !e.shiftKey && selIds().length && /^Key[ATM]$/.test(e.code) && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Alt/⌥ + A / T / M: make the selection an area, a task or a milestone (by key position, as ⌥ changes the letter on a Mac)
     e.preventDefault();
-    setTypes(selIds(), { a: 'area', t: 'task', m: 'milestone' }[e.key.toLowerCase()]);
+    setTypes(selIds(), { KeyA: 'area', KeyT: 'task', KeyM: 'milestone' }[e.code]);
   }
   else if (!inField && !mod && !e.altKey && e.key === 'Enter' && !state.rows.length && !pop && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // nothing on the chart yet: Enter makes the first task
     e.preventDefault();
