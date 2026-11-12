@@ -238,7 +238,12 @@ function renderChart() {
   placeSelBar();
   syncQuickStatus();
   const sp = $('#chart-spread');
-  if (sp) sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
+  if (sp) {
+    sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
+    const on = !sp.hidden && isSpread();
+    sp.setAttribute('aria-pressed', String(on));
+    sp.textContent = on ? '↔ Spread across the timeline — click to undo' : '↔ Spread tasks across the timeline';
+  }
   const co = $('#chart-out');
   if (co) {
     const out = outsideRows();
@@ -255,7 +260,7 @@ function syncAddNote() {
   syncSelBar();
 }
 
-$('#chart-spread').addEventListener('click', fitPlan);
+$('#chart-spread').addEventListener('click', toggleSpread);
 $('#chart-out').addEventListener('click', e => { if (e.target.closest('[data-act="pull"]')) outsideDialog(); });
 
 // ---------------------------------------------------------------- fonts
@@ -442,7 +447,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   let at, level, ref, childOf = null;
   if (kind === 'area') {
     ref = info.length ? Math.max(...info.map(n => n.end)) : mondayOf(todayDay()) - 1;
-    const s = addWorkdays(ref, 2); // one working day clear of the last item
+    const s = nextWorkday(ref + 1);
     const area = newRow({ level: 0, name: 'New area' });
     rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + 4 }));
     sel = area.id; commit(); refresh(); show(area.id);
@@ -465,10 +470,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   const row = newRow({ level, name: '', type: kind === 'milestone' ? 'milestone' : 'task' });
   if (kind === 'milestone') { row.start = row.end = ref ? ref.end : emptyStart; row.name = 'Milestone'; }
   else if (childOf) { row.start = childOf.start; row.end = childOf.end; row.name = ''; }
-  else { // a new task follows the one before it, with one working day between them (and stays inside a fixed timeline)
-    row.start = ref ? addWorkdays(ref.end, 2) : emptyStart; row.end = row.start + 4; row.name = '';
-    if (S0.rangeMode === 'fixed' && S0.rangeStart != null && S0.rangeEnd != null && row.end > S0.rangeEnd) { row.end = S0.rangeEnd; row.start = Math.max(S0.rangeStart, row.end - 4); }
-  }
+  else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
   rows.splice(at, 0, row);
   if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
   normalizeLevels(rows);
@@ -1588,12 +1590,28 @@ function outsideDialog() {
     ['Cancel', 'ghost', null],
   ]);
 }
+/** remembers the dates from before a spread, so the chart's button can toggle it off again */
+let spreadMemo = null;
+const datesNow = () => Object.fromEntries(derive(state.rows).filter(n => !n.hasKids).map(n => [n.row.id, [n.row.start, n.row.end]])); // items with nothing inside them: an area's dates follow its contents
+const sameDates = (a, b) => !!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => b[k] && b[k][0] === a[k][0] && b[k][1] === a[k][1]);
+const isSpread = () => !!spreadMemo && sameDates(spreadMemo.after, datesNow());
 function fitPlan() {
   const S = state.settings;
   if (S.rangeMode !== 'fixed' || S.rangeStart == null || !state.rows.length) return;
+  const before = datesNow();
   fitRows(state.rows, S.rangeStart, S.rangeEnd);
+  spreadMemo = { before, after: datesNow() };
   commit(); refresh();
-  toast('Tasks spread across the timeline — Undo to revert');
+  toast('Tasks spread across the timeline — click the button again, or Undo, to revert');
+}
+/** the chart's button: spread across the fixed timeline, and a second click puts the dates back */
+function toggleSpread() {
+  if (isSpread()) {
+    state.rows.forEach(r => { const b = spreadMemo.before[r.id]; if (b) { r.start = b[0]; r.end = b[1]; } });
+    spreadMemo = null;
+    commit(); refresh();
+    toast('Back to the dates from before spreading');
+  } else fitPlan();
 }
 
 // ---------------------------------------------------------------- popover: edit things where they are
@@ -1893,7 +1911,7 @@ function insertParsed(parsed, afterId, replaceId, selectAll) {
   if (parsed.dated === false) { // undated lists carry on from the row before them
     const S = state.settings;
     const leaf = parsed.filter((r, k) => !(parsed[k + 1] && parsed[k + 1].level > r.level));
-    const target = place.ref ? addWorkdays(place.ref.end, 2) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
+    const target = place.ref ? nextWorkday(place.ref.end + 1) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
     const delta = target - Math.min(...leaf.map(r => r.start));
     parsed.forEach(r => { r.start += delta; r.end += delta; });
   }
