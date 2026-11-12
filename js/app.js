@@ -79,6 +79,8 @@ function sanitize(st) {
     row.name = String(row.name || ''); row.assignee = String(row.assignee || '');
     if (row.baseline && Number.isFinite(+row.baseline.s) && Number.isFinite(+row.baseline.e)) row.baseline = { s: Math.round(+row.baseline.s), e: Math.round(+row.baseline.e) }; else delete row.baseline;
     if (typeof row.changeNote === 'string' && row.changeNote.trim()) row.changeNote = row.changeNote.slice(0, 140); else delete row.changeNote;
+    if (row.blocked === true) row.blocked = true; else delete row.blocked; // flagged as blocked, with an optional reason for the legend
+    if (typeof row.blockedNote === 'string' && row.blockedNote.trim()) row.blockedNote = row.blockedNote.slice(0, 140); else delete row.blockedNote;
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
     row.id = String(row.id);
     row.type = row.type === 'milestone' ? 'milestone' : 'task';
@@ -543,6 +545,17 @@ const acc = (id, title, summary, body) => `<div class="acc${accOpen(id) ? ' open
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
   return `<div class="pop-foot"><span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+}
+const blockedHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="blocked"${r.blocked ? ' checked' : ''}> This is blocked <kbd class="kb">Alt B</kbd></label><input class="inp" data-f="blockedNote" value="${esc(r.blockedNote || '')}" placeholder="What is it waiting on? Shown in the legend" maxlength="140" autocomplete="off"${r.blocked ? '' : ' disabled'}></div>`;
+/** Alt+B: flag the selected tasks as blocked (or clear it when they all are already) */
+function toggleBlocked(ids) {
+  const info = derive(state.rows), rows = ids.map(id => info.find(n => n.row.id === id)).filter(n => n && !n.isArea).map(n => n.row);
+  if (!rows.length) { toast('Areas can’t be blocked — select a task or milestone'); return; }
+  const on = !rows.every(r => r.blocked);
+  commit();
+  rows.forEach(r => { if (on) r.blocked = true; else delete r.blocked; });
+  commit(); refresh();
+  toast(on ? `${rows.length === 1 ? 'Marked as blocked' : rows.length + ' items marked as blocked'} — Alt+B clears it` : 'Block cleared');
 }
 function depsHtml(n, info, rows) {
   const r = n.row;
@@ -1070,6 +1083,10 @@ const DESIGN = [
     { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
     { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
     { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
+    { type: 'head', label: 'Blocked items' },
+    { k: 'blockedWaiting', type: 'toggle', label: 'Show what is waiting on them' },
+    { k: 'blockedLegend', type: 'toggle', label: 'Legend and reasons' },
+    { k: '_blockedNote', type: 'note', label: 'Mark an item blocked in its popover (or select it and press Alt+B). It gets striped, with a red “!”; anything that depends on it and isn’t finished gets lighter stripes.' },
     { type: 'head', label: 'Changes from original' },
     { k: 'showChanges', type: 'toggle', label: 'Changes from original' },
     { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, when: s => s.showChanges },
@@ -1502,6 +1519,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     setTypes(selIds(), { KeyA: 'area', KeyT: 'task', KeyM: 'milestone' }[e.code]);
   }
+  else if (!inField && !mod && e.altKey && !e.shiftKey && selIds().length && e.code === 'KeyB' && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { e.preventDefault(); toggleBlocked(selIds()); } // Alt/⌥ + B: blocked on / off
   else if (!inField && !mod && !e.altKey && !e.isComposing && e.key.length === 1 && e.key !== ' ' && selIds().length === 1 && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col, .pop')))) { // typing with one item selected renames it
     e.preventDefault();
     typeToRename(selIds()[0], e.key);
@@ -1514,7 +1532,8 @@ document.addEventListener('keydown', e => {
   else if (!inField && !mod && !e.altKey && e.key === 'Enter' && selIds().length && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Enter adds a new item under the selection; Shift+Enter adds a subtask inside it
     e.preventDefault();
     const picked = selIds();
-    commit(); addRow('task', picked[picked.length - 1], true, true, e.shiftKey);
+    if (picked.length > 1 && !e.shiftKey) { commit(); groupIntoNewArea(); } // several items selected: Enter wraps them in a new area (Shift+Enter adds a line after them instead)
+    else { commit(); addRow('task', picked[picked.length - 1], true, true, picked.length > 1 ? false : e.shiftKey); }
   }
   else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
   else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
@@ -1581,6 +1600,7 @@ function rowInput(r, t) {
   const f = t.dataset.f;
   if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
   else if (f === 'changeNote') { r.changeNote = t.value; renderChart(); commitSoon(); }
+  else if (f === 'blockedNote') { if (t.value.trim()) r.blockedNote = t.value; else delete r.blockedNote; const accEl = t.closest('.acc'); if (accEl) $('.acc-s', accEl).innerHTML = `<span class="dotc" style="background:#d92d20"></span>${t.value.trim() ? esc(t.value.trim()) : 'Yes'}`; renderChart(); commitSoon(); }
   else if (f === 'color-custom' || f === 'color-hex') { // a colour from outside the palette
     const hex = parseColor(t.value);
     if (!hex) return;
@@ -1599,6 +1619,11 @@ function rowInput(r, t) {
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
+  if (f === 'blocked') {
+    if (t.checked) r.blocked = true; else delete r.blocked;
+    const note = $('[data-f="blockedNote"]', popEl); if (note) { note.disabled = !t.checked; if (t.checked) note.focus(); }
+    commit(); refresh(); return;
+  }
   if (f === 'assignee-add') { if (t.value.trim()) addAssignees(r.id, t.value); t.value = ''; return; }
   if (f === 'start' || f === 'end') {
     const d = isoToDay(t.value);
@@ -1700,6 +1725,7 @@ function popHtml() {
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
     // everything else sits in collapsible sections (open or closed as you left them), each with its current value on the right
+    secs.push(acc('blocked', 'Blocked', r.blocked ? `<span class="dotc" style="background:#d92d20"></span>${r.blockedNote && r.blockedNote.trim() ? esc(r.blockedNote.trim()) : 'Yes'}` : 'No', blockedHtml(r)));
     if (!n.hasKids && !n.milestone) secs.push(acc('progress', 'Progress', S.progress && S.progressSource === 'marker' ? 'Follows the marker' : r.progress == null ? 'Off' : Math.round(r.progress) + '%', progressHtml(r)));
     secs.push(whoSec);
     if (!n.hasKids) secs.push(acc('deps', 'Depends on', r.deps.length ? `${r.deps.length} ${r.deps.length === 1 ? 'item' : 'items'}` : 'None', depsHtml(n, pinfo, state.rows)));

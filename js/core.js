@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v94 · 12 Nov';
+const APP_VERSION = 'v95 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -307,7 +307,7 @@ const DEFAULT_SETTINGS = {
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'always', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
-  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -847,6 +847,21 @@ function unitCells(scale, sprintWeeks, a, b, anchor, rel) {
  * Build a renderer-independent list of drawing primitives for the chart.
  * Items: rect | line | text | diamond | poly. Items flagged ui/hit are only for the interactive view.
  */
+/** diagonal stripes ("/") clipped to a rounded rectangle, as plain line items every renderer already draws */
+function hatchLines(x, y, w, h, r, color, sw, gap) {
+  const out = [], rr = Math.max(0, Math.min(r, h / 2, w / 2)), step = gap * Math.SQRT2;
+  const inside = (px, py) => { const dx = Math.max(x + rr - px, 0, px - (x + w - rr)), dy = Math.max(y + rr - py, 0, py - (y + h - rr)); return dx * dx + dy * dy <= rr * rr + 0.01; };
+  for (let k = x + y + step / 2; k < x + w + y + h; k += step) {
+    let a = null, b = null;
+    for (let px = Math.max(x, k - y - h); px <= Math.min(x + w, k - y); px += 0.75) { // each stripe crosses the bar for at most its height
+      const py = k - px;
+      if (inside(px, py)) { if (!a) a = [px, py]; b = [px, py]; }
+    }
+    if (a && b && (b[0] - a[0] > 1)) out.push({ t: 'line', x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: color, sw });
+  }
+  return out;
+}
+
 function buildScene(state, opts) {
   opts = opts || {};
   const S = state.settings, rows = state.rows, font = S.font;
@@ -859,6 +874,26 @@ function buildScene(state, opts) {
   const noted = [];
   if (showChg) info.forEach(n => { if (n.changed && !n.isArea && String(n.row.changeNote || '').trim()) { n.noteNo = noted.length + 1; noted.push(n); } });
   const legendOn = showChg && S.changesLegend !== false && info.some(n => n.changed && !n.isArea);
+  // blocked items, and everything that (directly or down the line) waits on one that is not finished
+  const blockedIds = new Set(info.filter(n => n.row.blocked && !n.isArea).map(n => n.row.id));
+  const waitingIds = new Set();
+  if (blockedIds.size && S.blockedWaiting !== false) {
+    const done = n => n.row.progress != null && n.row.progress >= 100;
+    for (let pass = 0; pass < info.length; pass++) {
+      let grew = false;
+      info.forEach(n => { if (!n.isArea && !blockedIds.has(n.row.id) && !waitingIds.has(n.row.id) && !done(n) && (n.row.deps || []).some(d => blockedIds.has(d) || waitingIds.has(d))) { waitingIds.add(n.row.id); grew = true; } });
+      if (!grew) break;
+    }
+  }
+  const blockedOn = S.blockedLegend !== false && blockedIds.size > 0;
+  const bnoted = blockedOn ? info.filter(n => blockedIds.has(n.row.id) && String(n.row.blockedNote || '').trim()) : [];
+  const legendKey = legendOn || blockedOn;
+  const BLOCK_RED = '#d92d20';
+  const blockBadge = (cx, cy, r) => { // a red "!" disc ringed in the chart's background, so it reads on any bar colour
+    items.push({ t: 'rect', x: cx - r - 1.5, y: cy - r - 1.5, w: 2 * r + 3, h: 2 * r + 3, r: r + 1.5, fill: S.bgTransparent ? '#ffffff' : S.bg });
+    items.push({ t: 'rect', x: cx - r, y: cy - r, w: 2 * r, h: 2 * r, r, fill: BLOCK_RED });
+    items.push({ t: 'text', x: cx, y: cy + 0.3, text: '!', size: Math.max(8, Math.round(r * 1.55 * 2) / 2), weight: 800, fill: '#ffffff', anchor: 'middle' });
+  };
   // visual rows: normally one per item; when packing, sibling tasks that don't overlap in time share a row
   const pack = !!S.pack;
   let vrows = 0, run = null;
@@ -1027,8 +1062,8 @@ function buildScene(state, opts) {
   if (showBottom) y += headH;
   const ls = Math.max(10.5, Math.round((fs - 3) * 2) / 2), lh = Math.round(ls * 1.9);
   let legendY = 0;
-  if (legendOn) { legendY = y + 10; y += 10 + lh * (1 + noted.length) + 4; }
-  const Hc = Math.round(y + pad - (showBottom && !legendOn ? 8 : 0)); // what the content needs
+  if (legendKey) { legendY = y + 10; y += 10 + lh * (1 + (legendOn ? noted.length : 0) + bnoted.length) + 4; }
+  const Hc = Math.round(y + pad - (showBottom && !legendKey ? 8 : 0)); // what the content needs
   const H = fixedPx ? Math.max(Hc, fixedPx) : Hc;
 
   // time range
@@ -1433,6 +1468,7 @@ function buildScene(state, opts) {
         items.push({ t: 'diamond', cx: ox, cy: n.cy, r: rr, fill: mix(base, surface, 0.8), stroke: base });
       }
       items.push({ t: 'diamond', cx, cy: n.cy, r: rr, fill: mark, stroke: surface });
+      if (blockedIds.has(id)) blockBadge(cx + rr * 0.9, n.cy - rr * 0.9, Math.max(5.5, Math.min(7.5, rr * 0.8)));
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: n.h, hit: true, id, role: 'move' });
     } else {
       const tracked = S.progress && n.progress != null; // bars with progress switched off stay plain
@@ -1451,6 +1487,9 @@ function buildScene(state, opts) {
       }
       if (tracked) items.push({ t: 'rect', x: gx, y: by, w: gw, h, r, fill: shaded ? full : soft });
       if (pw > 0.5) items.push({ t: 'rect', x: gx, y: by, w: Math.min(gw, Math.max(pw, Math.min(2 * r, gw))), h, r, fill: shaded ? deep : full });
+      const darkBar = onColor(full) === '#ffffff';
+      if (blockedIds.has(id)) hatchLines(gx, by, gw, h, r, mix(full, darkBar ? '#ffffff' : '#0b1020', 0.3), 1.4, 6).forEach(l => items.push(l));
+      else if (waitingIds.has(id)) hatchLines(gx, by, gw, h, r, mix(full, darkBar ? '#ffffff' : '#0b1020', 0.16), 1, 9).forEach(l => items.push(l)); // waiting on a blocked item: a lighter, looser version
       const lsz = n.shrink || size;
       const on = c => { if (onColor(c) === '#ffffff') return '#ffffff'; const tint = mix(base, '#0b1020', 0.72); return contrast(c, tint) >= 7 ? tint : '#0b1020'; };
       // the user's choice applies to the bar colour itself; the pale 'remaining' part of a progress bar stays automatic
@@ -1483,6 +1522,7 @@ function buildScene(state, opts) {
         const own = namesOf(n), d = n.avD, g = (h - d) / 2, mg = S.corners === 'pill' ? g : Math.max(g, h * 0.2), ax = n.bx + n.bw - inset - mg - avSpan(own.length, d), fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
         avGroup(own, ax, by + h / 2, d, fillA, contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', '#ffffff', Math.max(7, Math.round(d * 0.38 * 2) / 2), true);
       }
+      if (blockedIds.has(id)) blockBadge(n.bx - 1, by, Math.max(5.5, Math.min(8, h * 0.34))); // on the bar's top-left corner, clear of its label and the arrows
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
       if (!n.hasKids) {
         if (tracked && !byMarker) {
@@ -1509,21 +1549,41 @@ function buildScene(state, opts) {
   });
 
   // ---- legend: how to read the change marks, then a numbered reason for each change that has one
-  if (legendOn) {
+  if (legendKey) {
     const k0 = palette[0], tint = mix(k0, surface, 0.5), ly = legendY + lh / 2;
     let lx = pad;
+    if (legendOn) {
     items.push({ t: 'line', x1: lx, y1: ly, x2: lx + 28, y2: ly, stroke: k0, sw: 2, dash: [4, 3] });
     items.push({ t: 'line', x1: lx, y1: ly - 4, x2: lx, y2: ly + 4, stroke: k0, sw: 1.5 }, { t: 'line', x1: lx + 28, y1: ly - 4, x2: lx + 28, y2: ly + 4, stroke: k0, sw: 1.5 });
     items.push({ t: 'text', x: lx + 36, y: ly, text: 'Original dates', size: ls, weight: 500, fill: muted, anchor: 'start' });
     lx += 36 + M('Original dates', ls, 500) + 24;
     items.push({ t: 'rect', x: lx, y: ly - 2, w: 28, h: 4, r: 2, fill: tint });
     items.push({ t: 'text', x: lx + 36, y: ly, text: 'Moved or extended', size: ls, weight: 500, fill: muted, anchor: 'start' });
-    noted.forEach((n, i) => {
+    lx += 36 + M('Moved or extended', ls, 500) + 24;
+    }
+    if (blockedOn) {
+      const sw = 28, sh = Math.round(ls * 1.1), stripe = mix(k0, '#0b1020', 0.3);
+      items.push({ t: 'rect', x: lx, y: ly - sh / 2, w: sw, h: sh, r: S.corners === 'square' ? 0 : sh / 2, fill: k0 });
+      hatchLines(lx, ly - sh / 2, sw, sh, S.corners === 'square' ? 0 : sh / 2, onColor(k0) === '#ffffff' ? mix(k0, '#ffffff', 0.3) : stripe, 1.4, 6).forEach(l => items.push(l));
+      items.push({ t: 'text', x: lx + sw + 8, y: ly, text: 'Blocked', size: ls, weight: 500, fill: muted, anchor: 'start' });
+      lx += sw + 8 + M('Blocked', ls, 500) + 24;
+      if (waitingIds.size) {
+        items.push({ t: 'rect', x: lx, y: ly - sh / 2, w: sw, h: sh, r: S.corners === 'square' ? 0 : sh / 2, fill: k0 });
+        hatchLines(lx, ly - sh / 2, sw, sh, S.corners === 'square' ? 0 : sh / 2, onColor(k0) === '#ffffff' ? mix(k0, '#ffffff', 0.16) : mix(k0, '#0b1020', 0.16), 1, 9).forEach(l => items.push(l));
+        items.push({ t: 'text', x: lx + sw + 8, y: ly, text: 'Waiting on a blocked item', size: ls, weight: 500, fill: muted, anchor: 'start' });
+      }
+    }
+    (legendOn ? noted : []).forEach((n, i) => {
       const cy = legendY + lh * (i + 1) + lh / 2, d = Math.round(ls * 1.5), b = baseOf(n);
       const was = n.milestone ? shortDate(n.bs) : shortDate(n.bs) + ' – ' + shortDate(n.be);
       items.push({ t: 'rect', x: pad, y: cy - d / 2, w: d, h: d, r: d / 2, fill: b });
       items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.noteNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
       items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
+    });
+    bnoted.forEach((n, i) => {
+      const cy = legendY + lh * ((legendOn ? noted.length : 0) + i + 1) + lh / 2, d = Math.round(ls * 1.5);
+      blockBadge(pad + d / 2, cy, d / 2 - 0.5);
+      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.blockedNote).trim(), W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
   }
 

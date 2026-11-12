@@ -412,3 +412,4 @@ body.resizing * { cursor: col-resize !important; }
   .grip { width: 28px; height: 40px; font-size: 14px; }
   .themes { grid-template-columns: repeat(8, 1fr); }
 }
+.check kbd { margin-left: 6px; color: var(--muted); font-size: 10px; }
