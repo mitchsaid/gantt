@@ -451,6 +451,17 @@ function defaultTaskDays() {
   d = Math.max(1, Math.min(d, Math.floor(span / 3)));
   return fixed ? d : Math.max(5, d); // with the timeline fitting the tasks there is no fixed span to size against, so five days at least
 }
+/** a new task shouldn't begin or end on a weekend: the start moves on to Monday; an end on Saturday goes back to Friday and one on Sunday on to Monday (Friday if Monday would leave a fixed timeline), so the length changes by a day at most */
+function snapToWorkdays(s, e, hi) {
+  const weekend = d => dow(d) >= 5;
+  if (weekend(s)) { const mon = nextWorkday(s); if (mon <= e) s = mon; else { s = e = s - (dow(s) - 4); } }
+  if (weekend(e)) {
+    const mon = nextWorkday(e), fri = e - (dow(e) - 4);
+    if (dow(e) === 5) { if (fri >= s) e = fri; } // Saturday: back to Friday
+    else e = (hi == null || mon <= hi) ? mon : (fri >= s ? fri : e); // Sunday: on to Monday
+  }
+  return [s, e];
+}
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
@@ -461,7 +472,8 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
     ref = info.length ? Math.max(...info.map(n => n.end)) : mondayOf(todayDay()) - 1;
     const s = nextWorkday(ref + 1);
     const area = newRow({ level: 0, name: 'New area' });
-    rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + defaultTaskDays() - 1 }));
+    const [s2, e2] = snapToWorkdays(s, s + defaultTaskDays() - 1);
+    rows.push(area, newRow({ level: 1, name: 'New task', start: s2, end: e2 }));
     sel = area.id; commit(); refresh(); show(area.id);
     return;
   }
@@ -486,6 +498,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
     const days = defaultTaskDays();
     row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + days - 1; row.name = '';
     if (S0.rangeMode === 'fixed' && S0.rangeStart != null && S0.rangeEnd != null && row.end > S0.rangeEnd) { row.end = S0.rangeEnd; row.start = Math.max(S0.rangeStart, row.end - days + 1); }
+    [row.start, row.end] = snapToWorkdays(row.start, row.end, S0.rangeMode === 'fixed' && S0.rangeEnd != null ? S0.rangeEnd : null);
   }
   rows.splice(at, 0, row);
   if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
