@@ -1520,6 +1520,10 @@ document.addEventListener('keydown', e => {
   else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
   else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
   else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
+  else if (!inField && !mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && state.rows.length && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // ↑ / ↓ move the selection through the rows; Shift extends it
+    e.preventDefault();
+    stepSelection(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+  }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
     if (e.shiftKey) { // Shift + → grows the selected task or subtask by a day, Shift + ← shrinks it (never below one day)
@@ -2049,6 +2053,26 @@ function doPasteAdd() {
 $$('[data-paste]').forEach(b => b.addEventListener('click', () => { const r = b.getBoundingClientRect(); openPop('paste', r, null, r.left); }));
 
 // ---------------------------------------------------------------- selecting several, copy & paste
+/** move the selection one row up or down (the way the chart is listed); with `extend`, grow or shrink a range from where it started */
+function stepSelection(dir, extend) {
+  const rows = state.rows, ids = selIds(), idx = ids.map(rowIndex).filter(i => i >= 0).sort((x, y) => x - y);
+  const wasPop = pop && pop.kind === 'row';
+  let target;
+  if (!idx.length) target = dir > 0 ? 0 : rows.length - 1; // nothing selected: start at the top (↓) or the bottom (↑)
+  else if (extend) {
+    const anchor = rowIndex(sel), lo = idx[0], hi = idx[idx.length - 1];
+    const cursor = idx.length < 2 ? anchor : (anchor === lo ? hi : lo);
+    target = Math.max(0, Math.min(rows.length - 1, cursor + dir));
+  } else target = Math.max(0, Math.min(rows.length - 1, (dir > 0 ? idx[idx.length - 1] : idx[0]) + dir));
+  const id = rows[target].id;
+  if (extend && idx.length) {
+    if (id === sel) { multi = new Set(); closePop(); renderChart(); renderOutline(); syncAddNote(); }
+    else multiSelect(id, 'range');
+  } else { multi = new Set(); if (sel === id) { closePop(); renderChart(); renderOutline(); syncAddNote(); } else select(id); }
+  const el = $(`#chart [data-role="row"][data-id="${id}"]`) || $(`#chart [data-role="move"][data-id="${id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (wasPop && !extend && el) { const bar = $(`#chart [data-role="move"][data-id="${id}"]`) || el, r = bar.getBoundingClientRect(); openPop('row', r, id, r.left); } // an open popover follows you down the list
+}
 /** shift-click selects a range, ctrl/⌘-click adds or removes one */
 function multiSelect(id, mode) {
   const cur = selIds();
