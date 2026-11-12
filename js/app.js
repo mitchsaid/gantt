@@ -1005,6 +1005,8 @@ const DESIGN = [
     { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
     { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
+    { k: 'periodMonths', type: 'seg', label: 'Month names', sub: true, opts: [['full', 'Full'], ['short', 'Abbreviated']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
+    { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, opts: [['always', 'Always'], ['change', 'When it changes'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
     { k: 'dateFormat', type: 'select', label: 'Date format', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
     { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
     { k: '_dateEx', type: 'info', id: 'date-ex' },

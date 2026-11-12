@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v87 · 12 Nov';
+const APP_VERSION = 'v88 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -306,7 +306,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
+  textCase: 'default', periodMonths: 'full', periodYear: 'always', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
   daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
@@ -1223,11 +1223,16 @@ function buildScene(state, opts) {
     let [yy, mm] = ymd(rs);
     const byYear = S.scale === 'months' || S.scale === 'quarters';
     let s = byYear ? toDay(yy, 0, 1) : toDay(yy, mm, 1);
+    const multiYear = ymd(rs)[0] !== ymd(Math.max(rs, re - 1))[0];
+    let prevY = null;
+    const monthName = i => (S.periodMonths === 'short' ? MONTHS[i] : MONTHS_FULL[i]); // "Oct" or "October"
     while (s < re) {
       if (byYear) yy++; else mm++;
       const e = byYear ? toDay(yy, 0, 1) : toDay(yy, mm, 1);
       const [sy, sm] = ymd(s);
-      segs.push({ s: Math.max(s, rs), e: Math.min(e, re), label: byYear ? String(sy) : MONTHS_FULL[sm] + ' ' + sy, short: byYear ? String(sy) : MONTHS[sm], real: s >= rs });
+      const showY = S.periodYear === 'never' ? false : S.periodYear === 'change' ? multiYear && sy !== prevY : true; // the year on every month, never, or only at the start and where a new year begins
+      prevY = sy;
+      segs.push({ s: Math.max(s, rs), e: Math.min(e, re), label: byYear ? String(sy) : showY ? monthName(sm) + ' ' + sy : monthName(sm), short: byYear ? String(sy) : MONTHS[sm], real: s >= rs });
       s = e;
     }
   }
