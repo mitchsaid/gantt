@@ -832,10 +832,28 @@ svg.addEventListener('pointermove', e => {
       if (pack && drag.block.length === 1) {
         const me = scene.info.find(n => n.row.id === drag.id);
         const at = scene.info.filter(n => !n.lane && n.vrow !== me.vrow && py >= n.y && py < n.y + n.h);
-        const over = at.find(n => !n.hasKids && n.parent === me.parent);
+        // the lines (visual rows) this task's siblings occupy: the lower part of a line, or the gap under it, means "a new line below it"
+        const sibs = scene.info.filter(n => !n.lane && !n.hasKids && n.parent === me.parent && n.level === me.level);
+        const lines = [];
+        sibs.forEach(n => { if (!lines.some(l => l.v === n.vrow)) lines.push({ v: n.vrow, y: n.y, h: n.h }); });
+        lines.sort((a, b) => a.y - b.y);
+        let nl = null;
+        for (let q = 0; q < lines.length && nl == null; q++) {
+          const R = lines[q], nx = lines[q + 1];
+          if (py >= R.y + R.h * 0.7 && py < R.y + R.h) nl = R;
+          else if (nx && py >= R.y + R.h && py < nx.y) nl = R;
+        }
+        const lastLine = lines[lines.length - 1];
+        if (nl == null && lastLine && py >= lastLine.y + lastLine.h && py < lastLine.y + lastLine.h * 2) nl = lastLine; // just below the last line
+        const alone = sibs.filter(n => n.vrow === me.vrow).length === 1;
+        if (nl && nl.v === me.vrow && alone) nl = null; // already on a line of its own
+        drag.newLineAfter = nl ? nl.v : null;
+        const over = nl ? null : at.find(n => !n.hasKids && n.parent === me.parent);
         drag.toRow = over ? over.vrow : null; drag.toRowY = over ? over.y : null;
-        drag.reorder = !over && at.length > 0 && at.every(n => n.parent !== me.parent || n.hasKids);
-        if (drag.reorder) reorderTarget(dx, py); else drag.dropY = null;
+        drag.reorder = !over && !nl && at.length > 0 && at.every(n => n.parent !== me.parent || n.hasKids);
+        if (drag.reorder) reorderTarget(dx, py);
+        else if (nl) { drag.dropY = nl.y + nl.h; drag.dropLevel = me.level; drag.dropBox = null; }
+        else drag.dropY = null;
       }
     }
   }
@@ -864,7 +882,14 @@ function endDrag() {
       const me = scene.info.find(n => n.row.id === d.id);
       const mates = scene.info.filter(n => n.vrow === d.toRow && n !== me).sort((a, b) => a.start - b.start);
       const before = mates.filter(n => n.end < me.start).pop();
+      me.row.newLine = false; // it joins that line again
       if (mates.length) moveBlock(me.i, before ? before.i + 1 : mates[0].i, mates[0].level);
+    } else if (d.role === 'move' && d.newLineAfter != null && d.moved) {
+      // a line of its own, listed after everything already on the line it was dropped under (so those keep their place)
+      const me = scene.info.find(n => n.row.id === d.id);
+      const mates = scene.info.filter(n => n.vrow === d.newLineAfter && n !== me);
+      me.row.newLine = true;
+      if (mates.length) { const lastMate = mates.reduce((a, b) => (b.i > a.i ? b : a)); moveBlock(me.i, blockEnd(state.rows, lastMate.i), lastMate.level); }
     }
     commit(); refresh();
     if (d.id) { const el = $(`.orow[data-id="${d.id}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }

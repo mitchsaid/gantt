@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v68 · 12 Nov';
+const APP_VERSION = 'v69 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -851,7 +851,7 @@ function buildScene(state, opts) {
     const mark = tr => { tr.end = n.milestone ? holdsUntil(n) : n.end; tr.hold = holdsUntil(n); };
     if (pack && !n.hasKids && run && run.parent === n.parent && run.level === n.level) {
       // first choice: continue the row of the task listed just before it; otherwise the first row with room
-      let t = run.tr[run.last].end < n.start ? run.last : run.tr.findIndex(x => x.hold < n.start);
+      let t = n.row.newLine ? -1 : run.tr[run.last].end < n.start ? run.last : run.tr.findIndex(x => x.hold < n.start); // `newLine`: the user put it on a line of its own
       if (t < 0) { t = run.tr.length; run.tr.push({ row: vrows++ }); }
       mark(run.tr[t]); n.vrow = run.tr[t].row; run.last = t;
     } else {
