@@ -391,14 +391,14 @@ function askDelete(id) {
   ]);
 }
 /** switch an item between area, task and milestone */
-function setType(id, to) {
+function setType(id, to, quiet) {
   const rows = state.rows, i = rowIndex(id);
   if (i < 0) return;
   const info = derive(rows), n = info[i], r = n.row, j = blockEnd(rows, i);
   const isArea = n.isArea;
   if (to === 'area') {
     if (isArea) return;
-    if (n.level === 0 && n.hasKids) { delete r.keepTask; commit(); refresh(); return; } // a top-level task with subtasks becomes an area as it is
+    if (n.level === 0 && n.hasKids) { delete r.keepTask; if (!quiet) { commit(); refresh(); } return; } // a top-level task with subtasks becomes an area as it is
     delete r.keepTask;
     const d = r.level;
     for (let k = i; k < j; k++) rows[k].level -= d; // to the top level, taking its subtasks along
@@ -415,7 +415,20 @@ function setType(id, to) {
     if (r.type === 'milestone') r.end = r.start; else if (was === 'milestone' || r.end < r.start) r.end = r.start + 4;
   }
   normalizeLevels(rows);
+  if (!quiet) { commit(); refresh(); }
+}
+/** the selection (or one item) becomes an area, a task or a milestone */
+function setTypes(ids, to) {
+  const before = JSON.stringify(state.rows.map(r => [r.id, r.level, r.type]));
+  ids.forEach(id => setType(id, to, true));
+  if (JSON.stringify(state.rows.map(r => [r.id, r.level, r.type])) === before) { toast(to === 'milestone' ? 'An item with subtasks can’t be a milestone — move them out first' : 'Nothing to change'); return; }
   commit(); refresh();
+  toast(`${ids.length === 1 ? 'Item' : ids.length + ' items'} made ${to === 'area' ? 'an area' : to === 'task' ? 'a task' : 'a milestone'} — Undo reverts`);
+}
+/** the Area / Task / Milestone switch, in the Plan panel's details and in the popover on the item */
+function typeSegHtml(n) {
+  const kind = n.isArea ? 'area' : n.milestone ? 'milestone' : 'task';
+  return `<div class="seg" data-f="type">${[['area', 'Area', 'A'], ['task', 'Task', 'T'], ['milestone', 'Milestone', 'M']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !n.isArea ? ' disabled title="Remove its subtasks first"' : ` title="${o[1]} (press ${o[2]})"`}>${o[1]}</button>`).join('')}</div>`;
 }
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
@@ -486,7 +499,7 @@ function detailHtml(n, info, rows) {
   let html = '';
   html += `<div class="detail" data-id="${r.id}">`;
   const isArea = n.isArea, kind = isArea ? 'area' : n.milestone ? 'milestone' : 'task';
-  html += `<div class="seg" data-f="type">${[['area', 'Area'], ['task', 'Task'], ['milestone', 'Milestone']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !isArea ? ' disabled title="Remove its subtasks first"' : ''}>${o[1]}</button>`).join('')}</div>`;
+  html += typeSegHtml(n);
   if (n.hasKids) html += `<p class="note">${fmtRange(n)}${n.progress == null ? '' : ' · ' + Math.round(n.progress) + '%'} — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
   else {
     html += n.milestone
@@ -1415,6 +1428,10 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
+  else if (!inField && !mod && !e.altKey && !e.shiftKey && selIds().length && /^[atm]$/i.test(e.key) && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // A / T / M: make the selection an area, a task or a milestone
+    e.preventDefault();
+    setTypes(selIds(), { a: 'area', t: 'task', m: 'milestone' }[e.key.toLowerCase()]);
+  }
   else if (!inField && !mod && !e.altKey && e.key === 'Enter' && !state.rows.length && !pop && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // nothing on the chart yet: Enter makes the first task
     e.preventDefault();
     commit(); addRow('task', null, false, true);
@@ -1576,7 +1593,7 @@ function popHtml() {
     const n = pinfo.find(x => x.row.id === pop.id);
     if (!n) return '';
     const r = n.row;
-    let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">`;
+    let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">` + typeSegHtml(n);
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
@@ -1666,6 +1683,8 @@ popEl.addEventListener('click', e => {
   }
   if (e.target.closest('[data-act="assignee-clear"]') && pop && pop.kind === 'row') { clearAssignee(pop.id); return; }
   if (e.target.closest('[data-act="progress-clear"]') && pop && pop.kind === 'row') { setRowProgress(pop.id, null); return; }
+  const tb = e.target.closest('.seg[data-f="type"] button');
+  if (tb && pop && pop.kind === 'row') { if (!tb.classList.contains('on') && !tb.disabled) setTypes([pop.id], tb.dataset.v); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
   const sw = e.target.closest('.sw');
