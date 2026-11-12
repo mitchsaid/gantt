@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v70 · 12 Nov';
+const APP_VERSION = 'v71 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -264,7 +264,7 @@ function rowBaseColor(info, n, palette) {
   if (c != null) return palette[c % palette.length];
   if (n.milestone) return palette[palette.length - 1];
   const bars = palette.length >= 3 ? palette.length - 1 : palette.length;
-  return palette[n.rootIdx % bars];
+  return palette[(n.colorIdx != null ? n.colorIdx : n.rootIdx) % bars];
 }
 
 // ---------------------------------------------------------------- canvas
@@ -290,7 +290,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -860,6 +860,19 @@ function buildScene(state, opts) {
       if (run) mark(run.tr[0]);
     }
   });
+  // "share a colour by row": every line takes the next palette colour, so tasks on the same line (when in sequence) match; subtasks follow their task
+  const cidx = {};
+  if (S.colorBy === 'row') {
+    const line = new Map();
+    info.forEach(n => {
+      if (n.milestone || n.isArea) return;
+      if (n.sub && n.parent >= 0 && info[n.parent].colorIdx != null) { n.colorIdx = info[n.parent].colorIdx; return; }
+      if (!line.has(n.vrow)) line.set(n.vrow, line.size);
+      n.colorIdx = line.get(n.vrow);
+    });
+    info.forEach(n => { if (n.isArea) { const first = info.slice(n.i + 1, blockEnd(rows, n.i)).find(c => c.colorIdx != null); n.colorIdx = first ? first.colorIdx : 0; } }); // an area wears its first line's colour
+    info.forEach(n => { if (n.colorIdx != null) cidx[n.row.id] = n.colorIdx; });
+  }
   const cv = canvasOf(S), W = Math.round(cv.w * PX_PER_IN);
   const fixedPx = S.fit === 'fixed' ? Math.round(cv.h * PX_PER_IN) : null; // a fixed canvas keeps its height; the rows are sized to fill it
   const pad = 40;
@@ -1507,7 +1520,7 @@ function buildScene(state, opts) {
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items, ppd, range: [rs, re], info, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

@@ -513,6 +513,7 @@ function renderOutline() {
   if (act && outline.contains(act) && act.closest('[data-id]')) keep = { id: act.closest('[data-id]').dataset.id, f: act.dataset.f || (act.classList.contains('nm') ? 'nm' : null), a: act.selectionStart, b: act.selectionEnd };
   const rows = state.rows, info = derive(rows), S = state.settings;
   const palette = paletteOf(S).colors;
+  if (S.colorBy === 'row' && scene && scene.cidx) info.forEach(n => { if (scene.cidx[n.row.id] != null) n.colorIdx = scene.cidx[n.row.id]; }); // the same colours as the chart
   const who = Array.from(new Set(rows.map(r => r.assignee).filter(Boolean)));
   const picked = new Set(selIds());
   let html = '';
@@ -998,6 +999,8 @@ const DESIGN = [
   ]],
   ['colour', 'Colour', [
     { type: 'palette' },
+    { k: 'colorBy', type: 'seg', label: 'Share a colour by', opts: [['group', 'Area'], ['row', 'Row']] },
+    { k: '_colorByNote', type: 'note', label: 'Area: an area and everything in it share a colour. Row: each line takes the next colour, and tasks sharing a line (Tasks → Row layout → In sequence) match.', when: s => s.colorBy === 'row' || s.pack },
     { k: 'bgTransparent', type: 'toggle', label: 'Transparent background' },
     { k: 'bg', type: 'color', label: 'Background', when: s => !s.bgTransparent },
     { k: 'textMode', type: 'seg', label: 'Text colour', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
