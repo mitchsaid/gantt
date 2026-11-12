@@ -81,6 +81,7 @@ function sanitize(st) {
     if (row.baseline && Number.isFinite(+row.baseline.s) && Number.isFinite(+row.baseline.e)) row.baseline = { s: Math.round(+row.baseline.s), e: Math.round(+row.baseline.e) }; else delete row.baseline;
     if (typeof row.changeNote === 'string' && row.changeNote.trim()) row.changeNote = row.changeNote.slice(0, 140); else delete row.changeNote;
     if (!['green', 'amber', 'red'].includes(row.status)) delete row.status; // RAG: on track / at risk / off track
+    if (row.key === true) row.key = true; else delete row.key; // a key milestone
     if (row.blocked === true) row.blocked = true; else delete row.blocked; // flagged as blocked, with an optional reason for the legend
     if (typeof row.blockedNote === 'string' && row.blockedNote.trim()) row.blockedNote = row.blockedNote.slice(0, 140); else delete row.blockedNote;
     row.deps = Array.isArray(row.deps) ? row.deps.map(String) : [];
@@ -556,6 +557,7 @@ function setRowStatus(ids, v) {
   if (v && !state.settings.showStatus) state.settings.showStatus = true;
   commit(); refresh();
 }
+const keyHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="keyms"${r.key ? ' checked' : ''}> Show in the key milestones strip</label><p class="note">The strip sits above the chart. If none is ticked it shows every milestone.</p></div>`;
 const blockedHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="blocked"${r.blocked ? ' checked' : ''}> This is blocked <kbd class="kb">Alt B</kbd></label><input class="inp" data-f="blockedNote" value="${esc(r.blockedNote || '')}" placeholder="What is it waiting on? Shown in the legend" maxlength="140" autocomplete="off"${r.blocked ? '' : ' disabled'}></div>`;
 /** Alt+B: flag the selected tasks as blocked (or clear it when they all are already) */
 function toggleBlocked(ids) {
@@ -1049,6 +1051,13 @@ const DESIGN = [
     { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
     { type: 'head', label: 'Milestones' },
     { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
+    { type: 'head', label: 'Calendar' },
+    { k: 'showDaysOff', type: 'toggle', label: 'Shade non-working days' },
+    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true },
+    { k: '_offNote', type: 'note', label: 'Holidays, freezes, shutdowns: shaded on the chart, left out of working-day counts in the item popover, and never counted in “Days left”. Weekends are shaded under Gridlines (days scale).' },
+    { type: 'head', label: 'Key milestones' },
+    { k: 'keyStrip', type: 'toggle', label: 'Key milestones strip' },
+    { k: '_keyNote', type: 'note', label: 'A strip above the chart with the milestones you tick “Key milestone” on (every milestone if none is ticked), on the same time scale.', when: s => s.keyStrip },
     { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
   ]],
   ['tasks', 'Tasks', [
@@ -1093,7 +1102,6 @@ const DESIGN = [
     { k: 'daysLeft', type: 'toggle', label: 'Days left' },
     { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
     { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, when: s => s.daysLeft || s.planDaysLeft },
     { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
     { type: 'head', label: 'Status' },
     { k: 'showStatus', type: 'toggle', label: 'Green / amber / red dots' },
@@ -1636,6 +1644,11 @@ function rowInput(r, t) {
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
+  if (f === 'keyms') {
+    if (t.checked) r.key = true; else delete r.key;
+    if (t.checked && !state.settings.keyStrip) { state.settings.keyStrip = true; syncDesign(); toast('The key milestones strip is now shown above the chart'); }
+    commit(); refresh(); return;
+  }
   if (f === 'blocked') {
     if (t.checked) r.blocked = true; else delete r.blocked;
     const note = $('[data-f="blockedNote"]', popEl); if (note) { note.disabled = !t.checked; if (t.checked) note.focus(); }
@@ -1741,7 +1754,7 @@ function popHtml() {
     }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
-    else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}`;
+    else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}<p class="note wd">${workingDays(r.start, r.end, S.daysOff)} working days${S.daysOff.length ? ' (weekends and days off left out)' : ' (weekends left out)'}</p>`;
     // everything else sits in collapsible sections (open or closed as you left them), each with its current value on the right
     secs.push(statSec);
     secs.push(acc('blocked', 'Blocked', r.blocked ? `<span class="dotc" style="background:#d92d20"></span>${r.blockedNote && r.blockedNote.trim() ? esc(r.blockedNote.trim()) : 'Yes'}` : 'No', blockedHtml(r)));
@@ -1750,6 +1763,7 @@ function popHtml() {
     if (!n.hasKids) secs.push(acc('deps', 'Depends on', r.deps.length ? `${r.deps.length} ${r.deps.length === 1 ? 'item' : 'items'}` : 'None', depsHtml(n, pinfo, state.rows)));
     const ch = changeHtml(n);
     if (ch) { const dd = n.start - n.bs, de = n.end - n.be; secs.push(acc('change', 'Changed from original', n.milestone ? `${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}` : (de ? `ends ${Math.abs(de)}d ${de > 0 ? 'later' : 'earlier'}` : `starts ${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}`), ch)); }
+    if (n.milestone) secs.push(acc('keyms', 'Key milestone', r.key ? 'Yes' : S.keyStrip ? 'No' : 'Off', keyHtml(r)));
     if (n.milestone) secs.push(acc('ms', 'Sits in its day', { '': 'Default', auto: 'Auto', start: 'Start', middle: 'Middle', end: 'End' }[r.msAlign || ''], msHtml(r)));
     secs.push(colourSec);
     return h + `<div class="accs">${secs.join('')}</div>` + popFootHtml(n, state.rows);

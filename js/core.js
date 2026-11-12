@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v96 · 12 Nov';
+const APP_VERSION = 'v98 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -307,7 +307,7 @@ const DEFAULT_SETTINGS = {
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
-  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, keyStrip: false, showDaysOff: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -387,6 +387,12 @@ function titleCase(s) {
 }
 const applyCase = (s, mode) => (mode === 'upper' ? String(s).toUpperCase() : mode === 'title' ? titleCase(s) : s);
 /** days after `from` up to and including `to`; optionally only Monday–Friday */
+/** the days in a span that are worked: not a weekend, not inside a non-working range (holiday, freeze) */
+function workingDays(a, b, off) {
+  let n = 0;
+  for (let d = a; d <= b; d++) { if (dow(d) >= 5) continue; if (off && off.some(r => d >= r.from && d <= r.to)) continue; n++; }
+  return n;
+}
 function daysLeftBetween(from, to, weekdaysOnly, off) { // `off`: [{ from, to }] days that never count (holidays, freezes)
   if (to <= from) return 0;
   const ranges = off && off.length ? off : null;
@@ -1096,6 +1102,27 @@ function buildScene(state, opts) {
     }
     y += tsz + 26;
   }
+  // key milestones: a strip of flagged milestones (all of them if none is flagged) on the chart's own time scale, above everything else
+  const keyMs = S.keyStrip ? (info.some(n => n.milestone && n.row.key) ? info.filter(n => n.milestone && n.row.key) : info.filter(n => n.milestone)) : [];
+  const kmS = Math.max(10.5, Math.round((fs - 2) * 2) / 2), kmLine = Math.round(kmS * 1.35), kmHead = Math.round(kmS * 1.7), kmDia = Math.round(kmS * 2.1);
+  const kmLabel = n => ({ name: nameOf(n), date: shortDate(n.start) });
+  const kmWidth = n => { const l = kmLabel(n); return Math.max(M(l.name, kmS, 600), M(l.date, kmS - 1, 500)); };
+  let stripY = 0, stripH = 0, kmLanes = 1;
+  if (keyMs.length) {
+    // how many rows of labels are needed, judged on an estimated scale (the real one is not known until the time range is)
+    const ds = info.map(n => n.start), de = info.map(n => n.end), fx = S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null;
+    const e0 = Math.min(...ds, fx ? S.rangeStart : Infinity), e1 = Math.max(...de, fx ? S.rangeEnd : -Infinity) + 1, pe = (x1 - x0) / Math.max(1, e1 - e0);
+    const ends = [];
+    keyMs.slice().sort((a, b) => a.start - b.start).forEach(n => {
+      const lx = x0 + (n.start - e0 + 0.5) * pe - 4;
+      let k = ends.findIndex(e => lx >= e + 10);
+      if (k < 0) { k = ends.length; ends.push(-Infinity); }
+      ends[k] = lx + kmWidth(n);
+    });
+    kmLanes = Math.min(4, Math.max(1, ends.length));
+    stripY = y; stripH = kmHead + kmDia + kmLanes * 2 * kmLine + 14;
+    y += stripH;
+  }
   const lane = S.todayLine || S.planDaysLeft ? Math.round(26 * kk) : 0;
   const laneY = y;
   y += lane;
@@ -1140,6 +1167,8 @@ function buildScene(state, opts) {
     addKey('Blocked', (lx, ly) => stripeKey(lx, ly, true), kSw);
     if (waitingIds.size) addKey('Waiting on a blocked item', (lx, ly) => stripeKey(lx, ly, false), kSw);
   }
+  const offShown = S.showDaysOff !== false && (S.daysOff || []).length && info.length ? (() => { const a = Math.min(...info.map(n => n.start)), b = Math.max(...info.map(n => n.end)); return S.daysOff.some(r => r.to >= a && r.from <= b); })() : false;
+  if (offShown) addKey('Non-working day', (lx, ly) => items.push({ t: 'rect', x: lx, y: ly - kSh / 2, w: 12, h: kSh, r: 0, fill: mix(text, surface, 0.9) }), 12);
   usedStats.forEach(c => addKey(STATUS[c][0], (lx, ly) => items.push({ t: 'rect', x: lx, y: ly - kSh * 0.3, w: kSh * 0.6, h: kSh * 0.6, r: kSh * 0.3, fill: STATUS[c][1] }), kSh * 0.6));
   if (critIds.size) addKey('Critical path', (lx, ly) => { items.push({ t: 'rect', x: lx, y: ly - kSh / 2 - 1.5, w: kSw, h: kSh + 3, r: kRad + 1.5, fill: CRIT }); items.push({ t: 'rect', x: lx + 1.5, y: ly - kSh / 2, w: kSw - 3, h: kSh, r: kRad, fill: palette[0] }); }, kSw);
   const keyRows = [];
@@ -1335,6 +1364,10 @@ function buildScene(state, opts) {
   if (S.stripes) info.filter((n, i) => !n.lane && info.findIndex(o => o.vrow === n.vrow) === i).forEach((n, i) => { if (i % 2 === 0) items.push({ t: 'rect', x: pad - 8, y: n.y, w: W - 2 * pad + 16, h: n.h, r: 4, fill: stripe }); });
   if (S.weekends && S.scale === 'days' && ppd >= 3) {
     for (let d = rs; d < re; d++) if (dow(d) === 5) items.push({ t: 'rect', x: X(d), y: bodyY, w: Math.min(2, re - d) * ppd, h: bodyEnd - bodyY, r: 0, fill: stripe });
+  }
+  if (S.showDaysOff !== false && (S.daysOff || []).length) { // holidays, freezes and other non-working days
+    const offTint = mix(text, surface, 0.9);
+    S.daysOff.forEach(r => { const a = Math.max(r.from, rs), b = Math.min(r.to + 1, re); if (b > a) items.push({ t: 'rect', x: X(a), y: bodyY, w: Math.max(2, (b - a) * ppd), h: bodyEnd - bodyY, r: 0, fill: offTint }); });
   }
   // top tier segments
   const segs = [];
@@ -1637,6 +1670,25 @@ function buildScene(state, opts) {
     });
     if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + n.bh / 2, base);
   });
+
+  // ---- key milestones strip
+  if (keyMs.length) {
+    const ly = stripY + kmHead + kmDia / 2, laneH = 2 * kmLine, ends = [];
+    items.push({ t: 'text', x: pad, y: stripY + kmHead / 2, text: 'KEY MILESTONES', size: Math.max(9, kmS - 2), weight: 700, fill: muted, anchor: 'start' });
+    items.push({ t: 'line', x1: x0, y1: ly, x2: x1, y2: ly, stroke: gridStrong, sw: 1.5 });
+    keyMs.slice().sort((a, b) => a.start - b.start).forEach(n => {
+      const cx = msX(n), w = kmWidth(n), l = kmLabel(n), tx = Math.max(pad, Math.min(cx - 4, W - pad - w));
+      let k = ends.findIndex(e => tx >= e + 10);
+      if (k < 0) k = ends.length < kmLanes ? ends.length : ends.indexOf(Math.min(...ends));
+      ends[k] = tx + w;
+      const top = stripY + kmHead + kmDia + 2 + k * laneH;
+      if (k > 0 || Math.abs(tx - (cx - 4)) > 1) items.push({ t: 'line', x1: cx, y1: ly + 7, x2: cx, y2: top + kmLine * 0.5, stroke: gridStrong, sw: 1 });
+      items.push({ t: 'diamond', cx, cy: ly, r: 7, fill: baseOf(n), stroke: surface });
+      if (statusOn && n.stat) statDot(cx + 6, ly + 6, 3.5, n.stat);
+      items.push({ t: 'text', x: tx, y: top + kmLine * 0.5, text: l.name, size: kmS, weight: 600, fill: text, anchor: 'start' });
+      items.push({ t: 'text', x: tx, y: top + kmLine * 1.5, text: l.date, size: kmS - 1, weight: 500, fill: muted, anchor: 'start' });
+    });
+  }
 
   // ---- legend: how to read the marks, then a numbered reason for each change that has one, then the reasons things are blocked
   if (legendKey) {
