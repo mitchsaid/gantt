@@ -515,6 +515,16 @@ function editOnChart(id) {
   if (label) editRowName(id, rect);
   else { openPop('row', rect, id); const inp = $('#pop-name'); if (inp) { inp.focus(); inp.select(); } }
 }
+/** typing on a selected item starts its name afresh with what was typed (in the popover's name box if that is open, else right where the name is drawn) */
+function typeToRename(id, ch) {
+  let inp = null;
+  if (pop && pop.kind === 'row' && pop.id === id) { inp = $('#pop-name'); if (inp) inp.focus(); }
+  else { editOnChart(id); inp = $('.inline-edit') || $('#pop-name'); }
+  if (!inp) return;
+  inp.value = ch;
+  inp.setSelectionRange(ch.length, ch.length);
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
 function duplicateRow(id) {
   const rows = state.rows, i = rowIndex(id);
   if (i < 0) return;
@@ -1479,6 +1489,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     setTypes(selIds(), { KeyA: 'area', KeyT: 'task', KeyM: 'milestone' }[e.code]);
   }
+  else if (!inField && !mod && !e.altKey && !e.isComposing && e.key.length === 1 && e.key !== ' ' && selIds().length === 1 && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col, .pop')))) { // typing with one item selected renames it
+    e.preventDefault();
+    typeToRename(selIds()[0], e.key);
+  }
+  else if (!inField && !mod && !e.altKey && e.key === 'F2' && selIds().length === 1) { e.preventDefault(); editOnChart(selIds()[0]); } // F2: edit the name, keeping what is there
   else if (!inField && !mod && !e.altKey && e.key === 'Enter' && !state.rows.length && !pop && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // nothing on the chart yet: Enter makes the first task
     e.preventDefault();
     commit(); addRow('task', null, false, true);
