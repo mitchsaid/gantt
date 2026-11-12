@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v71 · 12 Nov';
+const APP_VERSION = 'v72 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -290,7 +290,7 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,

@@ -1141,7 +1141,10 @@ function setSetting(k, v, soon) {
   if (k === 'progressMode') { // Off / typed per bar / read off the date marker
     S.progress = v !== 'off';
     if (v !== 'off') S.progressSource = v;
-    if (v === 'marker') { S.todayLine = true; ensureMarkerInView(); } // progress up to the marker needs the marker, and somewhere sensible to put it
+    if (v === 'marker') { // progress up to the marker needs the marker, and somewhere sensible to put it
+      if (!S.todayLine) S.markerAuto = true; // remember that progress switched it on, so switching progress off takes it away again
+      S.todayLine = true; ensureMarkerInView();
+    } else if (S.markerAuto && S.todayLine) { S.todayLine = false; S.markerAuto = false; }
     refresh(); commit();
     return;
   }
@@ -1150,6 +1153,7 @@ function setSetting(k, v, soon) {
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
   if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
   if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
+  if (k === 'todayLine') S.markerAuto = false; // the marker is now something the user chose
   if (k === 'showChanges' && v && !hasBaseline()) setBaseline(); // the first time, the baseline is the plan as it stands
   if (k === 'progressSource' && v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
   state.settings[k] = v;
