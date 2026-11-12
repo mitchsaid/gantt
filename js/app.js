@@ -439,14 +439,14 @@ function typeSegHtml(n) {
   const alt = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '') ? '⌥' : 'Alt';
   return `<div class="seg" data-f="type">${[['area', 'Area', 'A'], ['task', 'Task', 'T'], ['milestone', 'Milestone', 'M']].map(o => `<button data-v="${o[0]}" class="${o[0] === kind ? 'on' : ''}"${o[0] === 'milestone' && n.hasKids && !n.isArea ? ' disabled title="Remove its subtasks first"' : ` title="${o[1]} (${alt}+${o[2]})"`}>${o[1]}</button>`).join('')}</div>`;
 }
-/** how long a new task is by default: about an eighth of the timeline, so a short timeline gets short tasks and a long one gets weeks, and never most of it */
+/** how long a new task is by default: about a fifth of the timeline, so a short timeline gets short tasks and a long one gets weeks, and never most of it */
 function defaultTaskDays() {
   const S = state.settings;
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null;
   let span = 0;
   if (fixed) span = S.rangeEnd - S.rangeStart + 1;
   else { const info = derive(state.rows); if (info.length) span = Math.max(...info.map(n => n.end)) - Math.min(...info.map(n => n.start)) + 1; }
-  let d = span / 8;
+  let d = span / 5;
   d = d < 7 ? Math.round(d) : Math.round(d / 7) * 7; // days on a short timeline, whole weeks on a long one
   d = Math.max(1, Math.min(d, Math.floor(span / 3)));
   return fixed ? d : Math.max(5, d); // with the timeline fitting the tasks there is no fixed span to size against, so five days at least
