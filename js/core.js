@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v90 · 12 Nov';
+const APP_VERSION = 'v91 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1153,9 +1153,9 @@ function buildScene(state, opts) {
       // assignees "on the bar": a round avatar at the bar's right end when the bar can hold it (otherwise it sits just outside, like beside-bar owners)
       const onBars = S.assigneePos === 'bars';
       let avD = 0;
-      if (onBars && !n.milestone && showAssignee(n)) { const d = Math.round(Math.min(h - 2 * Math.max(3, h * 0.1), 36 * kk)); if (d >= Math.round(15 * kk) && bw >= avSpan(namesOf(n).length, d) + 16) avD = d; }
+      if (onBars && !n.milestone && showAssignee(n)) { const kd = S.corners === 'pill' ? 0.8 : S.corners === 'square' ? 0.62 : 0.68, d = Math.round(Math.min(h * kd, 36 * kk)); if (d >= Math.round(13 * kk) && bw >= avSpan(namesOf(n).length, d) + 16) avD = d; } // smaller on square and rounded bars, where a big circle crowds the corner
       n.avD = avD;
-      const bwL = bw - (avD ? avSpan(namesOf(n).length, avD) + 4 : 0); // room left for the name
+      const bwL = bw - (avD ? avSpan(namesOf(n).length, avD) + (S.corners === 'pill' ? 4 : Math.round(h * 0.2) + 2) : 0); // room left for the name
       if (n.noteNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.noteNo }); tx += bd + 10; } // the change's number, right after the bar
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
@@ -1480,7 +1480,7 @@ function buildScene(state, opts) {
         items.push({ t: 'line', x1: ox0, y1: gy - gh, x2: ox0, y2: gy + gh, stroke: base, sw: 1.5 }, { t: 'line', x1: ox1, y1: gy - gh, x2: ox1, y2: gy + gh, stroke: base, sw: 1.5 });
       }
       if (n.avD) { // the owner's avatar, ringed in white so it reads on any bar colour
-        const own = namesOf(n), d = n.avD, g = (h - d) / 2, ax = n.bx + n.bw - inset - g - avSpan(own.length, d), fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
+        const own = namesOf(n), d = n.avD, g = (h - d) / 2, mg = S.corners === 'pill' ? g : Math.max(g, h * 0.2), ax = n.bx + n.bw - inset - mg - avSpan(own.length, d), fillA = mix(full, '#ffffff', 0.88), inkA = mix(base, '#0b1020', 0.5);
         avGroup(own, ax, by + h / 2, d, fillA, contrast(fillA, inkA) >= 4.5 ? inkA : '#0b1020', '#ffffff', Math.max(7, Math.round(d * 0.38 * 2) / 2), true);
       }
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
