@@ -510,8 +510,8 @@ function detailHtml(n, info, rows) {
   if (n.hasKids) html += `<p class="note">${fmtRange(n)}${n.progress == null ? '' : ' · ' + Math.round(n.progress) + '%'} — dates and progress follow the items inside. Drag its bar to shift everything together.</p>`;
   else {
     html += n.milestone
-      ? `<label class="field"><span>Date</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label>`
-      : `<div class="two"><label class="field"><span>Start</span><input class="inp" type="date" data-f="start" value="${dayToIso(r.start)}"></label><label class="field"><span>End</span><input class="inp" type="date" data-f="end" value="${dayToIso(r.end)}"></label></div>`;
+      ? `<label class="field"><span>Date</span><input class="inp" type="date" min="1990-01-01" max="2100-12-31" data-f="start" value="${dayToIso(r.start)}"></label>`
+      : `<div class="two"><label class="field"><span>Start</span><input class="inp" type="date" min="1990-01-01" max="2100-12-31" data-f="start" value="${dayToIso(r.start)}"></label><label class="field"><span>End</span><input class="inp" type="date" min="1990-01-01" max="2100-12-31" data-f="end" value="${dayToIso(r.end)}"></label></div>`;
     if (!n.milestone) html += durHtml(r);
     if (!n.milestone) html += progressHtml(r);
   }
@@ -1059,10 +1059,10 @@ function buildDesign() {
       else if (c.type === 'info') html += `<p class="ctl-note" id="${c.id}" data-w="${c.k}"></p>`;
       else if (c.type === 'markercolor') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="swatches mk-sw"></div></div>`;
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
-      else if (c.type === 'daysoff') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="off-list" id="off-list"></div><div class="off-add"><input class="inp" type="date" id="off-from" aria-label="From"><input class="inp" type="date" id="off-to" aria-label="To (optional)" title="To (optional, for a range)"><input class="inp off-name" id="off-name" placeholder="Label (optional)" maxlength="40" autocomplete="off"><button class="btn ghost" data-act="off-add">Add</button></div></div>`;
+      else if (c.type === 'daysoff') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="off-list" id="off-list"></div><div class="off-add"><input class="inp" type="date" min="1990-01-01" max="2100-12-31" id="off-from" aria-label="From"><input class="inp" type="date" min="1990-01-01" max="2100-12-31" id="off-to" aria-label="To (optional)" title="To (optional, for a range)"><input class="inp off-name" id="off-name" placeholder="Label (optional)" maxlength="40" autocomplete="off"><button class="btn ghost" data-act="off-add">Add</button></div></div>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
       else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
-      else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
+      else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'date' ? ' min="1990-01-01" max="2100-12-31"' : ''}${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
     });
     html += '</div></section>';
   });
@@ -1604,7 +1604,7 @@ let pop = null;
 function popHtml() {
   if (pop.kind === 'paste') return pasteHtml();
   const S = state.settings;
-  const date = (label, f, v) => `<label class="field"><span>${label}</span><input class="inp" type="date" data-f="${f}" value="${dayToIso(v)}"></label>`;
+  const date = (label, f, v) => `<label class="field"><span>${label}</span><input class="inp" type="date" min="1990-01-01" max="2100-12-31" data-f="${f}" value="${dayToIso(v)}"></label>`;
   if (pop.kind === 'row') {
     const pinfo = derive(state.rows);
     if (S.showChanges) markChanges(pinfo);
