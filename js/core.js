@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v77 · 12 Nov';
+const APP_VERSION = 'v78 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -17,7 +17,21 @@ const mondayOf = n => n - dow(n);
 /** k working days (Mon–Fri) after day d */
 const addWorkdays = (d, k) => { for (let i = 0; i < k; i++) { d += 1; while (dow(d) >= 5) d += 1; } return d; };
 const ymd = n => { const d = dayToDate(n); return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]; };
-const shortDate = n => { const [, m, d] = ymd(n); return d + ' ' + MONTHS[m]; };
+/** how dates are written on the chart and in the panels (Design → Timeline → Header): 9 Dec · 9 Dec 2026 · 9/12 · 9/12/26 · 9/12/2026 · 9, day- or month-first */
+let DATE_FORMAT = { f: 'text', o: 'dmy' };
+const fmtDate = (n, fmt) => {
+  fmt = fmt || DATE_FORMAT;
+  const [y, m, d] = ymd(n), mm = m + 1, yy = String(y).slice(-2), mdy = fmt.o === 'mdy';
+  switch (fmt.f) {
+    case 'day': return String(d);
+    case 'num': return mdy ? `${mm}/${d}` : `${d}/${mm}`;
+    case 'numY': return mdy ? `${mm}/${d}/${yy}` : `${d}/${mm}/${yy}`;
+    case 'numYY': return mdy ? `${mm}/${d}/${y}` : `${d}/${mm}/${y}`;
+    case 'textY': return mdy ? `${MONTHS[m]} ${d}, ${y}` : `${d} ${MONTHS[m]} ${y}`;
+    default: return mdy ? `${MONTHS[m]} ${d}` : `${d} ${MONTHS[m]}`;
+  }
+};
+const shortDate = n => fmtDate(n);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -292,7 +306,8 @@ const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
-  textCase: 'default', daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
+  textCase: 'default', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
+  daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
   rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
@@ -835,6 +850,7 @@ function unitCells(scale, sprintWeeks, a, b, anchor, rel) {
 function buildScene(state, opts) {
   opts = opts || {};
   const S = state.settings, rows = state.rows, font = S.font;
+  DATE_FORMAT = { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' };
   const info = derive(rows);
   const nameOf = n => applyCase(n.row.name || 'Untitled', S.textCase); // how a name is shown (Design → Name case); the plan itself keeps what was typed
   // changes from the original plan: items that moved or grew, and those with a reason get a number that the legend explains
@@ -1234,8 +1250,9 @@ function buildScene(state, opts) {
       const short = { days: 'D', weeks: 'W', sprints: 'S', months: 'M', quarters: 'Q' }[S.scale] + n;
       return [long, short, String(n)];
     }
-    if (S.scale === 'days') return showSegs ? [String(d)] : [d + ' ' + MONTHS[m], String(d)];
-    if (S.scale === 'weeks') return [d + ' ' + MONTHS[m], String(d)];
+    const dayOnly = DATE_FORMAT.f === 'day';
+    if (S.scale === 'days') return showSegs || dayOnly ? [String(d)] : [fmtDate(c[0]), String(d)];
+    if (S.scale === 'weeks') return dayOnly ? [String(d)] : [fmtDate(c[0]), String(d)];
     if (S.scale === 'sprints') return ['Sprint ' + (i + 1), 'S' + (i + 1), String(i + 1)];
     if (S.scale === 'months') return [MONTHS[m], MONTHS[m][0]];
     return ['Q' + (m / 3 + 1)];
@@ -1526,4 +1543,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

@@ -961,6 +961,9 @@ const DESIGN = [
     { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
     { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
     { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
+    { k: 'dateFormat', type: 'select', label: 'Date format', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
+    { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
+    { k: '_dateEx', type: 'info', id: 'date-ex' },
     { type: 'head', label: 'Gridlines' },
     { k: 'gridCells', type: 'toggle', label: 'Period lines' },
     { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
@@ -1127,6 +1130,8 @@ function syncDesign() {
     const ci = $('#canvas-info'), ti = $('#text-info');
     if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
     syncDaysOff();
+    const de = $('#date-ex');
+    if (de) de.textContent = `Example: ${fmtDate(toDay(2026, 11, 9), { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' })} — also used for milestone dates, the legend and the panels.`;
     const oi = $('#out-info');
     if (oi) { const out = outsideRows(), early = out.filter(n => n.start < S.rangeStart).length, late = out.filter(n => n.end > S.rangeEnd).length; oi.textContent = `${out.length} ${out.length === 1 ? 'item sits' : 'items sit'} outside the timeline (${early} earlier, ${late} later).`; }
     const bi = $('#base-info');
@@ -1179,7 +1184,7 @@ function setSetting(k, v, soon) {
   state.settings[k] = v;
   if (k === 'font') ensureFont();
   renderChart(); syncDesign(); syncPop();
-  if (k === 'sprintWeeks') renderOutline();
+  if (k === 'sprintWeeks' || k === 'dateFormat' || k === 'dateOrder') renderOutline();
   if (soon) commitSoon(); else commit();
 }
 designEl.addEventListener('click', e => {
