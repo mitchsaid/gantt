@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v76 · 12 Nov';
+const APP_VERSION = 'v77 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -14,6 +14,8 @@ const isoToDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ''); retu
 const todayDay = () => { const d = new Date(); return toDay(d.getFullYear(), d.getMonth(), d.getDate()); };
 const dow = n => (dayToDate(n).getUTCDay() + 6) % 7; // 0 = Monday
 const mondayOf = n => n - dow(n);
+/** k working days (Mon–Fri) after day d */
+const addWorkdays = (d, k) => { for (let i = 0; i < k; i++) { d += 1; while (dow(d) >= 5) d += 1; } return d; };
 const ymd = n => { const d = dayToDate(n); return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]; };
 const shortDate = n => { const [, m, d] = ymd(n); return d + ' ' + MONTHS[m]; };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -779,7 +781,7 @@ function scheduleItems(items) {
     if (e == null) e = it.dur ? s + it.dur - 1 : s + (4 - Math.min(dow(s), 4));
     if (e < s) [s, e] = [e, s];
     r.start = s; r.end = e;
-    cursor = Math.max(cursor, e + 1);
+    cursor = Math.max(cursor, addWorkdays(e, 2)); // one working day between consecutive items
     return r;
   });
   rows.dated = known.length > 0 || items.some(i => i.end != null);

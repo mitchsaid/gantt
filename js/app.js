@@ -439,7 +439,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   let at, level, ref, childOf = null;
   if (kind === 'area') {
     ref = info.length ? Math.max(...info.map(n => n.end)) : mondayOf(todayDay()) - 1;
-    const s = nextWorkday(ref + 1);
+    const s = addWorkdays(ref, 2); // one working day clear of the last item
     const area = newRow({ level: 0, name: 'New area' });
     rows.push(area, newRow({ level: 1, name: 'New task', start: s, end: s + 4 }));
     sel = area.id; commit(); refresh(); show(area.id);
@@ -462,7 +462,10 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   const row = newRow({ level, name: '', type: kind === 'milestone' ? 'milestone' : 'task' });
   if (kind === 'milestone') { row.start = row.end = ref ? ref.end : emptyStart; row.name = 'Milestone'; }
   else if (childOf) { row.start = childOf.start; row.end = childOf.end; row.name = ''; }
-  else { row.start = ref ? nextWorkday(ref.end + 1) : emptyStart; row.end = row.start + 4; row.name = ''; }
+  else { // a new task follows the one before it, with one working day between them (and stays inside a fixed timeline)
+    row.start = ref ? addWorkdays(ref.end, 2) : emptyStart; row.end = row.start + 4; row.name = '';
+    if (S0.rangeMode === 'fixed' && S0.rangeStart != null && S0.rangeEnd != null && row.end > S0.rangeEnd) { row.end = S0.rangeEnd; row.start = Math.max(S0.rangeStart, row.end - 4); }
+  }
   rows.splice(at, 0, row);
   if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
   normalizeLevels(rows);
@@ -1880,7 +1883,7 @@ function insertParsed(parsed, afterId, replaceId, selectAll) {
   if (parsed.dated === false) { // undated lists carry on from the row before them
     const S = state.settings;
     const leaf = parsed.filter((r, k) => !(parsed[k + 1] && parsed[k + 1].level > r.level));
-    const target = place.ref ? nextWorkday(place.ref.end + 1) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
+    const target = place.ref ? addWorkdays(place.ref.end, 2) : S.rangeMode === 'fixed' && S.rangeStart != null ? S.rangeStart : mondayOf(todayDay());
     const delta = target - Math.min(...leaf.map(r => r.start));
     parsed.forEach(r => { r.start += delta; r.end += delta; });
   }
