@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=67">
+<link rel="stylesheet" href="css/style.css?v=68">
 </head>
 <body>
 <header class="topbar">
@@ -63,6 +63,8 @@
           <li><span class="tip-k"><kbd>Tab</kbd><kbd>Shift+Tab</kbd></span><span>Indent, outdent</span></li>
           <li><span class="tip-k"><kbd>Shift</kbd><kbd data-mod>Ctrl</kbd></span><span>Click to select several</span></li>
           <li><span class="tip-k"><kbd data-mod>Ctrl</kbd><span class="tip-plus">+</span><kbd>C</kbd><kbd>V</kbd><kbd>D</kbd></span><span>Copy, paste, duplicate</span></li>
+          <li><span class="tip-k"><kbd>←</kbd><kbd>→</kbd></span><span>Nudge the selection a day (<kbd data-alt>Alt</kbd> for a week)</span></li>
+          <li><span class="tip-k"><kbd>Shift</kbd><kbd>←</kbd><kbd>→</kbd></span><span>Stretch the selected task on that side</span></li>
           <li><span class="tip-k">▾</span><span>Edit a row’s dates and details</span></li>
           <li><span class="tip-k">On the chart</span><span>Drag bars to move them, their ends to resize</span></li>
           <li><span class="tip-k">Paste lines</span><span>Several lines pasted into a name become several items</span></li>
@@ -84,6 +86,11 @@
           <span class="chart-add-note" id="chart-add-note"></span>
           <span class="chart-warn" id="chart-warn" hidden></span>
           <span class="chart-warn" id="chart-out" hidden></span>
+          <span class="qs" role="group" aria-label="Progress and baseline">
+            <button class="qs-btn" id="qs-progress" aria-pressed="false" title="Show progress in the bars">Progress</button>
+            <button class="qs-btn" id="qs-base" aria-pressed="false"><span class="qs-dot"></span><span id="qs-base-text">Set baseline</span><span class="qs-count" id="qs-base-count" hidden></span></button>
+            <button class="qs-btn qs-more" id="qs-base-menu" aria-label="Update or remove the baseline" title="Update or remove the baseline" hidden>⋯</button>
+          </span>
         </div>
       </div>
     </div>
@@ -139,7 +146,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=67"></script>
-<script src="js/app.js?v=67"></script>
+<script src="js/core.js?v=68"></script>
+<script src="js/app.js?v=68"></script>
 </body>
 </html>

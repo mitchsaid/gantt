@@ -60,6 +60,16 @@ svg { display: block; }
 .chart-col { margin: auto; flex: none; width: 100%; max-width: 1280px; }
 .chart-add { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 12px 2px 0; position: sticky; left: 0; width: max-content; max-width: 100%; }
 .chart-add .chip-btn { background: #fff; }
+.qs { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; }
+.qs-btn { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: #fff; color: #3b4252; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
+.qs-btn:hover { border-color: var(--accent); color: var(--accent); }
+.qs-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.qs-btn.none { border-style: dashed; }
+.qs-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+.qs-btn.none .qs-dot { display: none; }
+.qs-btn[aria-pressed="true"] .qs-dot { background: currentColor; }
+.qs-count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; line-height: 16px; min-width: 16px; padding: 0 5px; text-align: center; }
+.qs-more { width: 30px; padding: 0; justify-content: center; }
 .chart-add-note { color: #9096a3; font-size: 12px; margin-left: 6px; }
 .canvas-wrap { border-radius: 12px; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 10px 36px rgba(20, 24, 40, 0.1); overflow: hidden; background: #fff; }
 .canvas-wrap.transparent { background: repeating-conic-gradient(#e9ebf0 0% 25%, #fff 0% 50%) 0 0 / 18px 18px; }

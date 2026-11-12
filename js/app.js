@@ -236,6 +236,7 @@ function renderChart() {
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
   applyZoom();
   placeSelBar();
+  syncQuickStatus();
   const co = $('#chart-out');
   if (co) {
     const out = outsideRows();
@@ -1382,6 +1383,10 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'z' && !(inField && e.target.type !== 'checkbox' && e.target.type !== 'range')) { e.preventDefault(); if (e.shiftKey) timeTravel(redoStack, undoStack); else timeTravel(undoStack, redoStack); }
   else if (mod && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); timeTravel(redoStack, undoStack); }
   else if (!inField && selIds().length && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); askDeleteSel(); }
+  else if (!inField && !mod && !e.altKey && e.key === 'Enter' && !state.rows.length && !pop && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // nothing on the chart yet: Enter makes the first task
+    e.preventDefault();
+    commit(); addRow('task', null, false, true);
+  }
   else if (!inField && !mod && !e.altKey && e.key === 'Enter' && selIds().length && (e.target === document.body || (e.target.closest && e.target.closest('#chart')))) { // Enter adds a new item under the selection; Shift+Enter adds a subtask inside it
     e.preventDefault();
     const picked = selIds();
@@ -1392,10 +1397,14 @@ document.addEventListener('keydown', e => {
   else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
   else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-    // nudge the selected items (and anything inside them) by a day; Shift = a week
     e.preventDefault();
-    const d = (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 7 : 1);
-    selectedBlocks().forEach(r => { r.start += d; r.end += d; });
+    if (e.shiftKey) { // Shift + ← / → stretches the selected task or subtask one day further out on that side
+      const left = e.key === 'ArrowLeft';
+      derive(state.rows).filter(n => selIds().includes(n.row.id) && !n.hasKids && !n.milestone).forEach(n => { if (left) n.row.start -= 1; else n.row.end += 1; });
+    } else { // nudge the selected items (and anything inside them) by a day; Alt = a week
+      const d = (e.key === 'ArrowLeft' ? -1 : 1) * (e.altKey ? 7 : 1);
+      selectedBlocks().forEach(r => { r.start += d; r.end += d; });
+    }
     refresh(); commitSoon();
   }
 });
@@ -2225,6 +2234,28 @@ function syncSelBar() {
   bar.hidden = n < 2;
   if (n >= 2) { $('#selbar-count').textContent = `${n} selected`; placeSelBar(); }
 }
+/** quick toggles beside the chart: progress on/off, and a baseline (set it, see that one exists, show or hide its changes) */
+function syncQuickStatus() {
+  const S = state.settings, prog = $('#qs-progress'), base = $('#qs-base');
+  if (!prog || !base) return;
+  prog.setAttribute('aria-pressed', String(!!S.progress));
+  const has = hasBaseline(), on = !!S.showChanges && has;
+  base.setAttribute('aria-pressed', String(on));
+  base.classList.toggle('none', !has);
+  const changed = on && scene ? scene.info.filter(n => n.changed && !n.isArea).length : 0;
+  $('#qs-base-text').textContent = has ? `Baseline${S.baselineDate != null ? ' · ' + shortDate(S.baselineDate) : ''}` : 'Set baseline';
+  const cnt = $('#qs-base-count');
+  cnt.hidden = !changed; cnt.textContent = changed;
+  base.title = has ? (on ? 'Baseline shown — click to hide its changes' : 'A baseline exists — click to show changes from it') : 'Save the dates as they are now, to see what changes later';
+  $('#qs-base-menu').hidden = !has;
+}
+$('#qs-progress').addEventListener('click', () => setSetting('progressMode', state.settings.progress ? 'off' : state.settings.progressSource === 'marker' ? 'marker' : 'manual'));
+$('#qs-base').addEventListener('click', () => {
+  const S = state.settings;
+  if (!hasBaseline()) { setBaseline(); S.showChanges = true; commit(); refresh(); toast('Baseline saved — changes from here on show against it'); }
+  else setSetting('showChanges', !S.showChanges);
+});
+$('#qs-base-menu').addEventListener('click', baselineDialog);
 /** the selection's toolbar floats just above the selected bars (below them if there is no room), kept within view */
 function placeSelBar() {
   const bar = $('#selbar');
@@ -2265,6 +2296,7 @@ $('#selbar').addEventListener('click', e => {
   if (tips) {
     const mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
     $$('[data-mod]', tips).forEach(k => { k.textContent = mac ? '⌘' : 'Ctrl'; });
+    $$('[data-alt]', tips).forEach(k => { k.textContent = mac ? '⌥' : 'Alt'; });
     if (ui.tipsOpen === false) tips.open = false;
     tips.addEventListener('toggle', () => { ui.tipsOpen = tips.open; saveUi(); });
   }
