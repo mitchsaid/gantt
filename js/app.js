@@ -1161,6 +1161,7 @@ function buildDesign() {
     });
     html += '</div></section>';
   });
+  html += '<div class="reset-row"><button class="link-btn quiet" data-act="reset">Reset to defaults…</button></div>';
   designEl.innerHTML = html;
 }
 /** non-working days (holidays, company freezes): never counted by the days-left annotations */
@@ -1306,6 +1307,7 @@ designEl.addEventListener('click', e => {
   if (e.target.closest('[data-act="fit"]')) { fitPlan(); return; }
   if (e.target.closest('[data-act="pull"]')) { outsideDialog(); return; }
   if (e.target.closest('[data-act="baseline"]')) { baselineDialog(); return; }
+  if (e.target.closest('[data-act="reset"]')) { resetDialog(); return; }
   const b = e.target.closest('.seg[data-k] button');
   if (b) { const k = b.parentNode.dataset.k; setSetting(k, designCtl[k].num ? +b.dataset.v : designCtl[k].bool ? b.dataset.v === 'true' : b.dataset.v); }
 });
@@ -1511,6 +1513,23 @@ function toast(msg) {
 }
 $('#btn-undo').addEventListener('click', () => timeTravel(undoStack, redoStack));
 $('#btn-redo').addEventListener('click', () => timeTravel(redoStack, undoStack));
+/** back to how the tool started: the design always, and (if asked) the plan too */
+const freshSettings = () => JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+function resetDesign() {
+  commit();
+  const title = state.settings.title;
+  state.settings = Object.assign(freshSettings(), { title });
+  state.rows.forEach(r => { delete r.color; delete r.msAlign; }); // colours and milestone positions chosen item by item are part of the look
+  closePop(); commit(); refresh(); buildDesign(); syncDesign();
+  toast('Design reset to defaults — Undo brings it back');
+}
+function resetDialog() {
+  dialog('Reset to defaults?', 'Palette, layout, labels, dates, legend, status, calendar and every other Design choice go back to how they started, along with colours set on single items. Your title and plan (items, dates, notes, owners, progress) are kept.', [
+    ['Reset the design', 'primary', resetDesign],
+    ['Reset everything', 'danger', () => { commit(); state = blankState(freshSettings()); sel = null; multi = new Set(); closePop(); commit(); refresh(); buildDesign(); syncDesign(); toast('Everything reset — Undo brings the old plan back'); }],
+    ['Cancel', 'ghost', null],
+  ]);
+}
 $('#btn-new').addEventListener('click', () => {
   commit();
   state = blankState(state.settings);
