@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=86">
+<link rel="stylesheet" href="css/style.css?v=87">
 </head>
 <body>
 <header class="topbar">
@@ -59,6 +59,7 @@
         <ul class="tip-list">
           <li><span class="tip-k"><span class="grip-demo">⋮⋮</span></span><span>Drag to reorder, or sideways to nest</span></li>
           <li><span class="tip-k"><kbd>Enter</kbd></span><span>Add a row under the selected one</span></li>
+          <li><span class="tip-k">Just type</span><span>Renames the selected item (<kbd>F2</kbd> edits the existing name)</span></li>
           <li><span class="tip-k"><kbd>Shift+Enter</kbd></span><span>Add a subtask inside it</span></li>
           <li><span class="tip-k"><kbd>Tab</kbd><kbd>Shift+Tab</kbd></span><span>Indent, outdent</span></li>
           <li><span class="tip-k"><kbd data-alt>Alt</kbd><span class="tip-plus">+</span><kbd>A</kbd><kbd>T</kbd><kbd>M</kbd></span><span>Make the selection an area, task or milestone</span></li>
@@ -98,6 +99,7 @@
     </div>
     <div class="selbar" id="selbar" role="toolbar" aria-label="Selection" hidden>
       <span id="selbar-count"></span>
+      <button class="selbar-btn" data-sel="even" title="Give every selected task the same length (the average of their lengths)">Same length</button>
       <button class="selbar-btn primary" data-sel="group" title="Group them into a new area (Ctrl/⌘+G)">Add to new area</button>
       <button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>
     </div>
@@ -148,7 +150,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=86"></script>
-<script src="js/app.js?v=86"></script>
+<script src="js/core.js?v=87"></script>
+<script src="js/app.js?v=87"></script>
 </body>
 </html>

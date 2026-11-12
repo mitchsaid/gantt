@@ -2423,6 +2423,17 @@ function groupIntoNewArea() {
   editOnChart(area.id); // name it right where it appeared
   toast(`${blocks.length === ids.length ? ids.length : ids.length + ' items'} moved into a new area — Undo reverts`);
 }
+/** every selected task (and everything inside selected areas) gets the same length: the average of theirs, each keeping its start */
+function evenLengths() {
+  const info = derive(state.rows), picked = new Set(selIds()), leaves = new Map();
+  info.forEach(n => { if (!picked.has(n.row.id)) return; for (let k = n.i; k < blockEnd(state.rows, n.i); k++) if (!info[k].hasKids && !info[k].milestone) leaves.set(info[k].row.id, info[k]); });
+  const items = [...leaves.values()];
+  if (items.length < 2) { toast('Select two or more tasks to give them the same length'); return; }
+  const len = Math.max(1, Math.round(items.reduce((a, n) => a + (n.row.end - n.row.start + 1), 0) / items.length));
+  items.forEach(n => { n.row.end = n.row.start + len - 1; });
+  commit(); refresh();
+  toast(`${items.length} tasks set to ${len} ${len === 1 ? 'day' : 'days'} each — Undo reverts`);
+}
 function syncSelBar() {
   const n = selIds().length, bar = $('#selbar');
   if (!bar) return;
@@ -2482,6 +2493,7 @@ $('#selbar').addEventListener('click', e => {
   const b = e.target.closest('[data-sel]');
   if (!b) return;
   if (b.dataset.sel === 'group') { commit(); groupIntoNewArea(); }
+  else if (b.dataset.sel === 'even') evenLengths();
   else if (b.dataset.sel === 'clear') select(null);
 });
 
