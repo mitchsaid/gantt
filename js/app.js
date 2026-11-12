@@ -1423,9 +1423,9 @@ document.addEventListener('keydown', e => {
   else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
   else if (!inField && sel && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     e.preventDefault();
-    if (e.shiftKey) { // Shift + ← / → stretches the selected task or subtask one day further out on that side
-      const left = e.key === 'ArrowLeft';
-      derive(state.rows).filter(n => selIds().includes(n.row.id) && !n.hasKids && !n.milestone).forEach(n => { if (left) n.row.start -= 1; else n.row.end += 1; });
+    if (e.shiftKey) { // Shift + → grows the selected task or subtask by a day, Shift + ← shrinks it (never below one day)
+      const grow = e.key === 'ArrowRight';
+      derive(state.rows).filter(n => selIds().includes(n.row.id) && !n.hasKids && !n.milestone).forEach(n => { n.row.end = grow ? n.row.end + 1 : Math.max(n.row.start, n.row.end - 1); });
     } else { // nudge the selected items (and anything inside them) by a day; Alt = a week
       const d = (e.key === 'ArrowLeft' ? -1 : 1) * (e.altKey ? 7 : 1);
       selectedBlocks().forEach(r => { r.start += d; r.end += d; });
