@@ -237,6 +237,8 @@ function renderChart() {
   applyZoom();
   placeSelBar();
   syncQuickStatus();
+  const sp = $('#chart-spread');
+  if (sp) sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
   const co = $('#chart-out');
   if (co) {
     const out = outsideRows();
@@ -253,6 +255,7 @@ function syncAddNote() {
   syncSelBar();
 }
 
+$('#chart-spread').addEventListener('click', fitPlan);
 $('#chart-out').addEventListener('click', e => { if (e.target.closest('[data-act="pull"]')) outsideDialog(); });
 
 // ---------------------------------------------------------------- fonts
@@ -1176,8 +1179,9 @@ function setSetting(k, v, soon) {
   if (k === 'canvas' && v === 'custom') { const c = canvasOf(S); S.canvasW = Math.round(c.w * 100) / 100; S.canvasH = Math.round(c.h * 100) / 100; }
   if (k === 'textAuto' && v === false && scene) S.textPt = Math.round(scene.fs * 0.75 * 2) / 2; // start the override from what Auto was using
   if (k === 'rangeMode' && v === 'fixed' && (S.rangeStart == null || S.rangeEnd == null)) [S.rangeStart, S.rangeEnd] = autoSpan();
-  if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart);
-  if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) S.rangeStart = v;
+  if ((k === 'rangeStart' || k === 'rangeEnd' || k === 'todayDate') && v != null && !plausibleDay(v)) return; // half-typed years are ignored
+  if (k === 'rangeStart' && S.rangeEnd != null && v > S.rangeEnd) S.rangeEnd = v + (S.rangeEnd - S.rangeStart); // a later start carries the end along
+  if (k === 'rangeEnd' && S.rangeStart != null && v < S.rangeStart) return; // an end can't come before the start: nothing changes (a date being typed passes through such values)
   if (k === 'todayLine') S.markerAuto = false; // the marker is now something the user chose
   if (k === 'showChanges' && v && !hasBaseline()) setBaseline(); // the first time, the baseline is the plan as it stands
   if (k === 'progressSource' && v === 'marker') S.todayLine = true; // progress up to the marker needs the marker
@@ -1219,7 +1223,7 @@ designEl.addEventListener('input', e => {
   if (t.type === 'checkbox') setSetting(k, t.checked);
   else if (t.type === 'color') setSetting(k, t.value, true);
   else if (t.dataset.hex != null) { let v = t.value.trim(); if (v && v[0] !== '#') v = '#' + v; if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) setSetting(k, rgbToHex(hexToRgb(v)), true); }
-  else if (t.type === 'date') { const d = isoToDay(t.value); if (d != null) setSetting(k, k === 'todayDate' && d === todayDay() ? null : d, true); }
+  else if (t.type === 'date') { const d = isoToDay(t.value); if (d != null && plausibleDay(d)) setSetting(k, k === 'todayDate' && d === todayDay() ? null : d, true); }
   else if (t.tagName === 'SELECT') setSetting(k, t.value);
   else if (t.type === 'number') { const v = parseFloat(t.value); if (Number.isFinite(v) && v >= +t.min && v <= +t.max) setSetting(k, v, true); }
   else setSetting(k, t.value, true);
@@ -1534,9 +1538,10 @@ function rowChange(r, t) {
   if (f === 'assignee-add') { if (t.value.trim()) addAssignees(r.id, t.value); t.value = ''; return; }
   if (f === 'start' || f === 'end') {
     const d = isoToDay(t.value);
-    if (d == null) return;
+    if (d == null || !plausibleDay(d)) return; // half-typed years are ignored
     if (f === 'start') { const len = r.end - r.start; r.start = d; r.end = r.type === 'milestone' ? d : d + len; }
-    else { r.end = d; if (r.end < r.start) r.start = r.end; }
+    else if (d < r.start) { toast('The end can’t be before the start'); refresh(); return; } // nothing changes; the field goes back to the real end
+    else r.end = d;
     commit(); refresh();
   } else if (f === 'dur-n' || f === 'dur-u') {
     r.end = durFromFields(t, r.start, 'dur-n', 'dur-u');

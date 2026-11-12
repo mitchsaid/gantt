@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v78 · 12 Nov';
+const APP_VERSION = 'v79 · 12 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -11,6 +11,8 @@ const toDay = (y, m, d) => Math.round(Date.UTC(y, m, d) / DAY_MS);
 const dayToDate = n => new Date(n * DAY_MS);
 const dayToIso = n => dayToDate(n).toISOString().slice(0, 10);
 const isoToDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ''); return m ? toDay(+m[1], +m[2] - 1, +m[3]) : null; };
+/** a typed date passes through absurd years (0002, 0020, 0202…) on its way to 2026: only plausible ones count */
+const plausibleDay = d => d >= toDay(1990, 0, 1) && d <= toDay(2100, 11, 31);
 const todayDay = () => { const d = new Date(); return toDay(d.getFullYear(), d.getMonth(), d.getDate()); };
 const dow = n => (dayToDate(n).getUTCDay() + 6) % 7; // 0 = Monday
 const mondayOf = n => n - dow(n);
