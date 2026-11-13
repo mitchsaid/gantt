@@ -17,6 +17,9 @@ drag editing, palettes, assignees, progress, a date marker, baselines, and expor
   keyboard handling, selection, exports (`sceneToSvg`, canvas `drawScene`, PptxGenJS in `exportPptx`).
 - `css/style.css`, `vendor/` (jsPDF, PptxGenJS, SheetJS — do not edit).
 - Storage: localStorage `gantt:v1` (plan + settings) and `gantt:ui` (panel state, saved palettes, accordion state).
+- Share links carry the plan in the URL hash (`#p=…`, `packPlan` / `unpackPlan` in app.js) and must keep opening: treat the
+  packed format like a saved file. Exec view (`execState`) and the headline (`autoHeadline`) live in core.js and are
+  applied inside `buildScene`, so every renderer gets them; in exec view `scene.info` is the collapsed plan, not `state.rows`.
 
 ## Conventions
 - One scene, three renderers. Anything drawn must be expressed as scene items (`rect`, `line`, `text`, `diamond`, `poly`) so the

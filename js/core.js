@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v99 · 12 Nov';
+const APP_VERSION = 'v100 · 13 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -303,7 +303,7 @@ function canvasOf(S) {
 
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
-  title: 'Project plan', showTitle: true, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
+  title: 'Project plan', showTitle: true, titleAuto: false, execView: false, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
@@ -824,6 +824,82 @@ function scheduleItems(items) {
   return rows;
 }
 
+
+// ---------------------------------------------------------------- summary view and headline
+/**
+ * The summary ("exec") view of a plan: every top-level item becomes one bar carrying what is inside it (dates, progress, status,
+ * baseline), and the milestones move to the strip above the chart. Returns a plan to draw plus the strip's milestones.
+ */
+function execState(state) {
+  const S = state.settings, info = derive(state.rows);
+  markChanges(info);
+  const marker = S.todayDate != null ? S.todayDate : todayDay();
+  if (S.progress && S.progressSource === 'marker' && S.todayLine) applyDateProgress(info, marker);
+  const rows = info.filter(n => n.level === 0 && !n.milestone).map(n => {
+    const r = { id: n.row.id, level: 0, name: n.row.name, type: 'task', start: n.start, end: n.end, progress: n.progress == null ? null : Math.round(n.progress), assignee: n.row.assignee || '', deps: [] };
+    if (n.row.color != null) r.color = n.row.color;
+    if (n.stat) r.status = n.stat;
+    if (n.bs != null) r.baseline = { s: n.bs, e: n.be };
+    return r;
+  });
+  const all = info.filter(n => n.milestone), picked = all.some(n => n.row.key) ? all.filter(n => n.row.key) : all;
+  const strip = picked.map(n => {
+    let off = { start: 0, middle: 0.5, end: 1 }[n.row.msAlign || S.msAlign];
+    if (off == null) {
+      let ends = false, starts = false;
+      info.forEach(o => { if (o !== n && !o.milestone && !o.hasKids) { if (o.end === n.start) ends = true; if (o.start === n.start) starts = true; } });
+      off = ends ? 1 : starts ? 0 : 0.5;
+    }
+    const c = colorIndexOf(info, n);
+    return { row: Object.assign({ name: n.row.name }, c != null ? { color: c } : {}), parent: -1, milestone: true, start: n.start, end: n.start, stat: n.stat, msOff: off, key: !!n.row.key };
+  });
+  const settings = Object.assign({}, S, { execView: false, pack: false, deps: false, criticalPath: false, progressSource: 'manual', markerAuto: false });
+  return { state: { settings, rows }, strip };
+}
+
+const spanWords = d => { d = Math.abs(d); if (d < 14) return d + (d === 1 ? ' day' : ' days'); return Math.round(d / 7) + ' weeks'; };
+/**
+ * A one-line reading of the plan for the title: where the finish stands, then the most useful other fact (an area behind its
+ * baseline, a status, blocked items, or the next milestone). `extra` is dropped when the line would not fit.
+ */
+function autoHeadline(state) {
+  const S = state.settings, info = derive(state.rows);
+  const fmt = { f: /Y/.test(S.dateFormat || '') ? 'textY' : 'text', o: S.dateOrder || 'dmy' }, D = d => fmtDate(d, fmt);
+  markChanges(info);
+  const leaves = info.filter(n => !n.hasKids);
+  if (!leaves.length) return { main: S.title || 'Project plan', extra: '' };
+  const nm = n => n.row.name || 'Untitled';
+  const ref = S.todayDate != null ? S.todayDate : todayDay();
+  const fin = Math.max(...leaves.map(n => n.end));
+  const lastMs = leaves.filter(n => n.milestone && n.end === fin).pop();
+  const what = lastMs ? nm(lastMs) : 'Finish';
+  const based = leaves.filter(n => n.bs != null), slip = based.length ? fin - Math.max(...based.map(n => n.be)) : 0;
+  const st = STATUS[S.projectStatus] ? S.projectStatus : null;
+  const worst = Math.max(0, ...leaves.map(n => STATUS_ORDER.indexOf(n.stat)));
+  const work = leaves.filter(n => !n.milestone && n.progress != null);
+  let main;
+  if (work.length && work.every(n => n.progress >= 100)) main = `All work complete as of ${D(fin)}`;
+  else if (slip > 0) main = `${what} slips ${spanWords(slip)} to ${D(fin)}`;
+  else if (slip < 0) main = `${what} pulled in ${spanWords(slip)} to ${D(fin)}`;
+  else if (st === 'red') main = `${what} off track for ${D(fin)}`;
+  else if (st === 'amber') main = `${what} at risk for ${D(fin)}`;
+  else if (st === 'green' || (based.length && worst <= 1)) main = `${what} on track for ${D(fin)}`;
+  else main = `${what} planned for ${D(fin)}`;
+  const list = a => (a.length <= 2 ? a.map(nm).join(' and ') : `${nm(a[0])} and ${a.length - 1} more`);
+  const tops = info.filter(n => n.level === 0 && !n.milestone);
+  const late = tops.filter(n => n.hasKids && n.be != null && n.end > n.be).sort((a, b) => (b.end - b.be) - (a.end - a.be));
+  const red = tops.filter(n => n.stat === 'red'), amber = tops.filter(n => n.stat === 'amber');
+  const blocked = leaves.filter(n => n.row.blocked).length;
+  const next = leaves.filter(n => n.milestone && n !== lastMs && n.start >= ref).sort((a, b) => a.start - b.start)[0];
+  let extra = '';
+  if (late.length) extra = `${nm(late[0])} ${spanWords(late[0].end - late[0].be)} behind baseline`;
+  else if (red.length) extra = `${list(red)} off track`;
+  else if (amber.length) extra = `${list(amber)} at risk`;
+  else if (blocked) extra = `${blocked} ${blocked === 1 ? 'item' : 'items'} blocked`;
+  else if (next) extra = `next: ${nm(next)}, ${D(next.start)}`;
+  return { main, extra };
+}
+
 // ---------------------------------------------------------------- text measuring
 let _mctx = null;
 function measureText(text, size, weight, font) {
@@ -885,7 +961,13 @@ function hatchLines(x, y, w, h, r, color, sw, gap) {
 
 function buildScene(state, opts) {
   opts = opts || {};
+  const headline = state.settings.titleAuto ? autoHeadline(state) : null; // read from the whole plan, whatever is drawn
+  const exec = !!state.settings.execView;
+  let stripMs = null;
+  if (exec) { const ex = execState(state); state = ex.state; stripMs = ex.strip; opts = {}; } // the summary is for reading, not editing
   const S = state.settings, rows = state.rows, font = S.font;
+  const titleOn = !!(S.showTitle && (headline || S.title));
+  let shownTitle = '';
   DATE_FORMAT = { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' };
   const info = derive(rows);
   const nameOf = n => applyCase(n.row.name || 'Untitled', S.textCase); // how a name is shown (Design → Name case); the plan itself keeps what was typed
@@ -1026,7 +1108,7 @@ function buildScene(state, opts) {
     let f = textPt ? fsOf(0) : 16; // the text size, header and owner lines all depend on the row height, so settle them together
     for (let it = 0; it < 4; it++) {
       const hh = tiers0 * tierOf(f) + 8;
-      const fixedH = 2 * pad + (S.showTitle && S.title ? titleOf(f) + 26 : 0) + (S.todayLine || S.planDaysLeft ? Math.round(26 * f / 14) : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
+      const fixedH = 2 * pad + (titleOn ? titleOf(f) + 26 : 0) + (S.todayLine || S.planDaysLeft ? Math.round(26 * f / 14) : 0) + (S.datePos !== 'bottom' ? hh : 0) + (S.datePos !== 'top' ? hh - 8 : 0) + 12 + gaps;
       rowH = clamp(Math.floor((targetH - fixedH) / Math.max(1, usedW)) - subLineOf(f), minRow, maxRow);
       f = fsOf(rowH);
     }
@@ -1067,9 +1149,11 @@ function buildScene(state, opts) {
 
   // vertical layout
   let y = pad;
-  if (S.showTitle && S.title) {
+  if (titleOn) {
     const tsz = titleOf(fs);
-    const tt = fitText(S.title, W - 2 * pad, tsz, 700, font);
+    const whole = headline && headline.extra ? headline.main + '; ' + headline.extra : '';
+    const tt = fitText(headline ? (whole && M(whole, tsz, 700) <= W - 2 * pad ? whole : headline.main) : S.title, W - 2 * pad, tsz, 700, font);
+    shownTitle = tt;
     items.push({ t: 'text', x: pad, y: y + tsz * 0.53, text: tt, size: tsz, weight: 700, fill: text, anchor: 'start' });
     items.push({ t: 'rect', x: pad - 6, y: y - 6, w: M(tt, tsz, 700) + 12, h: tsz * 1.45, hit: true, role: 'title' });
     // chips at the right of the title: the plan's overall status, and where the finish stands against the baseline
@@ -1103,7 +1187,7 @@ function buildScene(state, opts) {
     y += tsz + 26;
   }
   // key milestones: a strip of flagged milestones (all of them if none is flagged) on the chart's own time scale, above everything else
-  const keyMs = S.keyStrip ? (info.some(n => n.milestone && n.row.key) ? info.filter(n => n.milestone && n.row.key) : info.filter(n => n.milestone)) : [];
+  const keyMs = stripMs || (S.keyStrip ? (info.some(n => n.milestone && n.row.key) ? info.filter(n => n.milestone && n.row.key) : info.filter(n => n.milestone)) : []);
   const kmS = Math.max(10.5, Math.round((fs - 2) * 2) / 2), kmLine = Math.round(kmS * 1.35), kmHead = Math.round(kmS * 1.7), kmDia = Math.round(kmS * 2.1);
   const kmLabel = n => ({ name: nameOf(n), date: shortDate(n.start) });
   const kmWidth = n => { const l = kmLabel(n); return Math.max(M(l.name, kmS, 600), M(l.date, kmS - 1, 500)); };
@@ -1185,6 +1269,7 @@ function buildScene(state, opts) {
   if (byMarker) applyDateProgress(info, todayD);
   let dMin = Infinity, dMax = -Infinity;
   info.forEach(n => { dMin = Math.min(dMin, n.start); dMax = Math.max(dMax, n.end); });
+  if (stripMs) stripMs.forEach(n => { dMin = Math.min(dMin, n.start); dMax = Math.max(dMax, n.start); });
   if (!isFinite(dMin)) { dMin = mondayOf(todayDay()); dMax = dMin + 27; }
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null && S.rangeEnd >= S.rangeStart;
   if (fixed && !info.length) { dMin = S.rangeStart; dMax = S.rangeEnd; }
@@ -1674,7 +1759,7 @@ function buildScene(state, opts) {
   // ---- key milestones strip
   if (keyMs.length) {
     const ly = stripY + kmHead + kmDia / 2, laneH = 2 * kmLine, ends = [];
-    items.push({ t: 'text', x: pad, y: stripY + kmHead / 2, text: 'KEY MILESTONES', size: Math.max(9, kmS - 2), weight: 700, fill: muted, anchor: 'start' });
+    items.push({ t: 'text', x: pad, y: stripY + kmHead / 2, text: stripMs && stripMs.every(n => !n.key) ? 'MILESTONES' : 'KEY MILESTONES', size: Math.max(9, kmS - 2), weight: 700, fill: muted, anchor: 'start' });
     items.push({ t: 'line', x1: x0, y1: ly, x2: x1, y2: ly, stroke: gridStrong, sw: 1.5 });
     keyMs.slice().sort((a, b) => a.start - b.start).forEach(n => {
       const cx = msX(n), w = kmWidth(n), l = kmLabel(n), tx = Math.max(pad, Math.min(cx - 4, W - pad - w));
@@ -1745,7 +1830,7 @@ function buildScene(state, opts) {
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

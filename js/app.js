@@ -257,7 +257,7 @@ function renderChart() {
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
   const r = sel && state.rows[rowIndex(sel)];
-  $('#chart-add-note').textContent = r ? `Adds after “${r.name || 'Untitled'}”` : '';
+  $('#chart-add-note').textContent = state.settings.execView ? 'Exec view — edit in the Plan panel, or switch it off to edit here' : r ? `Adds after “${r.name || 'Untitled'}”` : '';
   syncSelBar();
 }
 
@@ -1015,8 +1015,13 @@ const DESIGN = [
   ['canvas', 'Canvas', [
     { type: 'head', label: 'Title' },
     { k: 'showTitle', type: 'toggle', label: 'Show title' },
-    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle },
+    { k: 'titleAuto', type: 'toggle', label: 'Write the headline for me', sub: true, when: s => s.showTitle },
+    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle && !s.titleAuto },
+    { k: '_headNote', type: 'note', label: 'The title is written from the plan: where the finish stands (against the baseline or the overall status), then the biggest issue or the next milestone. It updates as the plan changes; type over it on the chart to take it back.', when: s => s.showTitle && s.titleAuto },
     { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
+    { type: 'head', label: 'View' },
+    { k: 'execView', type: 'toggle', label: 'Exec view' },
+    { k: '_execNote', type: 'note', label: 'One bar per area, with its dates, progress and status rolled up, and the milestones in a strip above (the key ones, if any are marked). The plan itself is untouched: edit it in the Plan panel, or switch this off to edit on the chart.', when: s => s.execView },
     { type: 'head', label: 'Size' },
     { k: 'canvas', type: 'select', label: 'Size', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
     { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
@@ -1285,6 +1290,7 @@ function setSetting(k, v, soon) {
   state.settings[k] = v;
   if (k === 'font') ensureFont();
   renderChart(); syncDesign(); syncPop();
+  if (k === 'execView') syncAddNote();
   if (k === 'sprintWeeks' || k === 'dateFormat' || k === 'dateOrder') renderOutline();
   if (soon) commitSoon(); else commit();
 }
@@ -1492,6 +1498,80 @@ async function exportPptx() {
 }
 function exportJson() { commit(); download(new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' }), fileBase() + '.json'); toast('Project file saved'); }
 
+// ---------------------------------------------------------------- share link
+// The whole plan travels in the link's hash (#p=…): compressed JSON, never sent to a server. Row fields at their defaults
+// are left out, and ids are shortened, to keep the link small.
+const b64u = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = s => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/')), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+const pipeBytes = async (bytes, through) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(through)).arrayBuffer());
+function packPlan(st) {
+  const ids = new Map(st.rows.map((r, i) => [r.id, i.toString(36)]));
+  const r = st.rows.map(row => {
+    const o = Object.assign({}, row, { id: ids.get(row.id), deps: (row.deps || []).filter(d => ids.has(d)).map(d => ids.get(d)) });
+    if (!o.deps.length) delete o.deps;
+    if (o.assignee === '') delete o.assignee;
+    if (o.type === 'task') delete o.type;
+    if (o.progress === 0) delete o.progress;
+    return o;
+  });
+  return { v: 1, s: st.settings, r }; // every setting travels, so a link keeps its look even if a default changes later
+}
+function unpackPlan(o) {
+  if (!o || !Array.isArray(o.r)) return null;
+  const ids = new Map(o.r.filter(r => r && typeof r === 'object').map(r => [String(r.id), uid()]));
+  const rows = o.r.filter(r => r && typeof r === 'object').map(r => Object.assign({}, r, { id: ids.get(String(r.id)), deps: (Array.isArray(r.deps) ? r.deps : []).map(d => ids.get(String(d))).filter(Boolean) }));
+  return sanitize({ settings: Object.assign({}, DEFAULT_SETTINGS, o.s && typeof o.s === 'object' ? o.s : {}), rows });
+}
+async function planToHash(st) {
+  const bytes = new TextEncoder().encode(JSON.stringify(packPlan(st)));
+  if (typeof CompressionStream === 'function') { try { return 'z' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); } catch (e) { /* fall back to plain */ } }
+  return 'j' + b64u(bytes);
+}
+async function hashToPlan(h) {
+  const bytes = unb64u(h.slice(1));
+  const raw = h[0] === 'z' ? await pipeBytes(bytes, new DecompressionStream('deflate-raw')) : bytes;
+  return unpackPlan(JSON.parse(new TextDecoder().decode(raw)));
+}
+function linkDialog(url) { // when the browser won't let the page write to the clipboard
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal dialog" role="dialog" aria-modal="true"><h2>Copy this link</h2><p class="modal-sub">Anyone who opens it gets this plan as it is now.</p><input class="inp link-box" readonly value="${esc(url)}"><div class="dialog-btns"><button class="btn primary">Done</button></div></div>`;
+  back.addEventListener('click', e => { if (e.target === back || e.target.closest('.btn')) back.remove(); });
+  document.body.appendChild(back);
+  const inp = back.querySelector('input'); inp.focus(); inp.select();
+}
+async function shareLink() {
+  commit();
+  const url = location.origin + location.pathname + '#p=' + await planToHash(state);
+  try { await navigator.clipboard.writeText(url); } catch (e) { linkDialog(url); return; }
+  toast(url.length > 8000 ? `Link copied — it is long (${url.length.toLocaleString()} characters) and some apps cut long links; for a plan this size the project file is safer` : 'Link copied — whoever opens it gets this plan as it is now');
+}
+async function openSharedLink() {
+  const m = /^#p=([zj][A-Za-z0-9_-]+)$/.exec(location.hash);
+  if (!m) return;
+  const clear = () => history.replaceState(null, '', location.pathname + location.search);
+  let plan = null;
+  try { plan = await hashToPlan(m[1]); } catch (e) { console.warn('shared link', e); }
+  if (!plan) { clear(); toast('That link is incomplete or damaged — ask for it to be sent again'); return; }
+  const open = () => {
+    commit(); closePop();
+    state = plan; sel = null; multi = new Set(); detailId = null;
+    commit(); ensureFont(); refresh(); clear();
+    toast('Shared plan opened — it is now saved in this browser');
+  };
+  let mine = null;
+  try { mine = localStorage.getItem(STORE_KEY); } catch (e) { /* storage unavailable */ }
+  if (!mine) { open(); return; } // nothing of the visitor's own to lose
+  if (JSON.stringify(packPlan(state)) === JSON.stringify(packPlan(plan))) { clear(); return; }
+  dialog('Open the shared plan?', 'This link carries a plan. Opening it replaces the plan saved in this browser.', [
+    ['Keep mine', 'ghost', clear],
+    ['Save mine as a file, then open', 'ghost', () => { exportJson(); open(); }],
+    ['Open shared plan', 'primary', open],
+  ]);
+}
+window.addEventListener('hashchange', openSharedLink);
+$('#btn-share').addEventListener('click', () => shareLink().catch(err => { console.error(err); toast('Couldn’t make the link — please try again'); }));
+
 const exportMenu = $('#export-menu');
 $('#btn-export').addEventListener('click', e => { e.stopPropagation(); exportMenu.hidden = !exportMenu.hidden; });
 document.addEventListener('click', e => { if (!exportMenu.hidden && !exportMenu.contains(e.target)) exportMenu.hidden = true; });
@@ -1499,7 +1579,7 @@ exportMenu.addEventListener('click', e => {
   const b = e.target.closest('[data-export]');
   if (!b) return;
   exportMenu.hidden = true;
-  const fn = { png: exportPng, copy: exportCopy, pdf: exportPdf, pptx: exportPptx, json: exportJson }[b.dataset.export];
+  const fn = { png: exportPng, copy: exportCopy, pdf: exportPdf, pptx: exportPptx, json: exportJson, link: shareLink }[b.dataset.export];
   Promise.resolve().then(fn).catch(err => { console.error(err); toast('Export failed — ' + (err && err.message ? err.message : 'please try again')); });
 });
 
@@ -1961,7 +2041,8 @@ function inlineEdit(rect, value, fontPx, weight, onInput) {
 }
 function editTitle(rect) {
   const s = svg.getBoundingClientRect().width / scene.w;
-  inlineEdit({ left: rect.left, top: rect.top, width: Math.max(rect.width + 80, 420 * s), height: rect.height }, state.settings.title, Math.max(13, 30 * s), 700, v => { state.settings.title = v; renderChart(); syncDesign(); });
+  // a headline written from the plan becomes an ordinary title the moment it is typed over
+  inlineEdit({ left: rect.left, top: rect.top, width: Math.max(rect.width + 80, 420 * s), height: rect.height }, state.settings.titleAuto ? scene.title : state.settings.title, Math.max(13, 30 * s), 700, v => { state.settings.titleAuto = false; state.settings.title = v; renderChart(); syncDesign(); });
 }
 function editRowName(id, rect) {
   const n = scene.info.find(x => x.row.id === id);
@@ -2621,6 +2702,7 @@ function syncQuickStatus() {
   const S = state.settings, prog = $('#qs-progress'), base = $('#qs-base');
   if (!prog || !base) return;
   prog.setAttribute('aria-pressed', String(!!S.progress));
+  $('#qs-exec').setAttribute('aria-pressed', String(!!S.execView));
   const has = hasBaseline(), on = !!S.showChanges && has;
   base.setAttribute('aria-pressed', String(on));
   base.classList.toggle('none', !has);
@@ -2638,6 +2720,7 @@ $('#qs-base').addEventListener('click', () => {
   else setSetting('showChanges', !S.showChanges);
 });
 $('#qs-base-menu').addEventListener('click', baselineDialog);
+$('#qs-exec').addEventListener('click', () => { closePop(); setSetting('execView', !state.settings.execView); syncAddNote(); });
 /** the selection's toolbar floats just above the selected bars (below them if there is no room), kept within view */
 function placeSelBar() {
   const bar = $('#selbar');
@@ -2689,3 +2772,4 @@ buildDesign();
 syncUndo();
 ensureFont();
 refresh();
+openSharedLink();

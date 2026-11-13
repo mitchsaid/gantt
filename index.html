@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=99">
+<link rel="stylesheet" href="css/style.css?v=100">
 </head>
 <body>
 <header class="topbar">
@@ -24,6 +24,7 @@
     <span class="sep"></span>
     <button class="btn ghost" id="btn-new" title="Start a new plan"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New</span></button>
     <button class="btn ghost" id="btn-import" title="Paste a task list or import a sheet"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Import</span></button>
+    <button class="btn ghost" id="btn-share" title="Copy a link that carries this whole plan — nothing is uploaded"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Share link</span></button>
     <div class="menu-wrap">
       <button class="btn primary" id="btn-export" aria-haspopup="true"><svg viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Export</span></button>
       <div class="menu" id="export-menu" hidden>
@@ -32,6 +33,7 @@
         <button data-export="png"><b>PNG image</b><small>High resolution (3×)</small></button>
         <button data-export="copy"><b>Copy image</b><small>Paste straight into slides or docs</small></button>
         <hr>
+        <button data-export="link"><b>Copy link</b><small>The whole plan in a link — nothing is uploaded</small></button>
         <button data-export="json"><b>Project file</b><small>Save to re-open later (.json)</small></button>
       </div>
     </div>
@@ -90,6 +92,7 @@
           <span class="chart-warn" id="chart-out" hidden></span>
           <button class="link-btn quiet" id="chart-spread" hidden title="Rescale every item to fill the fixed timeline">↔ Spread across the timeline</button>
           <span class="qs" role="group" aria-label="Progress and baseline">
+            <button class="qs-btn" id="qs-exec" aria-pressed="false" title="Exec view: one bar per area, milestones and status — the plan itself is untouched">Exec view</button>
             <button class="qs-btn" id="qs-progress" aria-pressed="false" title="Show progress in the bars">Progress</button>
             <button class="qs-btn" id="qs-base" aria-pressed="false"><span class="qs-dot"></span><span id="qs-base-text">Set baseline</span><span class="qs-count" id="qs-base-count" hidden></span></button>
             <button class="qs-btn qs-more" id="qs-base-menu" aria-label="Update or remove the baseline" title="Update or remove the baseline" disabled>⋯</button>
@@ -151,7 +154,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=99"></script>
-<script src="js/app.js?v=99"></script>
+<script src="js/core.js?v=100"></script>
+<script src="js/app.js?v=100"></script>
 </body>
 </html>
