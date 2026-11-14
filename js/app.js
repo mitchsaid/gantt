@@ -252,7 +252,7 @@ function renderChart() {
     if (out.length) co.innerHTML = `⚠ ${out.length} ${out.length === 1 ? 'item is' : 'items are'} outside the timeline <button class="link-btn" data-act="pull">Fit them in…</button>`;
   }
   const warn = $('#chart-warn');
-  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Chart'; }
+  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Canvas'; }
 }
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
@@ -1011,147 +1011,169 @@ svg.addEventListener('pointerup', endDrag);
 svg.addEventListener('pointercancel', endDrag);
 
 // ---------------------------------------------------------------- design panel
+// Sections run from the page as a whole (Canvas) through time (Timeline), what sits on it (Tasks, Milestones), how the plan is
+// doing (Progress, Status) to the look (Colour, Text). Each control can carry `kw` (extra words the search finds it by), `dep`
+// (the control that reveals it, when that isn't the switch just above it) and `why` (said in search results while it is hidden).
 const DESIGN = [
   ['canvas', 'Canvas', [
-    { type: 'head', label: 'Title' },
-    { k: 'showTitle', type: 'toggle', label: 'Show title' },
-    { k: 'titleAuto', type: 'toggle', label: 'Write the headline for me', sub: true, when: s => s.showTitle },
-    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', when: s => s.showTitle && !s.titleAuto },
-    { k: '_headNote', type: 'note', label: 'The title is written from the plan: where the finish stands (against the baseline or the overall status), then the biggest issue or the next milestone. It updates as the plan changes; type over it on the chart to take it back.', when: s => s.showTitle && s.titleAuto },
-    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
     { type: 'head', label: 'View' },
-    { k: 'execView', type: 'toggle', label: 'Exec view' },
+    { k: 'execView', type: 'toggle', label: 'Exec view', kw: 'executive summary collapse roll up overview areas only' },
     { k: '_execNote', type: 'note', label: 'One bar per area, with its dates, progress and status rolled up, and the milestones in a strip above (the key ones, if any are marked). The plan itself is untouched: edit it in the Plan panel, or switch this off to edit on the chart.', when: s => s.execView },
     { type: 'head', label: 'Size' },
-    { k: 'canvas', type: 'select', label: 'Size', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
-    { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
-    { k: 'canvasH', type: 'number', label: 'Height (in)', sub: true, min: 2, max: 40, step: 0.1, when: s => s.canvas === 'custom' },
-    { k: 'fit', type: 'seg', label: 'Canvas height', opts: [['content', 'Fit content'], ['fixed', 'Fixed']] },
+    { k: 'canvas', type: 'select', label: 'Canvas size', kw: 'slide page paper dimensions aspect ratio 16:9 4:3 a4 letter widescreen', opts: CANVASES.map(c => [c.id, c.name]).concat([['custom', 'Custom size…']]) },
+    { k: 'canvasW', type: 'number', label: 'Width (in)', sub: true, min: 3, max: 40, step: 0.1, kw: 'inches custom', when: s => s.canvas === 'custom' },
+    { k: 'canvasH', type: 'number', label: 'Height (in)', sub: true, min: 2, max: 40, step: 0.1, kw: 'inches custom', when: s => s.canvas === 'custom' },
+    { k: 'fit', type: 'seg', label: 'Height', kw: 'canvas height fit content fixed', opts: [['content', 'Fit content'], ['fixed', 'Fixed']] },
     { k: '_canvasInfo', type: 'info', id: 'canvas-info' },
+    { type: 'head', label: 'Title' },
+    { k: 'showTitle', type: 'toggle', label: 'Show title', kw: 'heading headline' },
+    { k: 'titleAuto', type: 'toggle', label: 'Write the headline for me', sub: true, kw: 'automatic auto headline summary', when: s => s.showTitle },
+    { k: 'title', type: 'text', label: 'Title', sub: true, ph: 'Chart title', kw: 'heading name', when: s => s.showTitle && !s.titleAuto },
+    { k: '_headNote', type: 'note', label: 'The title is written from the plan: where the finish stands (against the baseline or the overall status), then the biggest issue or the next milestone. It updates as the plan changes; type over it on the chart to take it back.', when: s => s.showTitle && s.titleAuto },
+    { k: 'titleScale', type: 'seg', label: 'Title size', num: true, dep: 'showTitle', kw: 'heading font big small large', opts: [[0.8, 'Small'], [1, 'Regular'], [1.3, 'Large']], when: s => s.showTitle },
   ]],
   ['timeline', 'Timeline', [
     { type: 'head', label: 'Scale' },
-    { k: 'scale', type: 'seg', label: 'Periods', col: true, opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
-    { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']], when: s => s.scale === 'sprints' },
+    { k: 'scale', type: 'seg', label: 'Periods', col: true, kw: 'scale zoom granularity units days weeks sprints months quarters', opts: [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']] },
+    { k: 'sprintWeeks', type: 'seg', label: 'A sprint is', num: true, kw: 'sprint length iteration agile scrum', why: 'Shown on the Sprints scale (Timeline → Periods).', opts: [[1, '1 wk'], [2, '2 wk'], [3, '3 wk'], [4, '4 wk']], when: s => s.scale === 'sprints' },
     { type: 'head', label: 'Span' },
-    { k: 'rangeMode', type: 'seg', label: 'Overall span', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
-    { k: 'rangeStart', type: 'date', label: 'From', sub: true, when: s => s.rangeMode === 'fixed' },
-    { k: 'rangeEnd', type: 'date', label: 'To', sub: true, when: s => s.rangeMode === 'fixed' },
-    { k: '_len', type: 'dur', label: 'Or length from start', sub: true, col: true, when: s => s.rangeMode === 'fixed' },
-    { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', when: s => s.rangeMode === 'fixed' },
+    { k: 'rangeMode', type: 'seg', label: 'Overall span', kw: 'range start end begin finish dates fixed length', opts: [['auto', 'Fit to tasks'], ['fixed', 'Fixed']] },
+    { k: 'rangeStart', type: 'date', label: 'From', sub: true, kw: 'start begin', when: s => s.rangeMode === 'fixed' },
+    { k: 'rangeEnd', type: 'date', label: 'To', sub: true, kw: 'end finish', when: s => s.rangeMode === 'fixed' },
+    { k: '_len', type: 'dur', label: 'Or length from start', sub: true, col: true, kw: 'duration', when: s => s.rangeMode === 'fixed' },
+    { k: '_fit', type: 'button', label: 'Spread tasks across it', sub: true, act: 'fit', kw: 'stretch scale distribute', when: s => s.rangeMode === 'fixed' },
     { k: '_outInfo', type: 'info', id: 'out-info', when: s => outsideRows().length > 0 },
-    { k: '_pull', type: 'button', label: 'Fit the items outside it…', sub: true, act: 'pull', when: s => outsideRows().length > 0 },
-    { type: 'head', label: 'Header' },
-    { k: 'dateMode', type: 'seg', label: 'Shown as', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
-    { k: 'datePos', type: 'seg', label: 'Position', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
-    { k: 'periodNames', type: 'toggle', label: 'Period names', when: s => s.dateMode !== 'relative' },
-    { k: 'periodMonths', type: 'seg', label: 'Month names', sub: true, opts: [['full', 'Full'], ['short', 'Abbreviated']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
-    { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, opts: [['always', 'Always'], ['change', 'Only across years'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
-    { k: 'dateFormat', type: 'select', label: 'Date format', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
-    { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
+    { k: '_pull', type: 'button', label: 'Fit the items outside it…', sub: true, act: 'pull', why: 'Appears when items sit outside a fixed span.', when: s => outsideRows().length > 0 },
+    { type: 'head', label: 'Dates' },
+    { k: 'dateMode', type: 'seg', label: 'Shown as', kw: 'header calendar relative numbered week 1 day 1', opts: [['calendar', 'Dates'], ['relative', 'Numbered']] },
+    { k: 'datePos', type: 'seg', label: 'Position', kw: 'header top bottom both axis', opts: [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']] },
+    { k: 'periodNames', type: 'toggle', label: 'Period names', kw: 'header month names labels', why: 'Shown when dates are shown as Dates (Timeline → Shown as).', when: s => s.dateMode !== 'relative' },
+    { k: 'periodMonths', type: 'seg', label: 'Month names', sub: true, kw: 'full abbreviated short january jan', opts: [['full', 'Full'], ['short', 'Abbreviated']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
+    { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, kw: 'year header', opts: [['always', 'Always'], ['change', 'Only across years'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
+    { k: 'dateFormat', type: 'select', label: 'Date format', kw: 'date style dd/mm mm/dd numbers year', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
+    { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, kw: 'day first month first american us european dd/mm mm/dd', opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
     { k: '_dateEx', type: 'info', id: 'date-ex' },
     { type: 'head', label: 'Gridlines' },
-    { k: 'gridCells', type: 'toggle', label: 'Period lines' },
-    { k: 'gridMonths', type: 'toggle', label: 'Month lines', when: s => s.dateMode !== 'relative' },
-    { k: 'weekends', type: 'toggle', label: 'Shade weekends', when: s => s.scale === 'days' },
-    { type: 'head', label: 'Milestones' },
-    { k: 'msLines', type: 'toggle', label: 'Milestone guide lines' },
-    { type: 'head', label: 'Calendar' },
-    { k: 'showDaysOff', type: 'toggle', label: 'Shade non-working days' },
-    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true },
-    { k: '_offNote', type: 'note', label: 'Holidays, freezes, shutdowns: shaded on the chart, left out of working-day counts in the item popover, and never counted in “Days left”. Weekends are shaded under Gridlines (days scale).' },
-    { type: 'head', label: 'Key milestones' },
-    { k: 'keyStrip', type: 'toggle', label: 'Key milestones strip' },
-    { k: '_keyNote', type: 'note', label: 'A strip above the chart with the milestones you tick “Key milestone” on (every milestone if none is ticked), on the same time scale.', when: s => s.keyStrip },
-    { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
+    { k: 'gridCells', type: 'toggle', label: 'Period lines', kw: 'gridlines vertical lines day week sprint month quarter' },
+    { k: 'gridMonths', type: 'toggle', label: 'Month lines', kw: 'gridlines vertical lines year', why: 'Shown when dates are shown as Dates (Timeline → Shown as).', when: s => s.dateMode !== 'relative' },
+    { type: 'head', label: 'Working days' },
+    { k: 'weekends', type: 'toggle', label: 'Shade weekends', kw: 'saturday sunday shading non-working', why: 'Shown on the Days scale (Timeline → Periods).', when: s => s.scale === 'days' },
+    { k: 'showDaysOff', type: 'toggle', label: 'Shade non-working days', kw: 'holidays freeze shutdown calendar days off vacation bank holiday' },
+    { k: 'daysOff', type: 'daysoff', label: 'Non-working days', sub: true, col: true, kw: 'holidays freeze shutdown calendar days off vacation bank holiday add' },
+    { k: '_offNote', type: 'note', label: 'Holidays, freezes, shutdowns: shaded on the chart, left out of working-day counts in the item popover, and never counted in “Days left”.' },
   ]],
   ['tasks', 'Tasks', [
     { type: 'head', label: 'Rows' },
-    { k: 'pack', type: 'seg', label: 'Row layout', bool: true, opts: [['false', 'One per task'], ['true', 'In sequence']] },
-    { k: 'density', type: 'seg', label: 'Row height', opts: [['compact', 'Compact'], ['auto', 'Auto'], ['roomy', 'Roomy']] },
-    { k: 'corners', type: 'seg', label: 'Corners', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
-    { k: 'stripes', type: 'toggle', label: 'Row stripes' },
-    { type: 'head', label: 'Names' },
-    { k: 'taskLabels', type: 'seg', label: 'Task names', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
-    { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Rows is set to “In sequence”, because a row can hold several tasks. Switch Rows to “One per task” to put them on the left.', when: s => s.pack },
-    { k: 'areaLabels', type: 'seg', label: 'Area names', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
-    { k: 'textCase', type: 'seg', label: 'Name case', opts: [['default', 'Default'], ['upper', 'UPPER'], ['title', 'Title Case']] },
-    { k: 'overflow', type: 'seg', label: 'Long names', col: true, opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
-    { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first' },
-    { type: 'head', label: 'Extras' },
-    { k: 'assignees', type: 'toggle', label: 'Assignees' },
-    { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
+    { k: 'pack', type: 'seg', label: 'Row layout', bool: true, kw: 'sequence pack compact same line one per task swimlane', opts: [['false', 'One per task'], ['true', 'In sequence']] },
+    { k: 'density', type: 'seg', label: 'Row height', kw: 'density spacing padding compact roomy tight', opts: [['compact', 'Compact'], ['auto', 'Auto'], ['roomy', 'Roomy']] },
+    { k: 'stripes', type: 'toggle', label: 'Row stripes', kw: 'zebra banding alternate shading' },
+    { k: 'corners', type: 'seg', label: 'Bar corners', kw: 'rounded radius pill square shape', opts: [['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']] },
+    { type: 'head', label: 'Name position' },
+    { k: 'taskLabels', type: 'seg', label: 'Task names', kw: 'labels left side on bars inside', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
+    { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Row layout is “In sequence”, because a row can hold several tasks. Switch it to “One per task” to put them on the left.', when: s => s.pack },
+    { k: 'areaLabels', type: 'seg', label: 'Area names', kw: 'labels headings group phase side', why: 'Appears once the plan has an area.', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
+    { type: 'head', label: 'Assignees' },
+    { k: 'assignees', type: 'toggle', label: 'Show assignees', kw: 'owner people person who responsible team resource' },
+    { k: 'assigneePos', type: 'seg', label: 'Placed', sub: true, kw: 'under beside on bar position', opts: [['under', 'Under'], ['beside', 'Beside'], ['bars', 'On bar']], when: s => s.assignees },
     { k: 'assigneeNames', type: 'toggle', label: 'Show names', sub: true, when: s => s.assignees && s.assigneePos === 'bars' },
-    { k: 'assigneeAvatar', type: 'toggle', label: 'Show initials avatar', sub: true, when: s => s.assignees && s.assigneePos !== 'bars' },
+    { k: 'assigneeAvatar', type: 'toggle', label: 'Show initials avatar', sub: true, kw: 'circle badge', when: s => s.assignees && s.assigneePos !== 'bars' },
     { k: 'assigneeAreas', type: 'toggle', label: 'Include areas', sub: true, when: s => s.assignees },
-    { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
-    { k: 'deps', type: 'toggle', label: 'Dependency lines' },
-    { k: 'criticalPath', type: 'toggle', label: 'Highlight the critical path', sub: true, when: s => s.deps },
+    { k: 'assigneeLevel', type: 'seg', label: 'For', sub: true, kw: 'tasks subtasks level', opts: [['tasks', 'Tasks'], ['subtasks', 'Subtasks'], ['all', 'Both']], when: s => s.assignees },
+    { type: 'head', label: 'Dependencies' },
+    { k: 'deps', type: 'toggle', label: 'Dependency lines', kw: 'arrows links connectors predecessors depends on' },
+    { k: 'criticalPath', type: 'toggle', label: 'Highlight the critical path', sub: true, kw: 'critical chain longest finish', when: s => s.deps },
     { k: '_critNote', type: 'note', label: 'Traced back from the item that finishes last, through the dependency that finishes latest each time: the chain that decides the end date. Bars get a deep red edge and the links turn thicker.', when: s => s.deps && s.criticalPath },
+  ]],
+  ['milestones', 'Milestones', [
+    { k: 'msAlign', type: 'seg', label: 'Milestone sits at', col: true, kw: 'diamond position align day start middle end', opts: [['auto', 'Auto'], ['start', 'Day start'], ['middle', 'Middle'], ['end', 'Day end']] },
+    { k: 'msLines', type: 'toggle', label: 'Guide lines', kw: 'diamond vertical lines milestone lines' },
+    { k: 'keyStrip', type: 'toggle', label: 'Key milestones strip', kw: 'diamond highlights important strip above' },
+    { k: '_keyNote', type: 'note', label: 'A strip above the chart with the milestones you tick “Key milestone” on (every milestone if none is ticked), on the same time scale.', when: s => s.keyStrip },
   ]],
   ['progress', 'Progress', [
     { type: 'head', label: 'Date marker' },
-    { k: 'todayLine', type: 'toggle', label: 'Date marker' },
-    { k: 'todayDate', type: 'date', label: 'Date', sub: true, when: s => s.todayLine },
+    { k: 'todayLine', type: 'toggle', label: 'Show the date marker', kw: 'today now line status date as of' },
+    { k: 'todayDate', type: 'date', label: 'Date', sub: true, kw: 'today as of', when: s => s.todayLine },
     { k: 'markerLabelOn', type: 'toggle', label: 'Show label', sub: true, when: s => s.todayLine },
     { k: 'todayLabel', type: 'text', label: 'Label text', sub: true, ph: 'Today', when: s => s.todayLine && s.markerLabelOn !== false },
-    { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
-    { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
-    { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, when: s => s.todayLine },
+    { k: 'markerStyle', type: 'seg', label: 'Line', sub: true, kw: 'solid dashed dotted style', opts: [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], when: s => s.todayLine },
+    { k: 'markerWidth', type: 'seg', label: 'Thickness', sub: true, num: true, kw: 'width weight thin bold', opts: [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']], when: s => s.todayLine },
+    { k: 'markerColor', type: 'markercolor', label: 'Colour', sub: true, col: true, kw: 'marker colour', when: s => s.todayLine },
     { type: 'head', label: 'Progress in bars' },
-    { k: 'progressMode', type: 'seg', label: 'Progress in bars', col: true, opts: [['off', 'Off'], ['manual', 'Set per bar'], ['marker', 'Up to date marker']] },
+    { k: 'progressMode', type: 'seg', label: 'Fill bars', col: true, kw: 'progress percent complete done fill', opts: [['off', 'Off'], ['manual', 'Set per bar'], ['marker', 'Up to date marker']] },
     { k: '_markerNote', type: 'note', label: 'Turn on the date marker (above) to show progress up to it. Until then each bar shows the value set on it.', when: s => s.progress && s.progressSource === 'marker' && !s.todayLine },
-    { k: 'progressStyle', type: 'seg', label: 'Progress style', sub: true, col: true, opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
+    { k: 'progressStyle', type: 'seg', label: 'Style', sub: true, col: true, kw: 'progress pale darker shade', opts: [['pale', 'Pale unfinished'], ['shade', 'Darker finished']], when: s => s.progress },
     { k: '_progNote', type: 'note', label: '“Pale unfinished” tints the part still to do, so bars at 0% look washed out. “Darker finished” keeps every bar in its palette colour, with the same label colour throughout.', when: s => s.progress },
     { type: 'head', label: 'Days left' },
-    { k: 'daysLeft', type: 'toggle', label: 'Days left' },
-    { k: 'planDaysLeft', type: 'toggle', label: 'Days left for the whole plan' },
-    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, when: s => s.daysLeft || s.planDaysLeft },
-    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (holidays, freezes) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
-    { type: 'head', label: 'Status' },
-    { k: 'showStatus', type: 'toggle', label: 'Green / amber / red dots' },
-    { k: 'projectStatus', type: 'seg', label: 'Overall status', sub: true, col: true, opts: [['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']], when: s => s.showStatus },
+    { k: 'daysLeft', type: 'toggle', label: 'On each item', kw: 'days left remaining countdown' },
+    { k: 'planDaysLeft', type: 'toggle', label: 'For the whole plan', kw: 'days left remaining countdown project' },
+    { k: 'daysLeftWeekdays', type: 'toggle', label: 'Count weekdays only', sub: true, kw: 'days left working business days', dep: 'daysLeft', when: s => s.daysLeft || s.planDaysLeft },
+    { k: '_dlNote', type: 'note', label: 'Counted from the date marker’s date (today unless you set one): to the end of each item, and for the whole plan to its last item. Non-working days (Timeline → Working days) are never counted. The plan’s count appears beside the marker’s label (top right if the marker is off).', when: s => s.daysLeft || s.planDaysLeft },
+  ]],
+  ['status', 'Status', [
+    { type: 'head', label: 'Status dots' },
+    { k: 'showStatus', type: 'toggle', label: 'Green / amber / red dots', kw: 'status rag traffic light health on track at risk' },
+    { k: 'projectStatus', type: 'seg', label: 'Overall status', sub: true, col: true, kw: 'rag project plan on track at risk off track title', opts: [['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']], when: s => s.showStatus },
     { k: '_statNote', type: 'note', label: 'Set a status on any item from its popover. Areas show the worst status of what is inside them unless you set one. The overall status sits beside the title.', when: s => s.showStatus },
     { type: 'head', label: 'Blocked items' },
-    { k: 'blockedWaiting', type: 'toggle', label: 'Show what is waiting on them' },
-    { k: 'blockedLegend', type: 'toggle', label: 'Legend and reasons' },
+    { k: 'blockedWaiting', type: 'toggle', label: 'Show what is waiting on them', kw: 'blocked stuck blockers stripes dependents' },
+    { k: 'blockedLegend', type: 'toggle', label: 'Legend and reasons', kw: 'blocked stuck blockers key' },
     { k: '_blockedNote', type: 'note', label: 'Mark an item blocked in its popover (or select it and press Alt+B). It gets striped, with a red “!”; anything that depends on it and isn’t finished gets lighter stripes.' },
     { type: 'head', label: 'Changes from original' },
-    { k: 'showChanges', type: 'toggle', label: 'Changes from original' },
-    { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, when: s => s.showChanges },
-    { k: 'slipChip', type: 'toggle', label: 'Finish vs baseline beside the title', sub: true, when: s => s.showChanges },
+    { k: 'showChanges', type: 'toggle', label: 'Show changes from the baseline', kw: 'baseline original slip slipped moved variance delay compare' },
+    { k: 'changesLegend', type: 'toggle', label: 'Legend and notes', sub: true, kw: 'baseline key', when: s => s.showChanges },
+    { k: 'slipChip', type: 'toggle', label: 'Finish vs baseline beside the title', sub: true, kw: 'baseline slip late early', when: s => s.showChanges },
     { k: '_baseInfo', type: 'info', id: 'base-info', when: s => s.showChanges },
-    { k: '_baseBtn', type: 'button', label: 'Update or remove baseline…', sub: true, act: 'baseline', when: s => s.showChanges },
+    { k: '_baseBtn', type: 'button', label: 'Update or remove baseline…', sub: true, act: 'baseline', kw: 'reset clear snapshot', when: s => s.showChanges },
   ]],
   ['colour', 'Colour', [
-    { type: 'palette' },
-    { k: 'colorBy', type: 'seg', label: 'Share a colour by', opts: [['group', 'Area'], ['row', 'Row']] },
+    { type: 'head', label: 'Palette' },
+    { k: '_palette', type: 'palette', label: 'Palette', kw: 'colour scheme theme swatches brand ready-made presets custom own save' },
+    { k: 'colorBy', type: 'seg', label: 'Share a colour by', kw: 'palette area row group', opts: [['group', 'Area'], ['row', 'Row']] },
     { k: '_colorByNote', type: 'note', label: 'Area: an area and everything in it share a colour. Row: each line takes the next colour, and tasks sharing a line (Tasks → Row layout → In sequence) match.', when: s => s.colorBy === 'row' || s.pack },
-    { k: 'bgTransparent', type: 'toggle', label: 'Transparent background' },
-    { k: 'bg', type: 'color', label: 'Background', when: s => !s.bgTransparent },
-    { k: 'textMode', type: 'seg', label: 'Text colour', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
-    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
+    { type: 'head', label: 'Background' },
+    { k: 'bgTransparent', type: 'toggle', label: 'Transparent background', kw: 'png alpha see-through clear' },
+    { k: 'bg', type: 'color', label: 'Background colour', kw: 'fill white canvas', dep: 'bgTransparent', when: s => !s.bgTransparent },
+    { type: 'head', label: 'Text colour' },
+    { k: 'textMode', type: 'seg', label: 'Text', kw: 'font colour dark light contrast', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
+    { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, kw: 'label colour white dark contrast', why: 'Shown when names sit on the bars (Tasks → Task names, or Row layout “In sequence”).', opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
   ]],
   ['text', 'Text', [
-    { k: 'font', type: 'select', label: 'Font', opts: FONTS.map(f => [f, f]) },
-    { k: 'textAuto', type: 'toggle', label: 'Automatic text size' },
-    { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, when: s => !s.textAuto },
+    { type: 'head', label: 'Font' },
+    { k: 'font', type: 'select', label: 'Font', kw: 'typeface family', opts: FONTS.map(f => [f, f]) },
+    { k: 'textAuto', type: 'toggle', label: 'Automatic text size', kw: 'font size scale' },
+    { k: 'textPt', type: 'number', label: 'Text size (pt)', sub: true, min: 5, max: 48, step: 0.5, kw: 'font size points', when: s => !s.textAuto },
     { k: '_textInfo', type: 'info', id: 'text-info' },
+    { type: 'head', label: 'Names' },
+    { k: 'textCase', type: 'seg', label: 'Name case', kw: 'uppercase capitals capitalise title case caps', opts: [['default', 'As typed'], ['upper', 'UPPER'], ['title', 'Title Case']] },
+    { k: 'overflow', type: 'seg', label: 'Long names', col: true, kw: 'overflow truncate ellipsis shrink fit outside', opts: [['outside', 'Move outside'], ['shrink', 'Shrink'], ['truncate', 'Truncate']] },
+    { k: 'wrapNames', type: 'toggle', label: 'Wrap to two lines first', kw: 'long names wrap multi-line' },
   ]],
 ];
 const designEl = $('#design');
 const designCtl = {};
+/** every searchable control, with where it sits: { c, sec, title, head, parent (the control that reveals it), owner (for notes) } */
+const designItems = [];
 function buildDesign() {
   let html = '';
+  designItems.length = 0;
   DESIGN.forEach(([id, title, ctls]) => {
+    let head = '', lastTop = null, last = null;
     const open = ui.designOpen[id] !== false;
     html += `<section class="group${open ? '' : ' collapsed'}" data-sec="${id}"><h3><button class="ghead" data-sec-toggle="${id}" aria-expanded="${open}" aria-controls="sec-${id}"><i class="chev" aria-hidden="true"></i><span class="gt">${title}</span><span class="gsum" data-sum="${id}"></span></button></h3><div class="gbody" id="sec-${id}">`;
     ctls.forEach(c => {
       if (c.k) designCtl[c.k] = c;
-      if (c.type === 'head') { html += `<h4 class="ghd">${c.label}</h4>`; return; }
+      if (c.type === 'head') { head = c.label; html += `<h4 class="ghd">${c.label}</h4>`; return; }
+      if (c.type === 'note' || c.type === 'info') designItems.push({ c, sec: id, owner: last });
+      else {
+        const it = { c, sec: id, title, head, parent: c.dep ? designItems.find(x => x.c.k === c.dep) : c.sub ? lastTop : null };
+        it.text = searchNorm([title, head, c.label, c.kw, (c.opts || []).map(o => o[1]).join(' ')].join(' '));
+        designItems.push(it); last = it;
+        if (!c.sub) lastTop = it;
+      }
       const cls = `ctl${c.sub ? ' sub' : ''}${c.col || c.type === 'themes' ? ' col' : ''}`;
       const lbl = `<span class="lbl">${c.label || ''}</span>`;
-      if (c.type === 'palette') html += paletteHtml();
+      if (c.type === 'palette') html += `<div class="pal-wrap" data-w="${c.k}">${paletteHtml()}</div>`;
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
@@ -1166,7 +1188,7 @@ function buildDesign() {
     });
     html += '</div></section>';
   });
-  html += '<div class="reset-row"><button class="link-btn quiet" data-act="reset">Reset to defaults…</button></div>';
+  html += '<p class="srch-empty" id="srch-empty" hidden></p><div class="reset-row"><button class="link-btn quiet" data-act="reset">Reset to defaults…</button></div>';
   designEl.innerHTML = html;
 }
 /** non-working days (holidays, company freezes): never counted by the days-left annotations */
@@ -1195,10 +1217,12 @@ function designSummary(id, S) {
   const cv = canvasOf(S);
   if (id === 'canvas') return `${cv.name} · ${S.fit === 'fixed' ? 'fixed height' : 'fits content'}`;
   if (id === 'timeline') return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale] || '', S.rangeMode === 'fixed' ? 'fixed span' : 'fits tasks'].filter(Boolean).join(' · ');
-  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.assignees ? 'assignees' : '', S.deps ? 'dependencies' : ''].filter(Boolean).join(' · ');
-  if (id === 'progress') return [S.todayLine ? 'date marker' : '', S.progress ? (S.progressSource === 'marker' ? 'progress to marker' : 'progress per bar') : '', S.daysLeft || S.planDaysLeft ? 'days left' : '', S.showChanges ? 'baseline' : ''].filter(Boolean).join(' · ') || 'nothing on';
+  if (id === 'tasks') return [S.pack ? 'in sequence' : '', S.pack || S.taskLabels === 'bars' ? 'names on bars' : 'names left', S.assignees ? 'assignees' : '', S.deps ? (S.criticalPath ? 'critical path' : 'dependencies') : ''].filter(Boolean).join(' · ');
+  if (id === 'milestones') return [S.keyStrip ? 'key strip' : '', S.msLines ? 'guide lines' : '', S.msAlign && S.msAlign !== 'auto' ? 'at ' + ({ start: 'day start', middle: 'middle', end: 'day end' }[S.msAlign] || S.msAlign) : ''].filter(Boolean).join(' · ') || 'diamonds only';
+  if (id === 'progress') return [S.todayLine ? 'date marker' : '', S.progress ? (S.progressSource === 'marker' ? 'progress to marker' : 'progress per bar') : '', S.daysLeft || S.planDaysLeft ? 'days left' : ''].filter(Boolean).join(' · ') || 'nothing on';
+  if (id === 'status') return [S.showStatus ? 'status dots' : '', S.blockedWaiting || S.blockedLegend ? 'blocked' : '', S.showChanges ? 'baseline' : ''].filter(Boolean).join(' · ') || 'nothing on';
   if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
-  if (id === 'text') return `${S.font}${S.textAuto === false ? ' · ' + S.textPt + ' pt' : ''}`;
+  if (id === 'text') return [S.font, S.textAuto === false ? S.textPt + ' pt' : '', { upper: 'UPPER', title: 'Title Case' }[S.textCase] || ''].filter(Boolean).join(' · ');
   return '';
 }
 function setSectionOpen(id, open) {
@@ -1207,6 +1231,96 @@ function setSectionOpen(id, open) {
   if (!sec) return;
   sec.classList.toggle('collapsed', !open);
   $('.ghead', sec).setAttribute('aria-expanded', String(open));
+}
+// ---------------------------------------------------------------- design search
+// Filters the panel to the controls whose name, section, heading, options or keywords hold every word typed. A match that is
+// hidden right now (its switch is off) brings up the control that reveals it, with a line saying what is behind it.
+const searchNorm = t => String(t || '').toLowerCase().replace(/colou?r/g, 'color').replace(/[“”"'’()…,./\-]/g, ' ').replace(/\s+/g, ' ');
+const designSearch = $('#design-search');
+let designQuery = '';
+const escRe = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function markLabel(el, words) {
+  const plain = el.textContent;
+  const re = new RegExp('(?<![a-z0-9])(' + words.map(w => escRe(w).replace(/color/g, 'colou?r')).join('|') + ')', 'gi');
+  const html = esc(plain).replace(re, '<mark>$1</mark>');
+  if (html !== esc(plain)) el.innerHTML = html;
+}
+function applySearch() {
+  const S = state.settings, words = searchNorm(designQuery).trim().split(' ').filter(Boolean), on = words.length > 0;
+  designEl.classList.toggle('searching', on);
+  $$('.srch-hint', designEl).forEach(h => h.remove());
+  $$('.unavail', designEl).forEach(w => w.classList.remove('unavail'));
+  $$('.lbl', designEl).forEach(l => { if (l.querySelector('mark')) l.textContent = l.textContent; });
+  const empty = $('#srch-empty', designEl);
+  if (!on) {
+    $$('.group, .ghd', designEl).forEach(g => { g.hidden = false; });
+    $('.reset-row', designEl).hidden = false;
+    empty.hidden = true;
+    return;
+  }
+  const shown = new Set(), hints = new Map(), unavail = new Set();
+  const visible = it => !it.c.when || it.c.when(S);
+  designItems.forEach(it => {
+    if (!it.text || !words.every(w => (' ' + it.text).includes(' ' + w))) return; // words match from their start: “date” finds Date format, not Update
+    if (visible(it)) { shown.add(it); return; }
+    if (!it.c.why) { // bring up whatever reveals it
+      let p = it.parent;
+      while (p && !visible(p)) p = p.parent;
+      if (p) { shown.add(p); if (!hints.has(p)) hints.set(p, []); hints.get(p).push(it.c.label); return; }
+    }
+    shown.add(it); unavail.add(it);
+  });
+  designItems.forEach(it => { if (it.owner && shown.has(it.owner) && !unavail.has(it.owner) && visible(it)) shown.add(it); });
+  const byKey = new Map(designItems.map(it => [it.c.k, it]));
+  $$('[data-w]', designEl).forEach(w => { const it = byKey.get(w.dataset.w); w.hidden = !(it && shown.has(it)); });
+  unavail.forEach(it => {
+    const w = $(`[data-w="${it.c.k}"]`, designEl);
+    w.classList.add('unavail');
+    w.insertAdjacentHTML('afterend', `<p class="srch-hint">${esc(it.c.why)}</p>`);
+  });
+  hints.forEach((labels, it) => {
+    const w = $(`[data-w="${it.c.k}"]`, designEl), off = it.c.type === 'toggle' && !S[it.c.k];
+    w.insertAdjacentHTML('afterend', `<p class="srch-hint">${off ? 'Switch this on for' : 'Change this to reach'}: ${labels.map(l => `<b>${esc(l)}</b>`).join(', ')}</p>`);
+  });
+  // headings and sections with nothing left in them go; the rest show open, without changing which are remembered as open
+  let any = false;
+  $$('.group', designEl).forEach(g => {
+    let head = null, headHas = false, secHas = false;
+    const close = () => { if (head) head.hidden = !headHas; };
+    [...$('.gbody', g).children].forEach(el => {
+      if (el.matches('.ghd')) { close(); head = el; headHas = false; return; }
+      if (el.hasAttribute('data-w') && !el.hidden) { headHas = true; secHas = true; }
+    });
+    close();
+    g.hidden = !secHas; any = any || secHas;
+  });
+  $$('[data-w]:not([hidden]) > .lbl', designEl).forEach(l => markLabel(l, words));
+  $('.reset-row', designEl).hidden = !words.every(w => 'reset to defaults'.includes(w));
+  empty.hidden = any;
+  if (!any) empty.innerHTML = `No settings match “${esc(designQuery.trim())}”. Try a word like <i>date</i>, <i>colour</i>, <i>names</i> or <i>baseline</i>.`;
+}
+function setDesignQuery(q) {
+  designQuery = q;
+  if (designSearch.value !== q) designSearch.value = q;
+  designSearch.parentNode.classList.toggle('has-q', !!q);
+  syncDesign();
+  if (q) designEl.scrollTop = 0;
+}
+designSearch.addEventListener('input', () => setDesignQuery(designSearch.value));
+designSearch.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && designSearch.value) { e.preventDefault(); e.stopPropagation(); setDesignQuery(''); }
+  else if (e.key === 'Enter' || e.key === 'ArrowDown') { // jump into the first result
+    const first = $$('[data-w]:not([hidden]):not(.unavail)', designEl).map(w => $('input, select, button', w)).find(Boolean);
+    if (first) { e.preventDefault(); first.focus(); }
+  }
+});
+$('.srch-kbd').textContent = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
+$('#design-search-clear').addEventListener('click', () => { setDesignQuery(''); designSearch.focus(); });
+function focusDesignSearch() {
+  if (ui.hideDesign) { ui.hideDesign = false; saveUi(); syncPanels(); }
+  const pd = $('#panel-design');
+  if (matchMedia('(max-width: 860px)').matches && !pd.classList.contains('open')) { const b = $('[data-sheet="panel-design"]'); if (b) b.click(); }
+  designSearch.focus(); designSearch.select();
 }
 function syncDesign() {
   const S = state.settings;
@@ -1249,6 +1363,7 @@ function syncDesign() {
     else if (inp.type === 'date') inp.value = dayToIso(S[k] != null ? S[k] : todayDay());
     else inp.value = S[k] == null ? '' : S[k];
   });
+  applySearch();
 }
 /** if the marker's date was never chosen and today falls outside the timeline, put it mid-way through what is shown, where progress reads sensibly */
 function ensureMarkerInView() {
@@ -1304,7 +1419,7 @@ designEl.addEventListener('click', e => {
   const mineBtn = e.target.closest('[data-mine]');
   if (mineBtn) { const m = (ui.myPalettes || [])[+mineBtn.dataset.mine]; if (m) { peUi.sel = 0; peCommit(m.colors.slice()); } return; }
   const gh = e.target.closest('[data-sec-toggle]');
-  if (gh) { setSectionOpen(gh.dataset.secToggle, gh.getAttribute('aria-expanded') !== 'true'); return; }
+  if (gh) { if (designQuery) return; setSectionOpen(gh.dataset.secToggle, gh.getAttribute('aria-expanded') !== 'true'); return; }
   if (markerColorEvent(e, 'click')) return;
   const pb = e.target.closest('[data-palette]');
   if (pb) { applyPalette(PRESETS[+pb.dataset.palette]); return; }
@@ -1661,6 +1776,7 @@ document.addEventListener('keydown', e => {
   }
   else if (!inField && mod && e.key.toLowerCase() === 'x' && selIds().length && !(window.getSelection && String(window.getSelection()))) { e.preventDefault(); cutSelection(); }
   else if (!inField && mod && e.key.toLowerCase() === 'g' && selIds().length > 1) { e.preventDefault(); commit(); groupIntoNewArea(); }
+  else if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); focusDesignSearch(); } // Ctrl/⌘ + K: search the design settings
   else if (!inField && mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllRows(); }
   else if (!inField && mod && e.key.toLowerCase() === 'd' && selIds().length) { e.preventDefault(); commit(); duplicateSelection(); }
   else if (!inField && !mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && state.rows.length && (e.target === document.body || (e.target.closest && e.target.closest('#chart, .chart-col')))) { // ↑ / ↓ move the selection through the rows; Shift extends it
@@ -2544,7 +2660,7 @@ function changeHtml(n) {
 }
 /** progress for one bar: a slider, and a way to switch progress off for just this bar */
 function progressHtml(r) {
-  if (state.settings.progress && state.settings.progressSource === 'marker' && state.settings.todayLine) return `<div class="field"><span>Progress</span><p class="note">Follows the date marker, so it moves when the marker does. Change this under Design → Tasks → Progress from.</p></div>`;
+  if (state.settings.progress && state.settings.progressSource === 'marker' && state.settings.todayLine) return `<div class="field"><span>Progress</span><p class="note">Follows the date marker, so it moves when the marker does. Change this under Design → Progress → Progress in bars.</p></div>`;
   const off = r.progress == null;
   return `<div class="field"><span>Progress</span><div class="range-row${off ? ' off' : ''}"><input type="range" min="0" max="100" step="5" data-f="progress" value="${off ? 0 : r.progress}"><output>${off ? 'Off' : Math.round(r.progress) + '%'}</output><button class="x-btn" data-act="progress-clear" title="Don’t show progress on this bar" aria-label="Don’t show progress on this bar"${off ? ' disabled' : ''}>✕</button></div></div>`;
 }

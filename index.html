@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=100">
+<link rel="stylesheet" href="css/style.css?v=101">
 </head>
 <body>
 <header class="topbar">
@@ -121,6 +121,12 @@
       <button class="collapse-btn" title="Collapse or expand the Design panel" aria-label="Collapse or expand the Design panel"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
       <button class="sheet-close" data-close aria-label="Close">✕</button>
     </div>
+    <div class="design-search" role="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <input id="design-search" type="search" placeholder="Search settings" aria-label="Search the design settings" autocomplete="off" spellcheck="false">
+      <kbd class="srch-kbd" title="Ctrl/⌘ + K">⌘K</kbd>
+      <button id="design-search-clear" class="srch-clear" title="Clear the search" aria-label="Clear the search">✕</button>
+    </div>
     <div class="panel-body" id="design"></div>
   </aside>
 </main>
@@ -154,7 +160,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=100"></script>
-<script src="js/app.js?v=100"></script>
+<script src="js/core.js?v=101"></script>
+<script src="js/app.js?v=101"></script>
 </body>
 </html>

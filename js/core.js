@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v100 · 13 Nov';
+const APP_VERSION = 'v101 · 14 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -17,7 +17,7 @@ const todayDay = () => { const d = new Date(); return toDay(d.getFullYear(), d.g
 const dow = n => (dayToDate(n).getUTCDay() + 6) % 7; // 0 = Monday
 const mondayOf = n => n - dow(n);
 const ymd = n => { const d = dayToDate(n); return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]; };
-/** how dates are written on the chart and in the panels (Design → Timeline → Header): 9 Dec · 9 Dec 2026 · 9/12 · 9/12/26 · 9/12/2026 · 9, day- or month-first */
+/** how dates are written on the chart and in the panels (Design → Timeline → Dates): 9 Dec · 9 Dec 2026 · 9/12 · 9/12/26 · 9/12/2026 · 9, day- or month-first */
 let DATE_FORMAT = { f: 'text', o: 'dmy' };
 const fmtDate = (n, fmt) => {
   fmt = fmt || DATE_FORMAT;
