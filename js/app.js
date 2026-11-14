@@ -1050,7 +1050,7 @@ const DESIGN = [
     { k: 'periodNames', type: 'toggle', label: 'Period names', kw: 'header month names labels', why: 'Shown when dates are shown as Dates (Timeline → Shown as).', when: s => s.dateMode !== 'relative' },
     { k: 'periodMonths', type: 'seg', label: 'Month names', sub: true, kw: 'full abbreviated short january jan', opts: [['full', 'Full'], ['short', 'Abbreviated']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
     { k: 'periodYear', type: 'seg', label: 'Show the year', sub: true, col: true, kw: 'year header', opts: [['always', 'Always'], ['change', 'Only across years'], ['never', 'Never']], when: s => s.dateMode !== 'relative' && s.periodNames !== false && s.scale !== 'months' && s.scale !== 'quarters' },
-    { k: 'dateFormat', type: 'select', label: 'Date format', kw: 'date style dd/mm mm/dd numbers year', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
+    { k: 'dateFormat', type: 'select', label: 'Date format', col: true, kw: 'date style dd/mm mm/dd numbers year', opts: [['text', 'Day and month (9 Dec)'], ['textY', 'With year (9 Dec 2026)'], ['num', 'Numbers (9/12)'], ['numY', 'Numbers, short year (9/12/26)'], ['numYY', 'Numbers, full year (9/12/2026)'], ['day', 'Day only (9)']] },
     { k: 'dateOrder', type: 'seg', label: 'Order', sub: true, kw: 'day first month first american us european dd/mm mm/dd', opts: [['dmy', 'Day first'], ['mdy', 'Month first']], when: s => s.dateFormat !== 'day' },
     { k: '_dateEx', type: 'info', id: 'date-ex' },
     { type: 'head', label: 'Gridlines' },
@@ -1173,7 +1173,7 @@ function buildDesign() {
       }
       const cls = `ctl${c.sub ? ' sub' : ''}${c.col || c.type === 'themes' ? ' col' : ''}`;
       const lbl = `<span class="lbl">${c.label || ''}</span>`;
-      if (c.type === 'palette') html += `<div class="pal-wrap" data-w="${c.k}">${paletteHtml()}</div>`;
+      if (c.type === 'palette') html += `<div class="pal-ctl" data-w="${c.k}">${paletteHtml()}</div>`;
       else if (c.type === 'seg') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="seg" data-k="${c.k}">${c.opts.map(o => `<button data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>`;
       else if (c.type === 'toggle') html += `<label class="${cls}" data-w="${c.k}">${lbl}<span class="switch"><input type="checkbox" data-k="${c.k}"><i></i></span></label>`;
       else if (c.type === 'color') html += `<div class="${cls}" data-w="${c.k}">${lbl}<span class="color"><input class="inp hex" data-k="${c.k}" data-hex maxlength="7" spellcheck="false" aria-label="${c.label} hex"><input type="color" data-k="${c.k}" aria-label="${c.label}"></span></div>`;
@@ -1183,7 +1183,7 @@ function buildDesign() {
       else if (c.type === 'note') html += `<p class="ctl-note" data-w="${c.k}">${c.label}</p>`;
       else if (c.type === 'daysoff') html += `<div class="${cls}" data-w="${c.k}">${lbl}<div class="off-list" id="off-list"></div><div class="off-add"><input class="inp" type="date" min="1990-01-01" max="2100-12-31" id="off-from" aria-label="From"><input class="inp" type="date" min="1990-01-01" max="2100-12-31" id="off-to" aria-label="To (optional)" title="To (optional, for a range)"><input class="inp off-name" id="off-name" placeholder="Label (optional)" maxlength="40" autocomplete="off"><button class="btn ghost" data-act="off-add">Add</button></div></div>`;
       else if (c.type === 'button') html += `<div class="${cls}" data-w="${c.k}"><button class="btn ghost wide" data-act="${c.act}">${c.label}</button></div>`;
-      else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp" style="width:170px" data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
+      else if (c.type === 'select') html += `<label class="${cls}" data-w="${c.k}">${lbl}<select class="inp"${c.col ? '' : ' style="width:170px"'} data-k="${c.k}">${c.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
       else html += `<label class="${cls}" data-w="${c.k}">${lbl}<input class="inp" style="width:170px" type="${c.type}" data-k="${c.k}" placeholder="${c.ph || ''}"${c.type === 'date' ? ' min="1990-01-01" max="2100-12-31"' : ''}${c.type === 'number' ? ` min="${c.min}" max="${c.max}" step="${c.step}" inputmode="decimal"` : ''}></label>`;
     });
     html += '</div></section>';
@@ -1319,7 +1319,7 @@ $('#design-search-clear').addEventListener('click', () => { setDesignQuery(''); 
 function focusDesignSearch() {
   if (ui.hideDesign) { ui.hideDesign = false; saveUi(); syncPanels(); }
   const pd = $('#panel-design');
-  if (matchMedia('(max-width: 860px)').matches && !pd.classList.contains('open')) { const b = $('[data-sheet="panel-design"]'); if (b) b.click(); }
+  if (isSheet() && !pd.classList.contains('open')) openSheet('panel-design');
   designSearch.focus(); designSearch.select();
 }
 function syncDesign() {
@@ -1733,8 +1733,38 @@ $('#btn-new').addEventListener('click', () => {
   toast('New plan started — Undo brings the old one back');
 });
 function syncTabs() { $$('[data-sheet]').forEach(b => b.classList.toggle('on', $('#' + b.dataset.sheet).classList.contains('open'))); }
-function openSheet(id) { $$('.panel').forEach(p => p.classList.toggle('open', p.id === id && !p.classList.contains('open'))); syncTabs(); }
-function closeSheets() { $$('.panel').forEach(p => p.classList.remove('open')); syncTabs(); }
+function openSheet(id) { $$('.panel').forEach(p => { const on = p.id === id && !p.classList.contains('open'); p.classList.toggle('open', on); if (!on) p.classList.remove('full'); }); syncTabs(); }
+function closeSheets() { $$('.panel').forEach(p => p.classList.remove('open', 'full')); syncTabs(); }
+// On a phone the panels are bottom sheets: drag the head up for full height, down to shrink or close; a tap toggles the height.
+const isSheet = () => matchMedia('(max-width: 860px)').matches;
+function setSheetFull(p, full) { p.classList.toggle('full', full); const h = $('.panel-head', p); if (h) h.setAttribute('aria-expanded', String(full)); }
+$$('.panel').forEach(p => {
+  const head = $('.panel-head', p);
+  let drag = null;
+  head.addEventListener('pointerdown', e => {
+    if (!isSheet() || e.target.closest('button, input') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    drag = { y: e.clientY, dy: 0, id: e.pointerId };
+    head.setPointerCapture(e.pointerId);
+    p.style.transition = 'none';
+  });
+  head.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.dy = e.clientY - drag.y;
+    if (drag.dy > 0) p.style.transform = `translateY(${drag.dy}px)`; // follows the finger down; up is decided on release
+  });
+  const end = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = drag.dy; drag = null;
+    p.style.transition = ''; p.style.transform = '';
+    if (Math.abs(dy) < 6) setSheetFull(p, !p.classList.contains('full')); // a tap
+    else if (dy < -40) setSheetFull(p, true);
+    else if (dy > 70) { if (p.classList.contains('full') && dy < 220) setSheetFull(p, false); else closeSheets(); }
+  };
+  head.addEventListener('pointerup', end);
+  head.addEventListener('pointercancel', end);
+});
+// typing brings up the keyboard, which would hide a half-height sheet's contents: give the field the whole screen
+$$('.panel').forEach(p => p.addEventListener('focusin', e => { if (isSheet() && p.classList.contains('open') && e.target.matches('input:not([type="checkbox"]):not([type="color"]), textarea')) setSheetFull(p, true); }));
 $$('[data-sheet]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.sheet)));
 $$('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 $('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add')) { closeSheets(); if (sel) select(null); } });
