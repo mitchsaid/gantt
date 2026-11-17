@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v104 · 17 Nov';
+const APP_VERSION = 'v105 · 17 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1124,7 +1124,8 @@ function buildScene(state, opts) {
   rowH = Math.max(rowH, Math.ceil(fs * 2.2)); // and no row is too tight for its text
   // dates under the names on the bars: the bars must hold two lines
   const barDates = !!S.barDates && (pack || S.taskLabels === 'bars');
-  const twoLineH = sz => Math.ceil(sz * 1.12 + dateSizeOf(sz) * 1.12 + 6);
+  const dateGap = sz => Math.round(sz * 0.2); // a little air between a name and the dates under it
+  const twoLineH = sz => Math.ceil(sz * 1.12 + dateGap(sz) + dateSizeOf(sz) * 1.12 + 6);
   if (barDates) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
   const barH = Math.round(rowH * 0.64);
   const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), barDates ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
@@ -1726,8 +1727,8 @@ function buildScene(state, opts) {
       const align = S.barAlign === 'center' || S.barAlign === 'right' ? S.barAlign : 'left';
       const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
       // the dates under a name are quieter: the text colour blended part-way into the bar's own (like semi-transparent text, which not every
-      // renderer can draw), as far as it stays readable — 3.5:1, a little below the name, since the dates are secondary
-      const quiet = (fg, ...bgs) => { let t = 0.45; while (t > 0 && bgs.some(bg => contrast(mix(fg, bg, t), bg) < 3.5)) t -= 0.05; return t > 0 ? mix(fg, bgs[0], t) : fg; };
+      // renderer can draw), softened only a little, and never below 4.5:1 so the dates stay easy to read
+      const quiet = (fg, ...bgs) => { let t = 0.28; while (t > 0 && bgs.some(bg => contrast(mix(fg, bg, t), bg) < 4.5)) t -= 0.05; return t > 0 ? mix(fg, bgs[0], t) : fg; };
       const barText = (txt, y, sz, pad, faint) => {
         const tw = M(txt, sz, 500), inner = n.bwL != null ? n.bwL : n.bw;
         const x = align === 'center' ? n.bx + inner / 2 : align === 'right' ? n.bx + inner - pad : n.bx + pad;
@@ -1744,10 +1745,10 @@ function buildScene(state, opts) {
       const ip = n.ip || 10;
       const shownLines = n.lines && n.lines.length > 1 ? n.lines : [n.lines ? n.lines[0] : n.fit != null ? fitText(name, n.fit, lsz, 500, font) : name];
       if (n.inside && shownLines.some(Boolean)) {
-        const pad = n.fit != null ? 0.8 * ip : ip, dts = n.dates, lh = lsz * 1.15, dh = dts ? dts.size * 1.12 : 0;
+        const pad = n.fit != null ? 0.8 * ip : ip, dts = n.dates, lh = lsz * 1.15, dh = dts ? dts.size * 1.12 + dateGap(lsz) : 0;
         const top = n.cy - (shownLines.length * lh + dh) / 2;
         shownLines.forEach((ln, li) => ln && barText(ln, top + (li + 0.5) * lh, lsz, pad));
-        if (dts) barText(dts.text, top + shownLines.length * lh + dh / 2, dts.size, ip, true);
+        if (dts) barText(dts.text, top + shownLines.length * lh + dateGap(lsz) + dts.size * 0.56, dts.size, ip, true);
       }
       if (showChg && n.changed) { // the original dates as a dashed line under the bar; time added or moved is a tint of the bar's own colour
         const ox0 = X(n.bs), ox1 = X(n.be + 1), slack = (n.h - h) / 2, gh = clamp(slack - 2, 2.5, 4), gy = by + h + 1.5 + gh / 2, tint = mix(base, surface, 0.5);
