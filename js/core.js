@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v102 · 14 Nov';
+const APP_VERSION = 'v103 · 17 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -32,6 +32,8 @@ const fmtDate = (n, fmt) => {
   }
 };
 const shortDate = n => fmtDate(n);
+/** the size of the dates shown under a name on a bar */
+const dateSizeOf = sz => Math.max(8, Math.round(sz * 0.84 * 2) / 2);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -304,7 +306,7 @@ function canvasOf(S) {
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, titleAuto: false, execView: false, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
-  taskLabels: 'left', areaLabels: 'row', barText: 'auto', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
   daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, keyStrip: false, showDaysOff: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
@@ -1120,8 +1122,12 @@ function buildScene(state, opts) {
   const kk = fs / 14; // whatever was sized for 14px text scales with it
   const subLine = subLineOf(fs), dd = Math.round(18 * kk), dU = Math.round(16 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
   rowH = Math.max(rowH, Math.ceil(fs * 2.2)); // and no row is too tight for its text
+  // dates under the names on the bars: the bars must hold two lines
+  const barDates = !!S.barDates && (pack || S.taskLabels === 'bars');
+  const twoLineH = sz => Math.ceil(sz * 1.12 + dateSizeOf(sz) * 1.12 + 6);
+  if (barDates) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
   const barH = Math.round(rowH * 0.64);
-  const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4)); // subtasks: thinner bars in tighter rows, so they read as detail under their task
+  const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), barDates ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
   const subRow = Math.max(Math.round(rowH * 0.6), Math.ceil((fs - 1.5) * 2.1), subH + 6);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
   const barMid = rowH / 2, subMid = subRow / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
@@ -1342,6 +1348,11 @@ function buildScene(state, opts) {
 
   // what goes to the right of each bar (labels that don't fit, owners)
   const showAssignee = n => S.assignees && n.row.assignee && (isGroup(n) ? S.assigneeAreas !== false : (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.sub : !n.sub)));
+  /** an item's dates as shown on its bar: "3 Mar – 14 Mar", or its length when the timeline counts weeks rather than dates */
+  const itemDates = n => {
+    if (relative) { const d = n.end - n.start + 1; return n.milestone ? '' : d % 7 === 0 && d >= 14 ? `${d / 7} weeks` : d === 1 ? '1 day' : `${d} days`; }
+    return n.milestone || n.end === n.start ? shortDate(n.start) : shortDate(n.start) + ' – ' + shortDate(n.end);
+  };
   const plan = () => {
     let over = 0;
     const room = {};
@@ -1390,17 +1401,25 @@ function buildScene(state, opts) {
       n.avD = avD;
       const bwL = bw - (avD ? avSpan(namesOf(n).length, avD) + (S.corners === 'pill' ? 4 : Math.round(h * 0.2) + 2) : 0); // room left for the name
       if (n.noteNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.noteNo }); tx += bd + 10; } // the change's number, right after the bar
+      n.dates = null; n.bwL = bwL;
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
         const ip = padFor(h); n.ip = ip;
+        // dates under the name: on the bar when it is tall and wide enough, otherwise beside it
+        const dtxt = barDates ? itemDates(n) : '', dsz = dateSizeOf(size), dw = dtxt ? M(dtxt, dsz, 500) : 0;
+        const dIn = !!dtxt && !n.milestone && h >= twoLineH(size) - 1 && dw + 2 * ip <= bwL;
         // keep the name on the bar (wrapped, shrunk or shortened) — or, if "move outside" is chosen and it can't be shown whole, put it beside the bar
-        const lf = !n.milestone && w + 2 * ip > bwL && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bwL - 2 * ip), size, 500, h >= size * 2 + 4) : null;
+        const lf = !n.milestone && w + 2 * ip > bwL && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bwL - 2 * ip), size, 500, !dIn && h >= size * 2 + 4) : null;
         if (!n.milestone && w + 2 * ip <= bwL) n.inside = true;
         else if (lf && (overflow !== 'outside' || lf.full)) {
           n.inside = true;
           n.lines = lf.lines; n.shrink = lf.size !== size ? lf.size : null;
         } else if (n.milestone || tx + w <= lim) { n.tail.push({ k: 'name', x: tx, w }); tx += w + 12; }
         else { n.inside = true; n.fit = Math.max(0, bwL - 1.6 * ip); } // no room beside it: shorten the name to fit the bar
+        if (dtxt) {
+          if (dIn && n.inside) n.dates = { text: dtxt, size: dsz, w: dw };
+          else { const dw2 = M(dtxt, size - 1.5, 500); if (n.milestone || tx + dw2 <= lim) { n.tail.push({ k: 'date', x: tx, w: dw2, text: dtxt }); tx += dw2 + 12; } }
+        }
       } else if (n.milestone && !relative) {
         const t = shortDate(n.start), w = M(t, size - 1.5, 500);
         n.tail.push({ k: 'date', x: tx, w, text: t }); tx += w + 12;
@@ -1703,20 +1722,28 @@ function buildScene(state, opts) {
       let onFull = paleSub ? on(full) : S.barText === 'light' ? '#ffffff' : S.barText === 'dark' ? '#0b1020' : pal.text === 'light' ? '#ffffff' : pal.text === 'dark' ? '#0b1020' : on(full);
       // a colour chosen by hand may not suit the palette's label colour: switch to whichever reads better
       if (typeof colorIndexOf(info, n) === 'string' && S.barText !== 'light' && S.barText !== 'dark' && contrast(full, onFull) < 4.5) onFull = contrast(full, '#ffffff') >= contrast(full, '#0b1020') ? '#ffffff' : '#0b1020';
-      if (n.inside && n.lines && n.lines.length > 1) {
-        n.lines.forEach((ln, li) => ln && items.push({ t: 'text', x: n.bx + (n.ip || 10), y: n.cy + (li - (n.lines.length - 1) / 2) * lsz * 1.15, text: ln, size: lsz, weight: 500, fill: onFull, anchor: 'start' }));
-      } else {
-        const shown = n.lines ? n.lines[0] : n.fit != null ? fitText(name, n.fit, lsz, 500, font) : name;
-        if (n.inside && shown) {
-          const tw = M(shown, lsz, 500);
-          const it = { t: 'text', x: n.bx + (n.fit != null ? 0.8 : 1) * (n.ip || 10), y: n.cy, text: shown, size: lsz, weight: 500, fill: onFull, anchor: 'start' };
-          // a label that straddles the progress edge is drawn in two colours, split at that edge
-          if (tracked && !shaded && pw < (n.ip || 10) + tw + 2 && on(soft) !== onFull) {
-            if (pw <= (n.ip || 10)) it.fill = on(soft);
-            else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = pw >= (n.ip || 10) + tw * 0.5 ? it.fill : it.fill2; }
-          }
-          items.push(it);
+      // names (and dates) on the bar: left, centred or right, as chosen
+      const align = S.barAlign === 'center' || S.barAlign === 'right' ? S.barAlign : 'left';
+      const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
+      const barText = (txt, y, sz, pad) => {
+        const tw = M(txt, sz, 500), inner = n.bwL != null ? n.bwL : n.bw;
+        const x = align === 'center' ? n.bx + inner / 2 : align === 'right' ? n.bx + inner - pad : n.bx + pad;
+        const tl = align === 'center' ? x - tw / 2 : align === 'right' ? x - tw : x;
+        const it = { t: 'text', x, y, text: txt, size: sz, weight: 500, fill: onFull, anchor };
+        // a label that straddles the progress edge is drawn in two colours, split at that edge
+        if (tracked && !shaded && pw < tl + tw - n.bx + 2 && on(soft) !== onFull) {
+          if (pw <= tl - n.bx) it.fill = on(soft);
+          else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = n.bx + pw >= tl + tw * 0.5 ? it.fill : it.fill2; }
         }
+        items.push(it);
+      };
+      const ip = n.ip || 10;
+      const shownLines = n.lines && n.lines.length > 1 ? n.lines : [n.lines ? n.lines[0] : n.fit != null ? fitText(name, n.fit, lsz, 500, font) : name];
+      if (n.inside && shownLines.some(Boolean)) {
+        const pad = n.fit != null ? 0.8 * ip : ip, dts = n.dates, lh = lsz * 1.15, dh = dts ? dts.size * 1.12 : 0;
+        const top = n.cy - (shownLines.length * lh + dh) / 2;
+        shownLines.forEach((ln, li) => ln && barText(ln, top + (li + 0.5) * lh, lsz, pad));
+        if (dts) barText(dts.text, top + shownLines.length * lh + dh / 2, dts.size, ip);
       }
       if (showChg && n.changed) { // the original dates as a dashed line under the bar; time added or moved is a tint of the bar's own colour
         const ox0 = X(n.bs), ox1 = X(n.be + 1), slack = (n.h - h) / 2, gh = clamp(slack - 2, 2.5, 4), gy = by + h + 1.5 + gh / 2, tint = mix(base, surface, 0.5);
