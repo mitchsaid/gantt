@@ -22,6 +22,10 @@ const os = require('os'), path = require('path'), fs = require('fs');
     await p.evaluate(a => setSetting('barAlign', a), a); console.log('dates ' + a.padEnd(7), await look());
     await p.locator('#canvas-wrap').screenshot({ path: path.join(out, `dates-${a}.png`) });
   }
+  console.log('date colours  ', await p.evaluate(() => { const n = scene.info.find(n => n.dates); const t = scene.items.filter(i => i.t === 'text' && (i.text === n.dates.text || i.text === scene.info.find(m => m === n).row.name)); return t.map(i => `"${i.text}" ${i.fill}${i.fill2 ? '/' + i.fill2 : ''}`).join(', '); }));
+  await p.evaluate(() => setSetting('barDateKind', 'duration')); console.log('duration     ', await look());
+  await p.locator('#canvas-wrap').screenshot({ path: path.join(out, 'duration.png') });
+  await p.evaluate(() => setSetting('barDateKind', 'dates'));
   await p.evaluate(() => setSetting('dateMode', 'relative')); console.log('relative     ', await look());
   await p.evaluate(() => { setSetting('dateMode', 'calendar'); setSetting('pack', true); }); console.log('in sequence  ', await look());
   await p.locator('#canvas-wrap').screenshot({ path: path.join(out, 'dates-pack.png') });

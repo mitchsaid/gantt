@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v103 · 17 Nov';
+const APP_VERSION = 'v104 · 17 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -306,7 +306,7 @@ function canvasOf(S) {
 // ---------------------------------------------------------------- model
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, titleAuto: false, execView: false, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
-  taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, barDateKind: 'dates', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
   daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, keyStrip: false, showDaysOff: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
@@ -1348,9 +1348,9 @@ function buildScene(state, opts) {
 
   // what goes to the right of each bar (labels that don't fit, owners)
   const showAssignee = n => S.assignees && n.row.assignee && (isGroup(n) ? S.assigneeAreas !== false : (S.assigneeLevel === 'all' || (S.assigneeLevel === 'subtasks' ? n.sub : !n.sub)));
-  /** an item's dates as shown on its bar: "3 Mar – 14 Mar", or its length when the timeline counts weeks rather than dates */
+  /** an item's dates as shown on its bar: "3 Mar – 14 Mar", or its length ("12 days") when chosen, or when the timeline counts weeks rather than dates */
   const itemDates = n => {
-    if (relative) { const d = n.end - n.start + 1; return n.milestone ? '' : d % 7 === 0 && d >= 14 ? `${d / 7} weeks` : d === 1 ? '1 day' : `${d} days`; }
+    if (relative || S.barDateKind === 'duration') { const d = n.end - n.start + 1; return n.milestone ? '' : d % 7 === 0 && d >= 14 ? `${d / 7} weeks` : d === 1 ? '1 day' : `${d} days`; }
     return n.milestone || n.end === n.start ? shortDate(n.start) : shortDate(n.start) + ' – ' + shortDate(n.end);
   };
   const plan = () => {
@@ -1725,15 +1725,19 @@ function buildScene(state, opts) {
       // names (and dates) on the bar: left, centred or right, as chosen
       const align = S.barAlign === 'center' || S.barAlign === 'right' ? S.barAlign : 'left';
       const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
-      const barText = (txt, y, sz, pad) => {
+      // the dates under a name are quieter: the text colour blended part-way into the bar's own (like semi-transparent text, which not every
+      // renderer can draw), as far as it stays readable — 3.5:1, a little below the name, since the dates are secondary
+      const quiet = (fg, ...bgs) => { let t = 0.45; while (t > 0 && bgs.some(bg => contrast(mix(fg, bg, t), bg) < 3.5)) t -= 0.05; return t > 0 ? mix(fg, bgs[0], t) : fg; };
+      const barText = (txt, y, sz, pad, faint) => {
         const tw = M(txt, sz, 500), inner = n.bwL != null ? n.bwL : n.bw;
         const x = align === 'center' ? n.bx + inner / 2 : align === 'right' ? n.bx + inner - pad : n.bx + pad;
         const tl = align === 'center' ? x - tw / 2 : align === 'right' ? x - tw : x;
-        const it = { t: 'text', x, y, text: txt, size: sz, weight: 500, fill: onFull, anchor };
+        const fgFull = faint ? quiet(onFull, shaded && pw > 0.5 ? deep : full, full) : onFull, fgSoft = faint ? quiet(on(soft), soft) : on(soft);
+        const it = { t: 'text', x, y, text: txt, size: sz, weight: 500, fill: fgFull, anchor };
         // a label that straddles the progress edge is drawn in two colours, split at that edge
         if (tracked && !shaded && pw < tl + tw - n.bx + 2 && on(soft) !== onFull) {
-          if (pw <= tl - n.bx) it.fill = on(soft);
-          else { it.split = n.bx + pw; it.fill2 = on(soft); it.major = n.bx + pw >= tl + tw * 0.5 ? it.fill : it.fill2; }
+          if (pw <= tl - n.bx) it.fill = fgSoft;
+          else { it.split = n.bx + pw; it.fill2 = fgSoft; it.major = n.bx + pw >= tl + tw * 0.5 ? it.fill : it.fill2; }
         }
         items.push(it);
       };
@@ -1743,7 +1747,7 @@ function buildScene(state, opts) {
         const pad = n.fit != null ? 0.8 * ip : ip, dts = n.dates, lh = lsz * 1.15, dh = dts ? dts.size * 1.12 : 0;
         const top = n.cy - (shownLines.length * lh + dh) / 2;
         shownLines.forEach((ln, li) => ln && barText(ln, top + (li + 0.5) * lh, lsz, pad));
-        if (dts) barText(dts.text, top + shownLines.length * lh + dh / 2, dts.size, ip);
+        if (dts) barText(dts.text, top + shownLines.length * lh + dh / 2, dts.size, ip, true);
       }
       if (showChg && n.changed) { // the original dates as a dashed line under the bar; time added or moved is a tint of the bar's own colour
         const ox0 = X(n.bs), ox1 = X(n.be + 1), slack = (n.h - h) / 2, gh = clamp(slack - 2, 2.5, 4), gy = by + h + 1.5 + gh / 2, tint = mix(base, surface, 0.5);

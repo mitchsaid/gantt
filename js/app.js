@@ -59,6 +59,7 @@ function sanitize(st) {
   if (!STATUS[st.settings.projectStatus]) st.settings.projectStatus = '';
   if (!['left', 'center', 'right'].includes(st.settings.barAlign)) st.settings.barAlign = 'left';
   st.settings.barDates = !!st.settings.barDates;
+  if (st.settings.barDateKind !== 'duration') st.settings.barDateKind = 'dates';
   st.settings.daysOff = (Array.isArray(st.settings.daysOff) ? st.settings.daysOff : []).filter(r => r && Number.isFinite(+r.from)).slice(0, 60).map(r => { const f = Math.round(+r.from); return { from: f, to: Math.max(f, Number.isFinite(+r.to) ? Math.round(+r.to) : f), label: String(r.label || '').slice(0, 40) }; });
   if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
   if (old.todayLabel === '' && old.markerLabelOn == null) { st.settings.markerLabelOn = false; st.settings.todayLabel = 'Today'; } // an empty label used to mean none
@@ -1074,7 +1075,9 @@ const DESIGN = [
     { k: 'taskLabels', type: 'seg', label: 'Task names', kw: 'labels left side on bars inside', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
     { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Row layout is “In sequence”, because a row can hold several tasks. Switch it to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'barAlign', type: 'seg', label: 'Text on bars', sub: true, kw: 'align alignment centre center right left justify name position', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', opts: [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], when: s => s.pack || s.taskLabels === 'bars' },
-    { k: 'barDates', type: 'toggle', label: 'Dates under names', sub: true, kw: 'start end date range show dates on bars', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', when: s => s.pack || s.taskLabels === 'bars' },
+    { k: 'barDates', type: 'toggle', label: 'Dates or duration under names', sub: true, kw: 'start end date range show dates duration length days weeks on bars', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', when: s => s.pack || s.taskLabels === 'bars' },
+    { k: 'barDateKind', type: 'seg', label: 'Show', sub: true, kw: 'dates duration length days weeks start end', why: 'Shown with Tasks → Dates or duration under names.', opts: [['dates', 'Dates'], ['duration', 'Duration']], when: s => (s.pack || s.taskLabels === 'bars') && s.barDates },
+    { k: '_barDurNote', type: 'note', label: 'The timeline counts periods (“Week 1”) rather than dates, so bars show each task’s duration.', when: s => (s.pack || s.taskLabels === 'bars') && s.barDates && s.dateMode === 'relative' && s.barDateKind !== 'duration' },
     { k: 'areaLabels', type: 'seg', label: 'Area names', kw: 'labels headings group phase side', why: 'Appears once the plan has an area.', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
     { type: 'head', label: 'Assignees' },
     { k: 'assignees', type: 'toggle', label: 'Show assignees', kw: 'owner people person who responsible team resource' },
