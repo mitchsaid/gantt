@@ -10,9 +10,9 @@ const { chromium } = require('playwright');
   const clickBar = async n => { const r = await p.evaluate(n => { const id = state.rows.find(r => r.name === n).id; const e = document.querySelector(`#chart [data-role="move"][data-id="${id}"]`).getBoundingClientRect(); return { x: e.x + e.width / 2, y: e.y + e.height / 2 }; }, n); await p.mouse.click(r.x, r.y); await p.waitForTimeout(300); };
   // popover status
   await clickBar('Visual design');
-  console.log('sections:', await p.evaluate(() => [...document.querySelectorAll('.pop .acc')].map(a => a.querySelector('.acc-t').textContent + '=' + a.querySelector('.acc-s').textContent.trim()).join(' | ')));
-  await p.click('[data-acc-toggle="status"]'); await p.click('.pop .status-seg button[data-v="amber"]'); await p.waitForTimeout(300);
-  console.log('after At risk:', await p.evaluate(() => state.rows.find(r => r.name === 'Visual design').status + ' | summary ' + document.querySelector('.pop [data-acc="status"] .acc-s').textContent.trim() + ' | on: ' + document.querySelector('.pop .status-seg button.on').textContent.trim() + ' | showStatus ' + state.settings.showStatus));
+  console.log('sections:', await p.evaluate(() => [...document.querySelectorAll('.pop .prow')].map(a => a.querySelector('.pk').textContent + '=' + a.querySelector('.pv').textContent.trim()).join(' | ')));
+  await p.click('.pop [data-pmenu="status"]'); await p.click('.pop-menu [data-mstatus="amber"]'); await p.waitForTimeout(300);
+  console.log('after At risk:', await p.evaluate(() => state.rows.find(r => r.name === 'Visual design').status + ' | row ' + document.querySelector('.pop [data-prow="status"] .pv').textContent.trim() + ' | menu closed ' + document.querySelector('.pop-menu').hidden + ' | showStatus ' + state.settings.showStatus));
   await p.keyboard.press('Escape'); await p.keyboard.press('Escape');
   await p.evaluate(() => { const R = n => state.rows.find(r => r.name === n); R('Front-end').status = 'red'; R('Wireframes').status = 'green'; R('Client demo').status = 'green'; state.settings.projectStatus = 'amber'; commit(); refresh(); });
   console.log('rollup:', await p.evaluate(() => derive(state.rows).filter(n => n.stat).map(n => n.row.name + ':' + n.stat + (n.statRolled ? '*' : '')).join(', ')));

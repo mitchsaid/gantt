@@ -56,6 +56,12 @@ function sanitize(st) {
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  { // the plan's statuses: names and colours, best to worst
+    const seen = new Set(), list = Array.isArray(st.settings.statuses) ? st.settings.statuses : DEFAULT_STATUSES;
+    st.settings.statuses = list.filter(x => x && typeof x.id === 'string' && x.id && !seen.has(x.id) && seen.add(x.id)).slice(0, 10)
+      .map(x => ({ id: x.id.slice(0, 24), name: String(x.name == null ? 'Status' : x.name).slice(0, 30), color: parseColor(x.color) || '#64748b' }));
+    useStatuses(st.settings.statuses);
+  }
   if (!STATUS[st.settings.projectStatus]) st.settings.projectStatus = '';
   if (!['left', 'center', 'right'].includes(st.settings.barAlign)) st.settings.barAlign = 'left';
   st.settings.barDates = !!st.settings.barDates;
@@ -83,7 +89,9 @@ function sanitize(st) {
     row.name = String(row.name || ''); row.assignee = String(row.assignee || '');
     if (row.baseline && Number.isFinite(+row.baseline.s) && Number.isFinite(+row.baseline.e)) row.baseline = { s: Math.round(+row.baseline.s), e: Math.round(+row.baseline.e) }; else delete row.baseline;
     if (typeof row.changeNote === 'string' && row.changeNote.trim()) row.changeNote = row.changeNote.slice(0, 140); else delete row.changeNote;
-    if (!['green', 'amber', 'red'].includes(row.status)) delete row.status; // RAG: on track / at risk / off track
+    if (!STATUS[row.status]) delete row.status; // one of the plan's statuses
+    if (typeof row.note === 'string' && row.note.trim()) row.note = row.note.slice(0, 120); else delete row.note; // a line of commentary for the legend
+    if (row.noteOff === true && row.note) row.noteOff = true; else delete row.noteOff; // kept off the chart
     if (row.key === true) row.key = true; else delete row.key; // a key milestone
     if (row.blocked === true) row.blocked = true; else delete row.blocked; // flagged as blocked, with an optional reason for the legend
     if (typeof row.blockedNote === 'string' && row.blockedNote.trim()) row.blockedNote = row.blockedNote.slice(0, 140); else delete row.blockedNote;
@@ -239,7 +247,7 @@ function renderChart() {
   svg.setAttribute('viewBox', `0 0 ${scene.w} ${scene.h}`);
   svg.setAttribute('font-family', `'${scene.font}', system-ui, sans-serif`);
   svg.innerHTML = sceneToSvg(scene, true) + '<g id="hov" pointer-events="none"></g>';
-  drawHover();
+  drawHover(); syncLookbar();
   const wrap = $('#canvas-wrap');
   wrap.classList.toggle('transparent', scene.transparent);
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
@@ -545,24 +553,16 @@ function fmtRange(n) {
   if (n.milestone) return '◆ ' + shortDate(n.start);
   return shortDate(n.start) + ' – ' + shortDate(n.end);
 }
-/** what an item depends on: removable chips and a picker to add another (not for items that hold others) */
-const accOpen = id => !!(ui.popOpen && ui.popOpen[id]);
-/** a collapsible section of the popover: a title, its current value, and the controls underneath */
-const acc = (id, title, summary, body) => `<div class="acc${accOpen(id) ? ' open' : ''}" data-acc="${id}"><button class="acc-h" data-acc-toggle="${id}" aria-expanded="${accOpen(id)}"><span class="acc-t">${title}</span><span class="acc-s">${summary}</span><i class="chev" aria-hidden="true"></i></button><div class="acc-b">${body}</div></div>`;
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
   return `<div class="pop-foot"><span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
 }
-const statusSummary = n => n.stat ? `<span class="dotc" style="background:${STATUS[n.stat][1]}"></span>${STATUS[n.stat][0]}${n.statRolled ? ' (from inside)' : ''}` : 'Not set';
-const statusHtml = (r, n) => `<div class="field"><div class="seg status-seg" data-f="status">${[['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']].map(([v, l]) => `<button type="button" data-v="${v}" class="${(r.status || '') === v ? 'on' : ''}">${v ? `<span class="dotc" style="background:${STATUS[v][1]}"></span>` : ''}${l}</button>`).join('')}</div>${n.statRolled ? `<p class="note">Showing the worst status of the items inside it. Pick one to set it yourself.</p>` : ''}</div>`;
 function setRowStatus(ids, v) {
   commit();
   ids.forEach(id => { const r = state.rows[rowIndex(id)]; if (r) { if (v) r.status = v; else delete r.status; } });
   if (v && !state.settings.showStatus) state.settings.showStatus = true;
   commit(); refresh();
 }
-const keyHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="keyms"${r.key ? ' checked' : ''}> Show in the key milestones strip</label><p class="note">The strip sits above the chart. If none is ticked it shows every milestone.</p></div>`;
-const blockedHtml = r => `<div class="field"><label class="check"><input type="checkbox" data-f="blocked"${r.blocked ? ' checked' : ''}> This is blocked <kbd class="kb">Alt B</kbd></label><input class="inp" data-f="blockedNote" value="${esc(r.blockedNote || '')}" placeholder="What is it waiting on? Shown in the legend" maxlength="140" autocomplete="off"${r.blocked ? '' : ' disabled'}></div>`;
 /** Alt+B: flag the selected tasks as blocked (or clear it when they all are already) */
 function toggleBlocked(ids) {
   const info = derive(state.rows), rows = ids.map(id => info.find(n => n.row.id === id)).filter(n => n && !n.isArea).map(n => n.row);
@@ -577,7 +577,7 @@ function depsHtml(n, info, rows) {
   const r = n.row;
   if (n.hasKids) return '';
   const others = info.filter(o => o.row.id !== r.id && !o.isArea && !r.deps.includes(o.row.id));
-  return `<div class="field"><span>Depends on</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
+  return `<div class="field"><span>Dependencies</span>${r.deps.length ? `<div class="dep-chips">${r.deps.map(d => { const o = rows.find(x => x.id === d); return o ? `<span>${esc(o.name || 'Untitled')}<button data-act="dep-rm" data-dep="${d}" aria-label="Remove">✕</button></span>` : ''; }).join('')}</div>` : ''}
     <select class="inp" data-f="dep-add"><option value="">Add a dependency…</option>${others.map(o => `<option value="${o.row.id}">${'  '.repeat(o.level)}${esc(o.row.name || 'Untitled')}</option>`).join('')}</select></div>`;
 }
 function rowActionsHtml(n, rows) {
@@ -1120,9 +1120,12 @@ const DESIGN = [
   ]],
   ['status', 'Status', [
     { type: 'head', label: 'Status dots' },
-    { k: 'showStatus', type: 'toggle', label: 'Green / amber / red dots', kw: 'status rag traffic light health on track at risk' },
-    { k: 'projectStatus', type: 'seg', label: 'Overall status', sub: true, col: true, kw: 'rag project plan on track at risk off track title', opts: [['', 'None'], ['green', 'On track'], ['amber', 'At risk'], ['red', 'Off track']], when: s => s.showStatus },
-    { k: '_statNote', type: 'note', label: 'Set a status on any item from its popover. Areas show the worst status of what is inside them unless you set one. The overall status sits beside the title.', when: s => s.showStatus },
+    { k: 'showStatus', type: 'toggle', label: 'Status dots', kw: 'status rag traffic light health on track at risk' },
+    { k: 'projectStatus', type: 'select', label: 'Overall status', sub: true, col: true, kw: 'rag project plan on track at risk off track title green amber red', opts: [['', 'None']], when: s => s.showStatus },
+    { k: '_statNote', type: 'note', label: 'Set a status on any item from its popover, where Status → Edit statuses… renames them, recolours them, adds your own and puts them in order from best to worst. Areas show the worst status of what is inside them unless you set one. The overall status sits beside the title.', when: s => s.showStatus },
+    { type: 'head', label: 'Notes' },
+    { k: 'notesLegend', type: 'toggle', label: 'Notes in the legend', kw: 'comments commentary annotation footnote remarks legend key', why: '' },
+    { k: '_notesNote', type: 'note', label: 'Add a note to any task or milestone from its popover (+ Add → Note). It gets a number beside its bar and a line in the legend, numbered with the reasons for changes from the baseline.', when: s => s.notesLegend !== false },
     { type: 'head', label: 'Blocked items' },
     { k: 'blockedWaiting', type: 'toggle', label: 'Show what is waiting on them', kw: 'blocked stuck blockers stripes dependents' },
     { k: 'blockedLegend', type: 'toggle', label: 'Legend and reasons', kw: 'blocked stuck blockers key' },
@@ -1340,6 +1343,7 @@ function syncDesign() {
   if (gc) gc.textContent = { days: 'Day lines', weeks: 'Week lines', sprints: 'Sprint lines', months: 'Month lines', quarters: 'Quarter lines' }[S.scale] || 'Period lines';
   if (gm) gm.textContent = S.scale === 'months' || S.scale === 'quarters' ? 'Year lines' : 'Month lines';
   $$('[data-w]', designEl).forEach(w => { const c = designCtl[w.dataset.w]; w.hidden = !!(c.when && !c.when(S)); });
+  { const ps = $('select[data-k="projectStatus"]', designEl), h = [['', 'None'], ...S.statuses.map(x => [x.id, x.name])].map(o => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join(''); if (ps && ps.dataset.sig !== h) { ps.innerHTML = h; ps.dataset.sig = h; } }
   $$('.seg[data-k]', designEl).forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', String(seg.dataset.k === 'progressMode' ? (!S.progress ? 'off' : S.progressSource === 'marker' ? 'marker' : 'manual') : S[seg.dataset.k]) === b.dataset.v)));
   // in-sequence rows always carry names on the bars: show that, and lock the choice
   const tl = $('[data-w="taskLabels"]', designEl);
@@ -1775,7 +1779,7 @@ $$('.panel').forEach(p => {
 $$('.panel').forEach(p => p.addEventListener('focusin', e => { if (isSheet() && p.classList.contains('open') && e.target.matches('input:not([type="checkbox"]):not([type="color"]), textarea')) setSheetFull(p, true); }));
 $$('[data-sheet]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.sheet)));
 $$('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
-$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add')) { closeSheets(); if (sel) select(null); } });
+$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add, #lookbar')) { closeSheets(); if (sel) select(null); } });
 
 document.addEventListener('keydown', e => {
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
@@ -1876,6 +1880,7 @@ function ensureAssigneeShown(r) {
 }
 function rowInput(r, t) {
   const f = t.dataset.f;
+  if (f === 'note') { r.note = t.value.slice(0, 120); const c = $('[data-count]', popEl); if (c) c.textContent = `${r.note.length}/120`; renderChart(); commitSoon(); return; }
   if (f === 'name') { r.name = t.value; renderChart(); renderOutline(); commitSoon(); }
   else if (f === 'changeNote') { r.changeNote = t.value; renderChart(); commitSoon(); }
   else if (f === 'blockedNote') { if (t.value.trim()) r.blockedNote = t.value; else delete r.blockedNote; const accEl = t.closest('.acc'); if (accEl) $('.acc-s', accEl).innerHTML = `<span class="dotc" style="background:#d92d20"></span>${t.value.trim() ? esc(t.value.trim()) : 'Yes'}`; renderChart(); commitSoon(); }
@@ -1897,6 +1902,8 @@ function rowInput(r, t) {
 }
 function rowChange(r, t) {
   const f = t.dataset.f;
+  if (f === 'noteOn') { if (t.checked) delete r.noteOff; else r.noteOff = true; commit(); refresh(); return; }
+  if (f === 'note') { commit(); return; }
   if (f === 'keyms') {
     if (t.checked) r.key = true; else delete r.key;
     if (t.checked && !state.settings.keyStrip) { state.settings.keyStrip = true; syncDesign(); toast('The key milestones strip is now shown above the chart'); }
@@ -1993,35 +2000,19 @@ function popHtml() {
     if (S.showChanges) markChanges(pinfo);
     const n = pinfo.find(x => x.row.id === pop.id);
     if (!n) return '';
+    if (pop.page) { const pg = rowPageHtml(n, pinfo); if (pg) return pg; pop.page = null; }
     const r = n.row;
     let h = `<input class="inp pop-name" id="pop-name" data-f="name" value="${esc(r.name)}" placeholder="Name" autocomplete="off" aria-label="Name">` + typeSegHtml(n);
-    const names = splitNames(r.assignee), swatch = `<span class="dotc" style="background:${rowBaseColor(pinfo, n, paletteOf(S).colors)}"></span>`, secs = [];
-    const colourSec = acc('colour', 'Colour', swatch + (r.color == null ? 'Auto' : 'Custom'), colorHtml(r));
-    const statSec = acc('status', 'Status', statusSummary(n), statusHtml(r, n));
-    const whoSec = acc('assignees', 'Assignees', names.length ? esc(names.join(', ')) : 'None', assigneeHtml(r));
-    const styleSec = styleAcc(n.isArea ? 'area' : n.milestone ? 'ms' : 'task');
-    if (n.isArea) { // an area: what is in it, who owns it, its colour, and quick actions
+    if (n.isArea) { // an area: what is in it, who owns it, and quick actions
       const inside = blockEnd(state.rows, n.i) - n.i - 1;
       return h + `<p class="note">${fmtRange(n)} · ${inside} ${inside === 1 ? 'item' : 'items'}${S.progress && n.progress != null ? ' · ' + Math.round(n.progress) + '% done' : ''}. Its dates follow what is inside it; drag its bar to shift everything together.</p>`
-        + `<div class="accs">${statSec}${whoSec}${colourSec}${styleSec}</div>`
+        + propRowsHtml(n)
         + `<div class="pop-btns"><button class="btn ghost" data-act="area-del">Delete…</button><button class="btn primary" data-act="area-add">+ Task here</button></div>`;
     }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
     else if (n.milestone) h += date('Date', 'start', r.start);
     else h += `<div class="two">${date('Start', 'start', r.start)}${date('End', 'end', r.end)}</div>${durHtml(r)}<p class="note wd">${workingDays(r.start, r.end, S.daysOff)} working days${S.daysOff.length ? ' (weekends and days off left out)' : ' (weekends left out)'}</p>`;
-    // everything else sits in collapsible sections (open or closed as you left them), each with its current value on the right
-    secs.push(statSec);
-    secs.push(acc('blocked', 'Blocked', r.blocked ? `<span class="dotc" style="background:#d92d20"></span>${r.blockedNote && r.blockedNote.trim() ? esc(r.blockedNote.trim()) : 'Yes'}` : 'No', blockedHtml(r)));
-    if (!n.hasKids && !n.milestone) secs.push(acc('progress', 'Progress', S.progress && S.progressSource === 'marker' ? 'Follows the marker' : r.progress == null ? 'Off' : Math.round(r.progress) + '%', progressHtml(r)));
-    secs.push(whoSec);
-    if (!n.hasKids) secs.push(acc('deps', 'Depends on', r.deps.length ? `${r.deps.length} ${r.deps.length === 1 ? 'item' : 'items'}` : 'None', depsHtml(n, pinfo, state.rows)));
-    const ch = changeHtml(n);
-    if (ch) { const dd = n.start - n.bs, de = n.end - n.be; secs.push(acc('change', 'Changed from original', n.milestone ? `${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}` : (de ? `ends ${Math.abs(de)}d ${de > 0 ? 'later' : 'earlier'}` : `starts ${Math.abs(dd)}d ${dd > 0 ? 'later' : 'earlier'}`), ch)); }
-    if (n.milestone) secs.push(acc('keyms', 'Key milestone', r.key ? 'Yes' : S.keyStrip ? 'No' : 'Off', keyHtml(r)));
-    if (n.milestone) secs.push(acc('ms', 'Sits in its day', { '': 'Default', auto: 'Auto', start: 'Start', middle: 'Middle', end: 'End' }[r.msAlign || ''], msHtml(r)));
-    secs.push(colourSec);
-    secs.push(styleSec);
-    return h + `<div class="accs">${secs.join('')}</div>` + popFootHtml(n, state.rows);
+    return h + propRowsHtml(n) + popFootHtml(n, state.rows);
   }
   if (pop.kind === 'today') {
     const seg = (f, cur, opts) => `<div class="seg" data-f="${f}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -2041,10 +2032,11 @@ function popHtml() {
     <div class="two">${date('From', 'rangeStart', a)}${date('To', 'rangeEnd', b)}</div>
     <div class="field"><span>Length</span>${durControl(a, b, 'len-n', 'len-u')}</div>
     <button class="btn ghost wide" data-act="fit"${fixed && state.rows.length ? '' : ' disabled'}>Spread tasks across it</button>
-    <div class="accs">${styleAcc('timeline')}</div>`;
+    <p class="note">Periods, where the dates sit and their format are in the toolbar above the chart.</p>`;
 }
 function openPop(kind, rect, id, x) {
-  pop = { kind, id: id || null };
+  closeMenu();
+  pop = { kind, id: id || null, page: null };
   popEl.innerHTML = popHtml();
   popEl.classList.toggle('wide', kind === 'paste');
   popEl.hidden = false;
@@ -2061,9 +2053,13 @@ function openPop(kind, rect, id, x) {
   popEl.style.top = top + 'px';
   popEl.style.left = clamp(x != null ? Math.max(x, rect.left) : rect.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
   if (kind === 'paste') { syncPasteNote(); const ta = $('#pop-paste'); if (ta) ta.focus(); }
-  drawHover();
+  drawHover(); syncLookbar();
 }
-function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; hint = null; hintKey = ''; drawHover(); }
+function closePop() {
+  if (!pop) return;
+  if (pop.kind === 'row') tidyNote(pop.id);
+  pop = null; popEl.hidden = true; popEl.innerHTML = ''; hint = null; hintKey = ''; closeMenu(); drawHover(); syncLookbar();
+}
 function syncPop() {
   if (!pop) return;
   // a row's popover belongs to the selected row: once the selection moves (paste, duplicate, group…) it must not stay on the old one
@@ -2081,15 +2077,18 @@ function syncPop() {
     if (!src || el === act) return;
     if (el.classList.contains('seg')) el.innerHTML = src.innerHTML; else el.value = src.value;
   });
-  $$('.acc', fresh).forEach(a => { const real = $(`.acc[data-acc="${a.dataset.acc}"] .acc-s`, popEl); if (real) real.innerHTML = $('.acc-s', a).innerHTML; }); // the values on the right of each section follow what is being typed
+  $$('.prow[data-prow]', fresh).forEach(a => { const real = $(`.prow[data-prow="${a.dataset.prow}"] .pv`, popEl); if (real) real.innerHTML = $('.pv', a).innerHTML; }); // the values in each row follow what is being typed
   const fit = $('[data-act="fit"]', popEl), fit2 = $('[data-act="fit"]', fresh);
   if (fit && fit2) fit.disabled = fit2.disabled;
 }
-document.addEventListener('pointerdown', e => { if (pop && !popEl.contains(e.target)) closePop(); }, true);
+document.addEventListener('pointerdown', e => {
+  if (!menuEl.hidden && !menuEl.contains(e.target) && !(menuFor && menuFor.contains(e.target))) closeMenu();
+  if (pop && !popEl.contains(e.target) && !menuEl.contains(e.target) && !e.target.closest('#lookbar')) closePop(); // the toolbar works on what the popover shows
+}, true);
 popEl.addEventListener('input', e => {
   const t = e.target, f = t.dataset.f;
-  if (pop && t.dataset.k) return; // style controls apply on change
   if (!pop || !f) return;
+  if (pop.kind === 'row' && statusEditInput(t)) return;
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowInput(r, t); }
   else if (f === 'paste') { pop.text = t.value; syncPasteNote(); }
   else if (markerColorEvent(e, 'input')) { /* handled */ }
@@ -2097,8 +2096,8 @@ popEl.addEventListener('input', e => {
 });
 popEl.addEventListener('change', e => {
   const t = e.target, f = t.dataset.f;
-  if (pop && t.dataset.k) { setSetting(t.dataset.k, t.type === 'checkbox' ? t.checked : t.value); return; } // a shared setting, from the Style section
   if (!pop || !f) return;
+  if (pop.kind === 'row' && /^s(name|color)-/.test(f)) { statusEditChange(t); return; }
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowChange(r, t); return; }
   const S = state.settings;
   if (f === 'todayDate') { const d = isoToDay(t.value); if (d != null) setSetting('todayDate', d === todayDay() ? null : d); }
@@ -2110,7 +2109,9 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
-  if (pop && styleClick(e)) return;
+  const rv = e.target.closest('[data-reveal]');
+  if (rv) { revealDesign(rv.dataset.reveal); return; }
+  if (pop && pop.kind === 'row' && popRowClick(e)) return;
   if (pop && pop.kind === 'today') {
     if (markerColorEvent(e, 'click')) return;
     const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
@@ -2126,21 +2127,6 @@ popEl.addEventListener('click', e => {
       let last = blockEnd(state.rows, i) - 1;
       while (last > i && state.rows[last].level > 1) last--; // after the last task, not inside its subtasks
       commit(); addRow('task', state.rows[last].id, true, true);
-    }
-    return;
-  }
-  const accH = e.target.closest('[data-acc-toggle]');
-  if (accH) {
-    const id = accH.dataset.accToggle;
-    ui.popOpen[id] = !ui.popOpen[id]; saveUi();
-    accH.closest('.acc').classList.toggle('open', !!ui.popOpen[id]);
-    accH.setAttribute('aria-expanded', String(!!ui.popOpen[id]));
-    const pr = popEl.getBoundingClientRect(); // a section that opens must not push the popover off the bottom of the window: it scrolls instead, staying under its item
-    popEl.style.maxHeight = '';
-    if (pr.top + popEl.scrollHeight > innerHeight - 8) {
-      const room = innerHeight - 8 - pr.top;
-      if (room >= 240) popEl.style.maxHeight = room + 'px';
-      else popEl.style.top = Math.max(8, innerHeight - 8 - Math.min(popEl.scrollHeight, innerHeight - 16)) + 'px';
     }
     return;
   }
@@ -2161,8 +2147,6 @@ popEl.addEventListener('click', e => {
   if (tb && pop && pop.kind === 'row') { if (!tb.classList.contains('on') && !tb.disabled) setTypes([pop.id], tb.dataset.v); return; }
   const ms = e.target.closest('.seg[data-f="ms-align"] button');
   if (ms && pop && pop.kind === 'row') { setRowMs(pop.id, ms.dataset.v); return; }
-  const stb = e.target.closest('.seg[data-f="status"] button');
-  if (stb && pop && pop.kind === 'row') { setRowStatus([pop.id], stb.dataset.v); return; }
   const sw = e.target.closest('.sw');
   if (sw && pop && pop.kind === 'row') { if (sw.dataset.color != null) setRowColor(pop.id, sw.dataset.color); return; }
   if (e.target.closest('[data-act="paste-add"]')) { doPasteAdd(); return; }
@@ -2178,6 +2162,8 @@ popEl.addEventListener('keydown', e => {
     return;
   }
   if (pop && pop.kind === 'row' && assigneeKey(e, pop.id)) return;
+  if (e.key === 'Escape' && pop && pop.kind === 'row' && pop.page && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); e.stopPropagation(); setPopPage(null); return; } // Esc on a page goes back first
+  if (e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.target.blur(); if (e.target.dataset.f === 'name') closePop(); }
 });
 
@@ -3017,71 +3003,6 @@ $('#qs-span').addEventListener('click', () => { if (pop && pop.kind === 'timelin
 $('#qs-span').addEventListener('mouseenter', () => setHint({ roles: ['timeline'] }));
 $('#qs-span').addEventListener('mouseleave', () => setHint(null));
 
-// ---------------------------------------------------------------- style from where you are
-// Each popover carries a short Style section with the few shared settings that shape what was clicked (names on bars, their
-// alignment and colour, corners…). They are the Design panel's own settings, so they change every item of that kind: the
-// section says so, and pointing at a setting rings every item it changes. “More in Design” opens the full section.
-const STYLE = {
-  task: { title: 'Style for all tasks', sec: 'tasks', kinds: ['task', 'subtask'], note: 'Changes every task on the chart. This one’s colour is under Colour.', keys: ['taskLabels', 'barAlign', 'barDates', 'barDateKind', 'barText', '_textSize', 'corners', 'density'] },
-  ms: { title: 'Style for all milestones', sec: 'milestones', kinds: ['ms'], note: 'Changes every milestone on the chart.', keys: ['msLines', 'keyStrip', '_textSize', 'textCase'] },
-  area: { title: 'Style for all areas', sec: 'tasks', kinds: ['area'], note: 'Changes every area on the chart.', keys: ['areaLabels', 'colorBy', '_textSize', 'textCase'] },
-  timeline: { title: 'Style', sec: 'timeline', roles: ['timeline'], note: 'How the dates along the top (or bottom) are shown.', keys: ['scale', 'datePos', 'dateFormat', 'periodNames', 'gridCells'] },
-};
-const STYLE_LABEL = { taskLabels: 'Names', barAlign: 'Align names', barText: 'Name colour', barDates: 'Dates or duration under names', barDateKind: 'Show', density: 'Row height', areaLabels: 'Names', msLines: 'Guide lines', textCase: 'Name case', datePos: 'Dates at', gridCells: 'Period lines' };
-function styleSummary(kind) {
-  const S = state.settings;
-  if (kind === 'task') { const onBars = S.pack || S.taskLabels === 'bars'; return onBars ? `Names on bars · ${{ left: 'left', center: 'centred', right: 'right' }[S.barAlign] || 'left'}` : 'Names on the left'; }
-  if (kind === 'ms') return S.msLines ? 'Guide lines' : 'Diamonds only';
-  if (kind === 'area') return S.areaLabels === 'side' ? 'Names at the side' : 'As headings';
-  return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale], { top: 'top', bottom: 'bottom', both: 'top and bottom' }[S.datePos]].filter(Boolean).join(' · ');
-}
-function styleCtlHtml(keys) {
-  const S = state.settings;
-  return keys.map(k => {
-    if (k === '_textSize') { // one size for every name and date on the chart: nudge it, or go back to Auto
-      const auto = S.textAuto !== false, pt = auto && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
-      return `<div class="ctl" data-sk="${k}"><span class="lbl">Text size</span><div class="seg ts"><button data-ts="-0.5" aria-label="Smaller text" title="Smaller (all text)">A−</button><button data-ts="auto" class="${auto ? 'on' : ''}" title="${auto ? 'Sized to the canvas automatically' : 'Back to automatic'}">${auto ? 'Auto' : pt + ' pt'}</button><button data-ts="0.5" aria-label="Larger text" title="Larger (all text)">A+</button></div></div>`;
-    }
-    const c = designCtl[k];
-    if (!c || (c.when && !c.when(S))) return '';
-    const label = esc(STYLE_LABEL[k] || c.label), sub = c.sub ? ' sub' : '';
-    if (c.type === 'seg') {
-      const locked = k === 'taskLabels' && S.pack, cur = locked ? 'bars' : String(S[k]);
-      return `<div class="ctl col${sub}${locked ? ' disabled' : ''}" data-sk="${k}"><span class="lbl">${label}</span><div class="seg" data-k="${k}">${c.opts.map(o => `<button data-v="${o[0]}" class="${String(o[0]) === cur ? 'on' : ''}">${o[1]}</button>`).join('')}</div></div>`;
-    }
-    if (c.type === 'toggle') return `<label class="ctl${sub}" data-sk="${k}"><span class="lbl">${label}</span><span class="switch"><input type="checkbox" data-k="${k}"${S[k] ? ' checked' : ''}><i></i></span></label>`;
-    if (c.type === 'select') return `<label class="ctl col${sub}" data-sk="${k}"><span class="lbl">${label}</span><select class="inp" data-k="${k}">${c.opts.map(o => `<option value="${o[0]}"${String(S[k]) === String(o[0]) ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>`;
-    return '';
-  }).join('');
-}
-function styleAcc(kind) {
-  const st = STYLE[kind], secName = (DESIGN.find(d => d[0] === st.sec) || [, ''])[1];
-  return acc('style-' + kind, st.title, esc(styleSummary(kind)), `<p class="note style-note">${st.note}</p>${styleCtlHtml(st.keys)}<button class="link-btn quiet pop-more" data-reveal="${st.sec}">More in Design → ${secName}</button>`);
-}
-/** clicks inside a Style section (and the “More in Design” links); true when handled */
-function styleClick(e) {
-  const rv = e.target.closest('[data-reveal]');
-  if (rv) { revealDesign(rv.dataset.reveal); return true; }
-  const ts = e.target.closest('[data-ts]');
-  if (ts) {
-    const S = state.settings;
-    if (ts.dataset.ts === 'auto') { if (S.textAuto === false) setSetting('textAuto', true); return true; }
-    const from = S.textAuto !== false && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
-    S.textAuto = false;
-    setSetting('textPt', clamp(from + +ts.dataset.ts, 5, 48));
-    return true;
-  }
-  const b = e.target.closest('.seg[data-k] button');
-  if (b) { const k = b.parentNode.dataset.k, c = designCtl[k]; setSetting(k, c.num ? +b.dataset.v : c.bool ? b.dataset.v === 'true' : b.dataset.v); return true; }
-  return false;
-}
-// pointing at a shared setting in a popover rings everything it changes
-popEl.addEventListener('mouseover', e => {
-  const c = e.target.closest('[data-sk]'), a = c && c.closest('.acc[data-acc^="style-"]');
-  const st = a && STYLE[a.dataset.acc.slice(6)];
-  setHint(!st ? null : c.dataset.sk === '_textSize' ? { kinds: ['task', 'subtask', 'ms', 'area'], roles: ['timeline'] } : st.roles ? { roles: st.roles } : { kinds: st.kinds });
-});
-popEl.addEventListener('mouseleave', () => setHint(null));
 /** open the Design panel at a section, with nothing filtered, and flash it so the eye finds it */
 function revealDesign(sec) {
   closePop();
@@ -3111,6 +3032,371 @@ function designHint(k) {
 }
 designEl.addEventListener('mouseover', e => { const w = e.target.closest('[data-w]'); setHint(w ? designHint(w.dataset.w) : null); });
 designEl.addEventListener('mouseleave', () => setHint(null));
+
+// ---------------------------------------------------------------- the item popover: rows, pages and menus
+// What an item IS lives in the popover: its status and assignees always, then whatever else it uses (progress, dependencies, a
+// blocker, a note…), added from one + Add, so a new kind of detail later is one more line in that menu. A row opens a short menu
+// (status) or a page of its own with a way back. How things LOOK lives in the toolbar above the chart.
+const progressByMarker = S => S.progress && S.progressSource === 'marker' && S.todayLine;
+const EXTRAS = [
+  { k: 'progress', label: 'Progress', desc: 'How much of it is done', can: n => !n.hasKids && !n.milestone && !n.isArea, has: (n, S) => !!S.progress && (progressByMarker(S) || n.row.progress != null) },
+  { k: 'deps', label: 'Dependencies', desc: 'Items it starts after', can: n => !n.hasKids && !n.isArea, has: n => n.row.deps.length > 0 },
+  { k: 'block', label: 'Blocker', desc: 'What it is waiting on: stripes the bar', can: n => !n.isArea, has: n => !!n.row.blocked },
+  { k: 'note', label: 'Note', desc: 'A line of commentary in the legend', can: n => !n.isArea, has: n => n.row.note != null },
+  { k: 'key', label: 'Key milestone', desc: 'Shown in the strip above the chart', can: n => n.milestone, has: n => !!n.row.key },
+  { k: 'ms', label: 'Position in its day', desc: 'Start, middle or end of its day', can: n => n.milestone, has: n => !!n.row.msAlign },
+];
+const PAGE_TITLES = { who: 'Assignees', statuses: 'Statuses', change: 'Changed from original', progress: 'Progress', deps: 'Dependencies', block: 'Blocker', note: 'Note', key: 'Key milestone', ms: 'Position in its day' };
+const MS_ALIGN_WORDS = { auto: 'Auto', start: 'Start of the day', middle: 'Middle of the day', end: 'End of the day' };
+const STATUS_COLOURS = ['#1f9d55', '#d97706', '#d92d20', '#2563eb', '#7c3aed', '#0891b2', '#db2777', '#64748b', '#4d7c0f', '#92400e'];
+const avatarsHtml = names => `<span class="pv-avs">${names.slice(0, 3).map(nm => `<i>${esc(initials(nm).slice(0, 2))}</i>`).join('')}</span>`;
+function changeSummary(n) {
+  const dd = n.start - n.bs, de = n.end - n.be, w = k => `${Math.abs(k)}d ${k > 0 ? 'later' : 'earlier'}`;
+  return n.milestone ? w(dd) : de ? `ends ${w(de)}` : `starts ${w(dd)}`;
+}
+function extraValue(k, n) {
+  const r = n.row, S = state.settings;
+  if (k === 'progress') return progressByMarker(S) ? 'Follows the marker' : Math.round(r.progress || 0) + '%';
+  if (k === 'deps') { const first = state.rows.find(x => x.id === r.deps[0]); return `After ${esc(first ? first.name || 'Untitled' : '…')}${r.deps.length > 1 ? ` +${r.deps.length - 1}` : ''}`; }
+  if (k === 'block') return `<span class="dotc" style="background:#d92d20"></span>${r.blockedNote && r.blockedNote.trim() ? esc(r.blockedNote.trim()) : '<span class="pv-empty">Add the reason</span>'}`;
+  if (k === 'note') return r.note && r.note.trim() ? `${r.noteOff ? '<span class="pv-empty">Private · </span>' : ''}${esc(r.note.trim())}` : '<span class="pv-empty">Empty</span>';
+  if (k === 'key') return S.keyStrip ? 'In the strip' : 'Strip is off';
+  if (k === 'ms') return MS_ALIGN_WORDS[r.msAlign] || 'Default';
+  return '';
+}
+const prow = (key, label, value, attrs, down) => `<button class="prow" data-prow="${key}" ${attrs}><span class="pk">${label}</span><span class="pv">${value}</span><i class="pchev${down ? ' down' : ''}" aria-hidden="true"></i></button>`;
+/** the stacked rows under the dates: status, assignees, then only what this item uses, and + Add for the rest */
+function propRowsHtml(n) {
+  const r = n.row, S = state.settings, names = splitNames(r.assignee);
+  const stv = n.stat ? `<span class="dotc" style="background:${STATUS[n.stat][1]}"></span>${esc(STATUS[n.stat][0])}${n.statRolled ? '<span class="pv-empty">&nbsp;· from inside</span>' : ''}` : '<span class="pv-empty">Not set</span>';
+  let h = '<div class="props">';
+  h += prow('status', 'Status', stv, 'data-pmenu="status" aria-haspopup="menu" aria-expanded="false"', true);
+  h += prow('who', 'Assignees', names.length ? `${avatarsHtml(names)}${esc(names.join(', '))}` : '<span class="pv-empty">Add people</span>', 'data-ppage="who"');
+  if (S.showChanges && n.changed && !n.isArea) h += prow('change', 'Changed', esc(changeSummary(n)), 'data-ppage="change"');
+  EXTRAS.forEach(x => { if (x.can(n) && x.has(n, S)) h += prow(x.k, x.label, extraValue(x.k, n), `data-ppage="${x.k}"`); });
+  h += '</div>';
+  if (EXTRAS.some(x => x.can(n) && !x.has(n, S))) h += '<button class="pop-add" data-pmenu="add" aria-haspopup="menu" aria-expanded="false">+ Add</button>';
+  return h;
+}
+/** one row's own page: a way back, a title, and the controls */
+function rowPageHtml(n, pinfo) {
+  const r = n.row, k = pop.page, S = state.settings;
+  let body = '';
+  if (k === 'who') body = assigneeHtml(r);
+  else if (k === 'statuses') body = statusEditorHtml();
+  else if (k === 'change') body = changeHtml(n);
+  else if (k === 'progress') body = progressHtml(r);
+  else if (k === 'deps') body = depsHtml(n, pinfo, state.rows) + (r.deps.length ? '<button class="link-btn danger-link" data-pact="deps-clear">Remove all dependencies</button>' : '');
+  else if (k === 'block') body = `<input class="inp" data-f="blockedNote" value="${esc(r.blockedNote || '')}" placeholder="What is it waiting on?" maxlength="140" autocomplete="off" aria-label="What it is waiting on"><p class="note">The bar is striped with a red “!”, anything unfinished that depends on it gets lighter stripes, and the reason goes in the legend. <kbd class="kb">Alt B</kbd> switches it on and off.</p><button class="link-btn danger-link" data-pact="unblock">Clear the blocker</button>`;
+  else if (k === 'note') body = `<textarea class="inp pop-note" data-f="note" maxlength="120" rows="3" placeholder="A line for the reader, e.g. “Waiting on the client review”" aria-label="Note">${esc(r.note || '')}</textarea><span class="pop-count" data-count>${(r.note || '').length}/120</span><label class="ctl"><span class="lbl">Show in the legend</span><span class="switch"><input type="checkbox" data-f="noteOn"${r.noteOff ? '' : ' checked'}><i></i></span></label><p class="note">${r.noteOff ? 'Kept as a private reminder: not on the chart or in exports.' : S.notesLegend === false ? 'Notes are hidden from the legend right now (Design → Status → Notes).' : 'A number beside its bar, and this line in the legend under the chart.'}</p><button class="link-btn danger-link" data-pact="note-del">Delete note</button>`;
+  else if (k === 'key') body = `<p class="note">It sits in the key milestones strip above the chart${S.keyStrip ? '' : ', which is switched off right now (Design → Milestones)'}. If no milestone is key, the strip shows them all.</p><button class="link-btn danger-link" data-pact="unkey">Not a key milestone</button>`;
+  else if (k === 'ms') body = msHtml(r);
+  if (!body) return '';
+  return `<div class="pop-page"><button class="pop-back" data-pback>${esc(r.name || 'Untitled')}</button><h4 class="pop-ptitle">${PAGE_TITLES[k]}</h4>${body}</div>`;
+}
+/** the plan's statuses: rename, recolour, reorder (best to worst) and add or remove them */
+function statusEditorHtml() {
+  const L = state.settings.statuses, used = id => state.rows.filter(r => r.status === id).length;
+  return `<p class="note">Shared by every item in the plan. Keep them in order from best to worst: an area shows the worst status inside it.</p>
+    <div class="st-list">${L.map((x, i) => `<div class="st-row"><label class="st-sw" style="background:${x.color}" title="Change the colour"><input type="color" data-f="scolor-${i}" value="${x.color}" aria-label="Colour of ${esc(x.name)}"></label><input class="inp" data-f="sname-${i}" value="${esc(x.name)}" maxlength="30" autocomplete="off" aria-label="Status name"><button class="st-b" data-pact="s-up" data-i="${i}" title="Move up (better)" aria-label="Move ${esc(x.name)} up"${i ? '' : ' disabled'}>↑</button><button class="st-b" data-pact="s-down" data-i="${i}" title="Move down (worse)" aria-label="Move ${esc(x.name)} down"${i < L.length - 1 ? '' : ' disabled'}>↓</button><button class="st-b" data-pact="s-del" data-i="${i}" title="${used(x.id) ? `Remove (${used(x.id)} ${used(x.id) === 1 ? 'item uses' : 'items use'} it)` : 'Remove'}" aria-label="Remove ${esc(x.name)}">✕</button></div>`).join('')}</div>
+    <p class="note warn" data-bhint${L.some(x => /^\s*block/i.test(x.name)) ? '' : ' hidden'}>“Blocked” works better as a Blocker (+ Add → Blocker): it keeps the reason, stripes the bar and goes in the legend.</p>
+    ${L.length < 10 ? '<button class="pop-add plain" data-pact="s-add">+ Add a status</button>' : ''}`;
+}
+function setStatuses(list) {
+  const S = state.settings, ids = new Set(list.map(x => x.id));
+  S.statuses = list;
+  state.rows.forEach(r => { if (r.status && !ids.has(r.status)) delete r.status; });
+  if (S.projectStatus && !ids.has(S.projectStatus)) S.projectStatus = '';
+  useStatuses(list);
+  commit(); refresh();
+}
+/** typing a status name or picking its colour: live on the chart, without rebuilding the field being typed in */
+function statusEditInput(t) {
+  const m = /^s(name|color)-(\d+)$/.exec(t.dataset.f || '');
+  if (!m) return false;
+  const L = state.settings.statuses.map(x => Object.assign({}, x)), x = L[+m[2]];
+  if (!x) return true;
+  if (m[1] === 'name') x.name = t.value.slice(0, 30);
+  else { const hex = parseColor(t.value); if (!hex) return true; x.color = hex; t.parentNode.style.background = hex; }
+  state.settings.statuses = L; useStatuses(L);
+  renderChart(); syncDesign(); commitSoon();
+  const hint = $('[data-bhint]', popEl);
+  if (hint) hint.hidden = !L.some(y => /^\s*block/i.test(y.name));
+  return true;
+}
+function statusEditChange(t) {
+  if (/^sname-/.test(t.dataset.f) && !t.value.trim()) { t.value = 'Status'; statusEditInput(t); }
+  commit();
+}
+/** move between the main list and a row's page */
+function setPopPage(k) {
+  if (!pop) return;
+  closeMenu();
+  const leaving = pop.page;
+  pop.page = k || null;
+  if (leaving === 'note' && pop.kind === 'row') tidyNote(pop.id);
+  popEl.innerHTML = popHtml();
+  fitPop();
+  if (k) { const f = $('.pop-page textarea, .pop-page input.inp:not([type="color"]):not([data-f^="sname"]), .pop-page .chip-in', popEl); if (f && k !== 'progress') f.focus(); else { const b = $('.pop-back', popEl); if (b) b.focus(); } }
+  else { const back = leaving && $(`[data-prow="${leaving === 'statuses' ? 'status' : leaving}"]`, popEl); if (back) back.focus(); }
+}
+/** a note left empty is no note */
+function tidyNote(id) {
+  const r = state.rows[rowIndex(id)];
+  if (r && r.note != null && !r.note.trim()) { delete r.note; delete r.noteOff; commit(); renderChart(); }
+}
+/** keep the popover inside the window when its content changes height: it scrolls inside, staying under its item */
+function fitPop() {
+  if (!pop) return;
+  popEl.style.maxHeight = '';
+  const pr = popEl.getBoundingClientRect();
+  if (pr.top + popEl.scrollHeight > innerHeight - 8) {
+    const room = innerHeight - 8 - pr.top;
+    if (room >= 240) popEl.style.maxHeight = room + 'px';
+    else popEl.style.top = Math.max(8, innerHeight - 8 - Math.min(popEl.scrollHeight, innerHeight - 16)) + 'px';
+  }
+}
+/** add one of the extras to the item in the popover, then open its page */
+function addExtra(k) {
+  if (!pop || pop.kind !== 'row') return;
+  const r = state.rows[rowIndex(pop.id)], S = state.settings;
+  if (!r) return;
+  commit();
+  if (k === 'progress') {
+    if (!S.progress) { // progress for this bar alone: the others stay plain until they get theirs
+      state.rows.forEach(x => { if (x !== r && !x.progress) x.progress = null; });
+      S.progress = true; S.progressSource = 'manual';
+      toast('Progress is shown on this bar. Add it to others the same way, or show it on every bar from Progress under the chart');
+    }
+    if (r.progress == null) r.progress = 0;
+  } else if (k === 'block') r.blocked = true;
+  else if (k === 'note') { if (r.note == null) r.note = ''; }
+  else if (k === 'key') { r.key = true; if (!S.keyStrip) { S.keyStrip = true; toast('The key milestones strip is now shown above the chart'); } }
+  commit(); refresh();
+  if (k !== 'key') setPopPage(k);
+}
+function popRowClick(e) {
+  const t = e.target, id = pop.id, r = state.rows[rowIndex(id)];
+  if (!r) return false;
+  const pm = t.closest('[data-pmenu]');
+  if (pm) { toggleMenu(pm.dataset.pmenu, pm); return true; }
+  const pg = t.closest('[data-ppage]');
+  if (pg) { setPopPage(pg.dataset.ppage); return true; }
+  if (t.closest('[data-pback]')) { setPopPage(null); return true; }
+  if (pop.page === 'progress' && t.closest('[data-act="progress-clear"]')) { setRowProgress(id, null); setPopPage(null); return true; }
+  const pa = t.closest('[data-pact]');
+  if (!pa || pa.disabled) return false;
+  const a = pa.dataset.pact, i = +pa.dataset.i;
+  if (a.startsWith('s-')) {
+    const L = state.settings.statuses.map(x => Object.assign({}, x));
+    if (a === 's-up' && i > 0) [L[i - 1], L[i]] = [L[i], L[i - 1]];
+    else if (a === 's-down' && i < L.length - 1) [L[i + 1], L[i]] = [L[i], L[i + 1]];
+    else if (a === 's-del') { const used = state.rows.filter(x => x.status === L[i].id).length, gone = L.splice(i, 1)[0]; if (used) toast(`“${gone.name}” cleared from ${used} ${used === 1 ? 'item' : 'items'}. Undo brings it back`); }
+    else if (a === 's-add') { const taken = new Set(L.map(x => x.color)); L.push({ id: 's' + uid().slice(0, 8), name: 'New status', color: STATUS_COLOURS.find(c => !taken.has(c)) || '#64748b' }); }
+    commit(); setStatuses(L);
+    const f = a === 's-add' ? $(`[data-f="sname-${L.length - 1}"]`, popEl) : $(`[data-pact="${a}"][data-i="${a === 's-up' ? i - 1 : a === 's-down' ? i + 1 : i}"]`, popEl);
+    if (f) { f.focus(); if (a === 's-add') f.select(); }
+    return true;
+  }
+  commit();
+  if (a === 'unblock') { delete r.blocked; delete r.blockedNote; }
+  else if (a === 'note-del') { delete r.note; delete r.noteOff; }
+  else if (a === 'unkey') delete r.key;
+  else if (a === 'deps-clear') r.deps = [];
+  commit(); refresh(); setPopPage(null);
+  return true;
+}
+
+// ---- small menus (status, + Add, a colour): one floating list under the button that opened it
+const menuEl = document.createElement('div');
+menuEl.className = 'pop-menu'; menuEl.hidden = true; menuEl.setAttribute('role', 'menu');
+document.body.appendChild(menuEl);
+let menuFor = null, menuKind = null;
+function closeMenu() {
+  if (menuEl.hidden) return;
+  menuEl.hidden = true; menuEl.innerHTML = '';
+  if (menuFor) menuFor.setAttribute('aria-expanded', 'false');
+  menuFor = null; menuKind = null;
+}
+function menuHtml(kind) {
+  const S = state.settings;
+  if (kind === 'status' && pop && pop.kind === 'row') {
+    const r = state.rows[rowIndex(pop.id)], cur = r && r.status;
+    return `<button class="mi" role="menuitemradio" aria-checked="${!cur}" data-mstatus=""><span class="dotc none"></span>Not set${!cur ? '<b class="ck">✓</b>' : ''}</button>`
+      + S.statuses.map(x => `<button class="mi" role="menuitemradio" aria-checked="${cur === x.id}" data-mstatus="${esc(x.id)}"><span class="dotc" style="background:${x.color}"></span>${esc(x.name)}${cur === x.id ? '<b class="ck">✓</b>' : ''}</button>`).join('')
+      + '<div class="msep" role="separator"></div><button class="mi" role="menuitem" data-mpage="statuses">Edit statuses…</button>';
+  }
+  if (kind === 'add' && pop && pop.kind === 'row') {
+    const n = derive(state.rows).find(x => x.row.id === pop.id);
+    if (!n) return '';
+    return EXTRAS.filter(x => x.can(n) && !x.has(n, S)).map(x => `<button class="mi two-line" role="menuitem" data-madd="${x.k}"><span>${x.label}<small>${x.desc}</small></span></button>`).join('');
+  }
+  if (kind === 'colour') {
+    const ids = selIds(), r = ids.length && state.rows[rowIndex(ids[0])];
+    if (!r) return '';
+    const cols = paletteOf(S).colors, same = ids.every(id => (state.rows[rowIndex(id)] || {}).color === r.color), v = same ? r.color : undefined, custom = typeof v === 'string';
+    return `<div class="m-sw"><button class="sw auto${v == null && same ? ' on' : ''}" data-mcolor="auto" title="Automatic: follows its area">Auto</button>${cols.map((c, i) => `<button class="sw${v === i ? ' on' : ''}" data-mcolor="${i}" style="background:${c}" aria-label="Palette colour ${i + 1}"></button>`).join('')}<label class="sw custom${custom ? ' on' : ''}" title="Any colour"${custom ? ` style="background:${v}"` : ''}><input type="color" data-mcustom value="${custom ? v : cols[0]}" aria-label="Any colour"></label></div>`;
+  }
+  return '';
+}
+function toggleMenu(kind, anchor) {
+  if (menuKind === kind && !menuEl.hidden) { closeMenu(); return; }
+  closeMenu();
+  const html = menuHtml(kind);
+  if (!html) return;
+  menuEl.innerHTML = html; menuEl.hidden = false; menuEl.dataset.kind = kind;
+  menuFor = anchor; menuKind = kind; anchor.setAttribute('aria-expanded', 'true');
+  const ar = anchor.getBoundingClientRect(), w = kind === 'colour' ? Math.max(220, menuEl.offsetWidth) : Math.max(ar.width, 230);
+  menuEl.style.width = kind === 'colour' ? '' : w + 'px';
+  menuEl.style.left = clamp(ar.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
+  const h = menuEl.offsetHeight;
+  menuEl.style.top = (ar.bottom + 4 + h > innerHeight - 8 ? Math.max(8, ar.top - 4 - h) : ar.bottom + 4) + 'px';
+  const first = $('.mi[aria-checked="true"], .mi, .sw.on, .sw', menuEl);
+  if (first) first.focus({ preventScroll: true });
+}
+menuEl.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.dataset.mstatus != null && pop && pop.kind === 'row') { const v = b.dataset.mstatus, a = menuFor; closeMenu(); setRowStatus([pop.id], v); const row = $('[data-prow="status"]', popEl); if (row) row.focus(); else if (a) a.focus(); return; }
+  if (b.dataset.mpage) { closeMenu(); setPopPage(b.dataset.mpage); return; }
+  if (b.dataset.madd) { closeMenu(); addExtra(b.dataset.madd); return; }
+  if (b.dataset.mcolor != null) {
+    const ids = selIds();
+    commit();
+    ids.forEach(id => { const r = state.rows[rowIndex(id)]; if (r) { if (b.dataset.mcolor === 'auto') delete r.color; else r.color = +b.dataset.mcolor; } });
+    closeMenu(); commit(); refresh();
+  }
+});
+menuEl.addEventListener('input', e => {
+  if (e.target.dataset.mcustom == null) return;
+  const hex = parseColor(e.target.value);
+  if (!hex) return;
+  selIds().forEach(id => { const r = state.rows[rowIndex(id)]; if (r) r.color = hex; });
+  const lab = e.target.closest('.sw'); if (lab) { $$('.sw', menuEl).forEach(s => s.classList.remove('on')); lab.classList.add('on'); lab.style.background = hex; }
+  renderChart(); renderOutline(); commitSoon();
+});
+menuEl.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const a = menuFor; closeMenu(); if (a && document.contains(a)) a.focus(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const bs = $$('button:not([disabled])', menuEl), i = bs.indexOf(document.activeElement);
+    if (bs.length) { e.preventDefault(); bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length].focus(); }
+  }
+});
+addEventListener('resize', closeMenu);
+
+// ---------------------------------------------------------------- the look toolbar above the chart
+// One row, always the same height so the chart never jumps. The timeline sits first and never moves; after it come the few look
+// settings for what is selected (a task, a milestone, an area), for the dates while the timeline is open, or for the whole chart.
+// The selection's colour is labelled “This task”; everything else says “All tasks”, and pointing at a button rings what it changes.
+const lookbar = $('#lookbar'), lookCtx = $('#lookbar-ctx');
+const LB_ICON = {
+  nLeft: '<svg viewBox="0 0 16 16"><path d="M1.5 8h4"/><rect x="7.5" y="5.5" width="7" height="5" rx="1.5"/></svg>',
+  nBar: '<svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="13" height="7" rx="2"/><path d="M4 8h5"/></svg>',
+  alL: '<svg viewBox="0 0 16 16"><path d="M3 4h10M3 8h6M3 12h8"/></svg>',
+  alC: '<svg viewBox="0 0 16 16"><path d="M3 4h10M5 8h6M4 12h8"/></svg>',
+  alR: '<svg viewBox="0 0 16 16"><path d="M3 4h10M7 8h6M5 12h8"/></svg>',
+  dates: '<svg viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 6.5h6M4 9.5h4"/></svg>',
+  smaller: '<svg viewBox="0 0 16 16"><path d="M2 12l3-8 3 8M3 9.5h4M10.5 9h4"/></svg>',
+  larger: '<svg viewBox="0 0 16 16"><path d="M2 12l3-8 3 8M3 9.5h4M10.5 9h4M12.5 7v4"/></svg>',
+  cSq: '<svg viewBox="0 0 16 16"><rect x="2" y="4.5" width="12" height="7"/></svg>',
+  cRd: '<svg viewBox="0 0 16 16"><rect x="2" y="4.5" width="12" height="7" rx="2"/></svg>',
+  cPill: '<svg viewBox="0 0 16 16"><rect x="2" y="4.5" width="12" height="7" rx="3.5"/></svg>',
+  guide: '<svg viewBox="0 0 16 16"><path d="M8 1.5v13" stroke-dasharray="2 2"/><path d="M8 5l3 3-3 3-3-3z"/></svg>',
+  strip: '<svg viewBox="0 0 16 16"><path d="M2 5h12"/><path d="M5 3.5l1.5 1.5L5 6.5 3.5 5zM11 3.5l1.5 1.5L11 6.5 9.5 5z"/><rect x="2" y="9" width="7" height="3" rx="1"/></svg>',
+  more: '<svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>',
+};
+const LB_HINTS = { task: { kinds: ['task', 'subtask'] }, ms: { kinds: ['ms'] }, area: { kinds: ['area'] }, all: { kinds: ['task', 'subtask', 'ms', 'area'], roles: ['timeline', 'title'] }, timeline: { roles: ['timeline'] } };
+function lookContext() {
+  if (state.settings.execView) return { kind: 'none' };
+  if (pop && pop.kind === 'timeline') return { kind: 'timeline' };
+  const ids = selIds(), info = scene ? scene.info : [];
+  const ns = ids.map(id => info.find(n => n.row.id === id)).filter(Boolean);
+  if (!ns.length) return { kind: 'none' };
+  return { kind: ns.every(n => n.isArea) ? 'area' : ns.every(n => n.milestone) ? 'ms' : 'task', ns };
+}
+function lookHtml(c) {
+  const S = state.settings;
+  const ib = (attrs, icon, label, on, hint, dis) => `<button class="lb-ib${on ? ' on' : ''}" ${attrs} title="${label}" aria-label="${label}"${on != null ? ` aria-pressed="${!!on}"` : ''}${hint ? ` data-hint="${hint}"` : ''}${dis ? ' disabled' : ''}>${icon}</button>`;
+  const set = (k, v, icon, label, hint, dis) => ib(`data-lb="set" data-k="${k}" data-v="${v}"`, icon, label, String(S[k]) === String(v), hint, dis);
+  const seg = (k, opts, hint, label) => `<span class="lb-seg" role="group" aria-label="${label}" data-hint="${hint}">${opts.map(([v, l]) => `<button data-lb="set" data-k="${k}" data-v="${v}" class="${String(S[k]) === String(v) ? 'on' : ''}" aria-pressed="${String(S[k]) === String(v)}">${l}</button>`).join('')}</span>`;
+  const sep = '<span class="lb-sep" aria-hidden="true"></span>';
+  const scope = t => `<span class="lb-scope">${t}</span>`;
+  const more = (sec, label) => `<button class="lb-more" data-lb="more" data-sec="${sec}" title="Every setting for this in the Design panel">${label || 'More'}${LB_ICON.more}</button>`;
+  const auto = S.textAuto !== false, pt = auto && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
+  const size = ib('data-lb="ts" data-v="-0.5"', LB_ICON.smaller, 'Smaller text (all text on the chart)', null, 'all')
+    + `<button class="lb-ts" data-lb="ts" data-v="auto" data-hint="all" title="${auto ? `Sized to the canvas automatically (${pt} pt)` : 'Back to the automatic size'}">${auto ? 'Auto' : pt + ' pt'}</button>`
+    + ib('data-lb="ts" data-v="0.5"', LB_ICON.larger, 'Larger text (all text on the chart)', null, 'all');
+  if (c.kind === 'timeline') {
+    return scope('Dates') + seg('scale', [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']], 'timeline', 'Periods')
+      + sep + `<span class="lb-lbl">At</span>` + seg('datePos', [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']], 'timeline', 'Where the dates sit')
+      + sep + `<select class="lb-sel" data-lbk="dateFormat" data-hint="timeline" aria-label="Date format">${designCtl.dateFormat.opts.map(o => `<option value="${o[0]}"${S.dateFormat === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`
+      + more('timeline');
+  }
+  if (c.kind === 'none') {
+    const cols = paletteOf(S).colors.slice(0, 6);
+    return scope('Whole chart') + `<select class="lb-sel" data-lbk="font" data-hint="all" aria-label="Font">${FONTS.map(f => `<option${S.font === f ? ' selected' : ''}>${esc(f)}</option>`).join('')}</select>`
+      + sep + size + sep
+      + `<button class="lb-pal" data-lb="more" data-sec="colour" title="Palette and colours"><span class="lb-dots">${cols.map(x => `<i style="background:${x}"></i>`).join('')}</span>Palette</button>`
+      + more('canvas', 'More in Design');
+  }
+  const info = derive(state.rows), n0 = info.find(x => x.row.id === c.ns[0].row.id) || c.ns[0];
+  const noun = { task: 'task', ms: 'milestone', area: 'area' }[c.kind], many = c.ns.length > 1;
+  const colour = `<button class="lb-colour" data-lb="colour" aria-haspopup="menu" aria-expanded="false" title="Colour of ${many ? 'the selected items' : 'this ' + noun}"><span class="lb-sw" style="background:${rowBaseColor(info, n0, paletteOf(S).colors)}"></span>${many ? `These ${c.ns.length}` : 'This ' + noun}</button>`;
+  let h = colour + sep;
+  if (c.kind === 'task') {
+    const onBars = S.pack || S.taskLabels === 'bars';
+    h += scope('All tasks') + set('taskLabels', 'left', LB_ICON.nLeft, S.pack ? 'Names on the left (not while tasks share rows)' : 'Names to the left of the bars', 'task', S.pack)
+      + ib('data-lb="set" data-k="taskLabels" data-v="bars"', LB_ICON.nBar, 'Names on the bars', onBars, 'task');
+    if (onBars) h += sep + set('barAlign', 'left', LB_ICON.alL, 'Names on the left of each bar', 'task') + set('barAlign', 'center', LB_ICON.alC, 'Names centred on the bars', 'task') + set('barAlign', 'right', LB_ICON.alR, 'Names on the right of each bar', 'task')
+      + ib('data-lb="toggle" data-k="barDates"', LB_ICON.dates, 'Dates or duration under the names', !!S.barDates, 'task');
+    h += sep + size + sep + set('corners', 'square', LB_ICON.cSq, 'Square corners', 'task') + set('corners', 'rounded', LB_ICON.cRd, 'Rounded corners', 'task') + set('corners', 'pill', LB_ICON.cPill, 'Pill-shaped bars', 'task') + more('tasks');
+  } else if (c.kind === 'ms') {
+    h += scope('All milestones') + ib('data-lb="toggle" data-k="msLines"', LB_ICON.guide, 'Guide lines down from each milestone', !!S.msLines, 'ms')
+      + ib('data-lb="toggle" data-k="keyStrip"', LB_ICON.strip, 'Key milestones strip above the chart', !!S.keyStrip, 'ms') + sep + size + more('milestones');
+  } else {
+    h += scope('All areas') + seg('areaLabels', [['row', 'As headings'], ['side', 'At the side']], 'area', 'Area names')
+      + sep + `<span class="lb-lbl">Colour by</span>` + seg('colorBy', [['group', 'Area'], ['row', 'Row']], 'area', 'Share a colour by') + more('tasks');
+  }
+  return h;
+}
+let lookSig = '';
+function syncLookbar() {
+  if (!lookbar) return;
+  const c = lookContext(), tl = $('#qs-span');
+  if (tl) tl.setAttribute('aria-pressed', String(c.kind === 'timeline'));
+  lookbar.dataset.ctx = c.kind;
+  const html = lookHtml(c);
+  if (html === lookSig) return;
+  lookSig = html;
+  if (menuKind === 'colour') closeMenu();
+  const had = document.activeElement && lookCtx.contains(document.activeElement) ? document.activeElement : null, key = had && (had.dataset.lb + (had.dataset.k || '') + (had.dataset.v || '') + (had.dataset.lbk || ''));
+  lookCtx.innerHTML = html;
+  if (lookbar.edge) lookbar.edge();
+  if (had) { const again = $$('[data-lb], [data-lbk]', lookCtx).find(b => (b.dataset.lb + (b.dataset.k || '') + (b.dataset.v || '') + (b.dataset.lbk || '')) === key); if (again) again.focus({ preventScroll: true }); } // keyboard focus stays on the button just used
+}
+if (lookbar) {
+  lookbar.addEventListener('click', e => {
+    const b = e.target.closest('[data-lb]');
+    if (!b || b.disabled) return;
+    const S = state.settings, a = b.dataset.lb;
+    if (a === 'set') { const k = b.dataset.k, c = designCtl[k]; setSetting(k, c && c.num ? +b.dataset.v : c && c.bool ? b.dataset.v === 'true' : b.dataset.v); }
+    else if (a === 'toggle') setSetting(b.dataset.k, !S[b.dataset.k]);
+    else if (a === 'ts') {
+      if (b.dataset.v === 'auto') { if (S.textAuto === false) setSetting('textAuto', true); }
+      else { const from = S.textAuto !== false && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt; S.textAuto = false; setSetting('textPt', clamp(from + +b.dataset.v, 5, 48)); }
+    } else if (a === 'colour') toggleMenu('colour', b);
+    else if (a === 'more') revealDesign(b.dataset.sec);
+  });
+  lookbar.addEventListener('change', e => { const k = e.target.dataset.lbk; if (k) setSetting(k, e.target.value); });
+  lookbar.addEventListener('mouseover', e => { const h = e.target.closest('[data-hint]'); if (!e.target.closest('#qs-span')) setHint(h ? LB_HINTS[h.dataset.hint] : null); });
+  lookbar.addEventListener('mouseleave', () => setHint(null));
+  // when the row is too narrow for everything: a softer “Timeline” label, a fade where more is hidden, and the wheel scrolls it sideways
+  const edge = () => { lookbar.classList.toggle('more-right', lookbar.scrollLeft + lookbar.clientWidth < lookbar.scrollWidth - 2); };
+  lookbar.addEventListener('scroll', edge, { passive: true });
+  lookbar.addEventListener('wheel', e => { if (lookbar.scrollWidth > lookbar.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.ctrlKey) { lookbar.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => { lookbar.classList.toggle('narrow', lookbar.clientWidth < 1000); edge(); }).observe(lookbar);
+  lookbar.edge = edge;
+}
 
 // ---------------------------------------------------------------- go
 { // the tips card: ⌘ on a Mac, and it remembers whether it was left open

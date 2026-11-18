@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v107 · 18 Nov';
+const APP_VERSION = 'v108 · 18 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -304,13 +304,14 @@ function canvasOf(S) {
 }
 
 // ---------------------------------------------------------------- model
+const DEFAULT_STATUSES = [{ id: 'green', name: 'On track', color: '#1f9d55' }, { id: 'amber', name: 'At risk', color: '#d97706' }, { id: 'red', name: 'Off track', color: '#d92d20' }];
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, titleAuto: false, execView: false, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
   taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, barDateKind: 'dates', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
   daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, keyStrip: false, showDaysOff: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
-  rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true,
+  rangeMode: 'auto', rangeStart: null, rangeEnd: null, periodNames: true, statuses: DEFAULT_STATUSES, notesLegend: true,
   palette: PRESETS[0], bg: '#ffffff', bgTransparent: false, textMode: 'auto',
   font: 'Inter', corners: 'rounded', density: 'auto', v: 2, gridCells: true, gridMonths: true, assigneeAvatar: true, progressStyle: 'pale', stripes: false, weekends: true,
 };
@@ -332,8 +333,21 @@ function normalizeLevels(rows) {
 }
 
 /** Per-row derived info: children, rolled-up dates and progress, top-level index. */
-const STATUS = { green: ['On track', '#1f9d55'], amber: ['At risk', '#d97706'], red: ['Off track', '#d92d20'] };
-const STATUS_ORDER = [null, 'green', 'amber', 'red']; // least to most worrying
+// Statuses belong to the plan (settings.statuses): names and colours people choose, in order from best to worst, so an area can
+// still show the worst status inside it. STATUS / STATUS_ORDER mirror the plan in use; useStatuses() swaps them in.
+const STATUS = {};
+const STATUS_ORDER = []; // null, then best to worst
+function useStatuses(list) {
+  const l = Array.isArray(list) ? list : DEFAULT_STATUSES;
+  Object.keys(STATUS).forEach(k => delete STATUS[k]);
+  STATUS_ORDER.length = 0; STATUS_ORDER.push(null);
+  l.forEach(x => { STATUS[x.id] = [x.name, x.color]; STATUS_ORDER.push(x.id); });
+}
+useStatuses(DEFAULT_STATUSES);
+/** the worst status of the plan's list, and the ones between best and worst (for the headline's wording) */
+const statusRank = id => STATUS_ORDER.indexOf(id);
+const worstStatus = () => (STATUS_ORDER.length > 2 ? STATUS_ORDER[STATUS_ORDER.length - 1] : null);
+const statusWords = id => String(STATUS[id] ? STATUS[id][0] : '').toLowerCase();
 function derive(rows) {
   const info = rows.map((row, i) => ({ row, i, level: row.level, kids: [], parent: -1, root: i, start: row.start, end: row.end, progress: row.progress == null ? null : row.progress || 0 })); // null = progress isn't tracked for this bar
   const stack = [];
@@ -363,7 +377,7 @@ function derive(rows) {
       n.start = s; n.end = e; n.weight = w; n.progress = w ? pw / w : null;
     }
     if (n.end < n.start) n.end = n.start;
-    n.stat = STATUS[n.row.status] ? n.row.status : null; // green / amber / red, set by hand…
+    n.stat = STATUS[n.row.status] ? n.row.status : null; // one of the plan's statuses, set by hand…
     n.statRolled = false;
     if (!n.stat && n.hasKids) { // …or, for something that holds items, the worst of theirs
       let worst = 0;
@@ -833,6 +847,7 @@ function scheduleItems(items) {
  * baseline), and the milestones move to the strip above the chart. Returns a plan to draw plus the strip's milestones.
  */
 function execState(state) {
+  useStatuses(state.settings && state.settings.statuses);
   const S = state.settings, info = derive(state.rows);
   markChanges(info);
   const marker = S.todayDate != null ? S.todayDate : todayDay();
@@ -865,6 +880,7 @@ const spanWords = d => { d = Math.abs(d); if (d < 14) return d + (d === 1 ? ' da
  * baseline, a status, blocked items, or the next milestone). `extra` is dropped when the line would not fit.
  */
 function autoHeadline(state) {
+  useStatuses(state.settings && state.settings.statuses);
   const S = state.settings, info = derive(state.rows);
   const fmt = { f: /Y/.test(S.dateFormat || '') ? 'textY' : 'text', o: S.dateOrder || 'dmy' }, D = d => fmtDate(d, fmt);
   markChanges(info);
@@ -878,25 +894,25 @@ function autoHeadline(state) {
   const based = leaves.filter(n => n.bs != null), slip = based.length ? fin - Math.max(...based.map(n => n.be)) : 0;
   const st = STATUS[S.projectStatus] ? S.projectStatus : null;
   const worst = Math.max(0, ...leaves.map(n => STATUS_ORDER.indexOf(n.stat)));
+  const best = STATUS_ORDER[1] || null, bad = worstStatus();
   const work = leaves.filter(n => !n.milestone && n.progress != null);
   let main;
   if (work.length && work.every(n => n.progress >= 100)) main = `All work complete as of ${D(fin)}`;
   else if (slip > 0) main = `${what} slips ${spanWords(slip)} to ${D(fin)}`;
   else if (slip < 0) main = `${what} pulled in ${spanWords(slip)} to ${D(fin)}`;
-  else if (st === 'red') main = `${what} off track for ${D(fin)}`;
-  else if (st === 'amber') main = `${what} at risk for ${D(fin)}`;
-  else if (st === 'green' || (based.length && worst <= 1)) main = `${what} on track for ${D(fin)}`;
+  else if (st && st !== best) main = `${what} ${statusWords(st)} for ${D(fin)}`;
+  else if (st === best || (based.length && worst <= 1)) main = `${what} ${best ? statusWords(best) : 'on track'} for ${D(fin)}`;
   else main = `${what} planned for ${D(fin)}`;
   const list = a => (a.length <= 2 ? a.map(nm).join(' and ') : `${nm(a[0])} and ${a.length - 1} more`);
   const tops = info.filter(n => n.level === 0 && !n.milestone);
   const late = tops.filter(n => n.hasKids && n.be != null && n.end > n.be).sort((a, b) => (b.end - b.be) - (a.end - a.be));
-  const red = tops.filter(n => n.stat === 'red'), amber = tops.filter(n => n.stat === 'amber');
+  const red = bad ? tops.filter(n => n.stat === bad) : [], amber = tops.filter(n => n.stat && n.stat !== best && n.stat !== bad);
   const blocked = leaves.filter(n => n.row.blocked).length;
   const next = leaves.filter(n => n.milestone && n !== lastMs && n.start >= ref).sort((a, b) => a.start - b.start)[0];
   let extra = '';
   if (late.length) extra = `${nm(late[0])} ${spanWords(late[0].end - late[0].be)} behind baseline`;
-  else if (red.length) extra = `${list(red)} off track`;
-  else if (amber.length) extra = `${list(amber)} at risk`;
+  else if (red.length) extra = `${list(red)} ${statusWords(bad)}`;
+  else if (amber.length) extra = `${list(amber)} ${statusWords(amber[0].stat)}`;
   else if (blocked) extra = `${blocked} ${blocked === 1 ? 'item' : 'items'} blocked`;
   else if (next) extra = `next: ${nm(next)}, ${D(next.start)}`;
   return { main, extra };
@@ -984,6 +1000,7 @@ function buildScene(state, opts) {
   const titleOn = !!(S.showTitle && (headline || S.title));
   let shownTitle = '';
   DATE_FORMAT = { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' };
+  useStatuses(S.statuses);
   const info = derive(rows);
   const nameOf = n => applyCase(n.row.name || 'Untitled', S.textCase); // how a name is shown (Design → Name case); the plan itself keeps what was typed
   // changes from the original plan: items that moved or grew, and those with a reason get a number that the legend explains
@@ -992,6 +1009,9 @@ function buildScene(state, opts) {
   const noted = [];
   if (showChg) info.forEach(n => { if (n.changed && !n.isArea && String(n.row.changeNote || '').trim()) { n.noteNo = noted.length + 1; noted.push(n); } });
   const legendOn = showChg && S.changesLegend !== false && info.some(n => n.changed && !n.isArea);
+  // notes: a line of commentary on an item, numbered after the change reasons so the legend has one sequence
+  const cnoted = S.notesLegend !== false ? info.filter(n => !n.isArea && String(n.row.note || '').trim() && !n.row.noteOff) : [];
+  cnoted.forEach((n, i) => { n.cmtNo = noted.length + i + 1; });
   // blocked items, and everything that (directly or down the line) waits on one that is not finished
   const blockedIds = new Set(info.filter(n => n.row.blocked && !n.isArea).map(n => n.row.id));
   const waitingIds = new Set();
@@ -1006,7 +1026,7 @@ function buildScene(state, opts) {
   const blockedOn = S.blockedLegend !== false && blockedIds.size > 0;
   const bnoted = blockedOn ? info.filter(n => blockedIds.has(n.row.id) && String(n.row.blockedNote || '').trim()) : [];
   const statusOn = S.showStatus !== false;
-  const usedStats = statusOn ? ['green', 'amber', 'red'].filter(c => info.some(n => n.stat === c)) : [];
+  const usedStats = statusOn ? STATUS_ORDER.slice(1).filter(c => info.some(n => n.stat === c)) : [];
   // the critical path: from the item that finishes last, back through whichever dependency finished latest
   const CRIT = '#b91c1c', critIds = new Set(), critEdges = new Set();
   if (S.criticalPath) {
@@ -1278,9 +1298,9 @@ function buildScene(state, opts) {
   if (critIds.size) addKey('Critical path', (lx, ly) => { items.push({ t: 'rect', x: lx, y: ly - kSh / 2 - 1.5, w: kSw, h: kSh + 3, r: kRad + 1.5, fill: CRIT }); items.push({ t: 'rect', x: lx + 1.5, y: ly - kSh / 2, w: kSw - 3, h: kSh, r: kRad, fill: palette[0] }); }, kSw);
   const keyRows = [];
   legendKeys.forEach(k => { const last = keyRows[keyRows.length - 1]; if (last && last.w + 24 + k.w <= W - 2 * pad) { last.keys.push(k); last.w += 24 + k.w; } else keyRows.push({ keys: [k], w: k.w }); });
-  const legendKey = keyRows.length > 0, noteStart = keyRows.length;
+  const legendKey = keyRows.length > 0 || cnoted.length > 0, noteStart = keyRows.length;
   let legendY = 0;
-  if (legendKey) { legendY = y + 10; y += 10 + lh * (keyRows.length + (legendOn ? noted.length : 0) + bnoted.length) + 4; }
+  if (legendKey) { legendY = y + 10; y += 10 + lh * (keyRows.length + (legendOn ? noted.length : 0) + cnoted.length + bnoted.length) + 4; }
   const Hc = Math.round(y + pad - (showBottom && !legendKey ? 8 : 0)); // what the content needs
   const H = fixedPx ? Math.max(Hc, fixedPx) : Hc;
 
@@ -1416,6 +1436,7 @@ function buildScene(state, opts) {
       n.avD = avD;
       const bwL = bw - (avD ? avSpan(namesOf(n).length, avD) + (S.corners === 'pill' ? 4 : Math.round(h * 0.2) + 2) : 0); // room left for the name
       if (n.noteNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.noteNo }); tx += bd + 10; } // the change's number, right after the bar
+      if (n.cmtNo) { const bd = Math.round(16 * kk); n.tail.push({ k: 'badge', x: tx, w: bd, no: n.cmtNo }); tx += bd + 10; } // and the note's
       n.dates = null; n.bwL = bwL;
       if (!left) {
         const w = M(name, size, n.milestone ? 600 : 500);
@@ -1839,8 +1860,14 @@ function buildScene(state, opts) {
       items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.noteNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
       items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.changeNote).trim() + ' (was ' + was + (slip ? ' · ' + slip : '') + ')', W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
+    cnoted.forEach((n, i) => {
+      const cy = legendY + lh * (noteStart + (legendOn ? noted.length : 0) + i) + lh / 2, d = Math.round(ls * 1.5), b = baseOf(n);
+      items.push({ t: 'rect', x: pad, y: cy - d / 2, w: d, h: d, r: d / 2, fill: b });
+      items.push({ t: 'text', x: pad + d / 2, y: cy, text: String(n.cmtNo), size: Math.max(8, ls - 2), weight: 700, fill: onColor(b), anchor: 'middle' });
+      items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.note).trim(), W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
+    });
     bnoted.forEach((n, i) => {
-      const cy = legendY + lh * (noteStart + (legendOn ? noted.length : 0) + i) + lh / 2, d = Math.round(ls * 1.5);
+      const cy = legendY + lh * (noteStart + (legendOn ? noted.length : 0) + cnoted.length + i) + lh / 2, d = Math.round(ls * 1.5);
       blockBadge(pad + d / 2, cy, d / 2 - 0.5);
       items.push({ t: 'text', x: pad + d + 8, y: cy, text: fitText(nameOf(n) + ' — ' + String(n.row.blockedNote).trim(), W - 2 * pad - d - 8, ls, 500, font), size: ls, weight: 500, fill: text, anchor: 'start' });
     });
@@ -1894,4 +1921,4 @@ function buildScene(state, opts) {
   return { w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
-if (typeof module !== 'undefined') module.exports = { execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };
+if (typeof module !== 'undefined') module.exports = { useStatuses, DEFAULT_STATUSES, execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

@@ -27,11 +27,12 @@ const { chromium } = require('playwright');
   await fresh({ progress: true, todayLine: true });
   await p.evaluate(() => { state.rows.forEach(r => { r.progress = r.name === 'Wireframes' ? 100 : r.progress; }); commit(); refresh(); });
   await clickBar('Visual design');
-  console.log('popover sections   :', await p.evaluate(() => [...document.querySelectorAll('.pop .acc')].map(a => a.querySelector('.acc-t').textContent + '=' + a.querySelector('.acc-s').textContent.trim()).join(' | ')));
-  await p.click('[data-acc-toggle="blocked"]'); await p.click('.pop [data-f="blocked"]'); await p.waitForTimeout(250);
-  console.log('after ticking      :', await p.evaluate(() => state.rows.find(r => r.name === 'Visual design').blocked), '| note enabled', await p.evaluate(() => !document.querySelector('.pop [data-f="blockedNote"]').disabled), '| focus', await p.evaluate(() => document.activeElement.dataset.f));
+  console.log('popover sections   :', await p.evaluate(() => [...document.querySelectorAll('.pop .prow')].map(a => a.querySelector('.pk').textContent + '=' + a.querySelector('.pv').textContent.trim()).join(' | ')));
+  await p.click('.pop [data-pmenu="add"]'); await p.click('.pop-menu [data-madd="block"]'); await p.waitForTimeout(250);
+  console.log('after + Add Blocker:', await p.evaluate(() => state.rows.find(r => r.name === 'Visual design').blocked), '| page', await p.evaluate(() => document.querySelector('.pop .pop-ptitle').textContent), '| focus', await p.evaluate(() => document.activeElement.dataset.f));
   await p.keyboard.type('Waiting on brand guidelines from the client'); await p.waitForTimeout(300);
-  console.log('summary / stored   :', await p.evaluate(() => document.querySelector('.pop [data-acc="blocked"] .acc-s').textContent.trim() + ' | ' + state.rows.find(r => r.name === 'Visual design').blockedNote));
+  await p.click('.pop [data-pback]'); await p.waitForTimeout(150);
+  console.log('row / stored       :', await p.evaluate(() => document.querySelector('.pop [data-prow="block"] .pv').textContent.trim() + ' | ' + state.rows.find(r => r.name === 'Visual design').blockedNote));
   await p.keyboard.press('Escape'); await p.keyboard.press('Escape');
   // dependency chain: Design sign-off depends on Visual design (sample), check which items are "waiting"
   const sc = await p.evaluate(() => ({ lines: scene.items.filter(i => i.t === 'line' && i.sw === 1.4).length, light: scene.items.filter(i => i.t === 'line' && i.sw === 1 && i.stroke && i.x2 - i.x1 > 0 && i.x2 - i.x1 < 40).length, badges: scene.items.filter(i => i.t === 'text' && i.text === '!').length, deps: state.rows.filter(r => r.deps.length).map(r => r.name + '<-' + r.deps.map(d => state.rows.find(x => x.id === d).name)).join('; ') }));

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=107">
+<link rel="stylesheet" href="css/style.css?v=108">
 </head>
 <body>
 <header class="topbar">
@@ -80,7 +80,11 @@
   <section class="stage-wrap">
     <div class="stage" id="stage">
       <div class="chart-col" id="chart-col">
-        <div class="chart-top"><button class="qs-btn qs-span" id="qs-span"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg><span class="qs-span-k">Timeline</span><span id="qs-span-text"></span></button></div>
+        <div class="lookbar" id="lookbar" role="toolbar" aria-label="Chart look">
+          <button class="lb-time" id="qs-span" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg><span class="qs-span-k">Timeline</span><span id="qs-span-text"></span></button>
+          <span class="lb-sep" aria-hidden="true"></span>
+          <div class="lb-ctx" id="lookbar-ctx"></div>
+        </div>
         <div class="canvas-wrap" id="canvas-wrap">
           <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
@@ -161,7 +165,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=107"></script>
-<script src="js/app.js?v=107"></script>
+<script src="js/core.js?v=108"></script>
+<script src="js/app.js?v=108"></script>
 </body>
 </html>
