@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v106 · 18 Nov';
+const APP_VERSION = 'v107 · 18 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -961,6 +961,19 @@ function hatchLines(x, y, w, h, r, color, sw, gap) {
   return out;
 }
 
+/** the accent the screen uses for selection rings and hover hints (never drawn into exports) */
+const SEL_RING = '#4f46e5';
+/** a ring a little outside an item's shape: a rounded rectangle for bars and headings, a diamond for milestones */
+function ringItems(o, color, sw, opacity) {
+  const op = opacity != null ? { opacity } : {};
+  if (o.shape === 'diamond') return [Object.assign({ t: 'diamond', cx: o.cx, cy: o.cy, r: o.r, fill: 'none', stroke: color, sw, ui: true }, op)];
+  return [Object.assign({ t: 'rect', x: o.x, y: o.y, w: o.w, h: o.h, r: o.r, fill: 'none', stroke: color, sw, ui: true }, op)];
+}
+/** small handles on both ends of a bar: the ends can be dragged to change its dates */
+function gripItems(o, color, opacity) {
+  const gh = Math.max(8, Math.min(o.bh - 4, 16)), gw = 5, op = opacity != null ? { opacity } : {};
+  return [o.bx, o.bx + o.bw].map(x => Object.assign({ t: 'rect', x: x - gw / 2, y: o.cy - gh / 2, w: gw, h: gh, r: 2.5, fill: '#ffffff', stroke: color, sw: 1.5, ui: true }, op));
+}
 function buildScene(state, opts) {
   opts = opts || {};
   const headline = state.settings.titleAuto ? autoHeadline(state) : null; // read from the whole plan, whatever is drawn
@@ -1566,7 +1579,7 @@ function buildScene(state, opts) {
   }
   (opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : []).forEach(sid => {
     const n = info.find(n => n.row.id === sid);
-    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: hi, opacity: 0.09, ui: true });
+    if (n) items.push({ t: 'rect', x: pad - 10, y: n.y, w: W - 2 * pad + 20, h: n.h, r: 6, fill: SEL_RING, opacity: 0.07, ui: true });
   });
 
   // ---- milestone guide lines
@@ -1626,6 +1639,9 @@ function buildScene(state, opts) {
   };
 
   // ---- rows
+  // where each item sits, so the screen can ring it when it is hovered or selected (UI only: nothing here is exported)
+  const outlines = [];
+  const kindOf = n => (n.isArea ? 'area' : n.milestone ? 'ms' : n.sub ? 'subtask' : 'task');
   info.forEach(n => {
     const row = n.row, id = row.id;
     const base = baseOf(n);
@@ -1645,6 +1661,7 @@ function buildScene(state, opts) {
       }
       items.push({ t: 'rect', x: pad + laneW - 12, y: n.y + 3, w: 3, h: n.h - 6, r: S.corners === 'square' ? 0 : 1.5, fill: base });
       items.push({ t: 'rect', x: pad - 10, y: n.y, w: laneW - 4, h: n.h, hit: true, id, role: 'row' });
+      outlines.push({ id, kind: 'area', shape: 'rect', x: pad - 6, y: n.y + 1, w: laneW - 12, h: n.h - 2, r: 6 });
       return;
     }
     if (left) {
@@ -1672,6 +1689,8 @@ function buildScene(state, opts) {
       }
       if (statusOn && n.stat) statDot(n.bx + n.bw, left ? n.cy : n.y + rowH - 5, 5, n.stat);
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: Math.max(n.bw, left ? 0 : n.tailEnd - n.bx), h: rowH - 4, hit: true, id, role: 'move' });
+      if (left) { const gh = Math.max(8, Math.round(rowH * 0.24)); outlines.push({ id, kind: kindOf(n), shape: 'rect', x: n.bx - 3, y: n.cy - gh / 2 - 3, w: n.bw + 6, h: gh + 6, r: Math.min(radius(gh), gh / 2) + 3 }); }
+      else outlines.push({ id, kind: kindOf(n), shape: 'rect', x: n.bx - 5, y: n.y + 1, w: Math.max(n.bw, M(name, fs + 1, 700)) + 10, h: rowH - 3, r: 6 });
       if (n.who) drawWho(Object.assign({ full: row.assignee }, n.who), n.cy + Math.max(8, Math.round(rowH * 0.24)) / 2, base);
       return;
     }
@@ -1697,6 +1716,7 @@ function buildScene(state, opts) {
       if (statusOn && n.stat) statDot(cx + rr * 0.9, n.cy + rr * 0.9, Math.max(4, Math.min(5.5, rr * 0.55)), n.stat);
       if (blockedIds.has(id)) blockBadge(cx + rr * 0.9, n.cy - rr * 0.9, Math.max(5.5, Math.min(7.5, rr * 0.8)));
       items.push({ t: 'rect', x: Math.min(n.tailStart, cx - rr - 4), y: n.y, w: Math.max(n.tailEnd, cx + rr) + 4 - Math.min(n.tailStart, cx - rr - 4), h: n.h, hit: true, id, role: 'move' });
+      outlines.push({ id, kind: 'ms', shape: 'diamond', cx, cy: n.cy, r: rr + 4, x: cx - rr - 4, y: n.cy - rr - 4, w: 2 * rr + 8, h: 2 * rr + 8 });
     } else {
       const tracked = S.progress && n.progress != null; // bars with progress switched off stay plain
       const prog = tracked ? clamp(n.progress, 0, 100) / 100 : 1;
@@ -1765,6 +1785,7 @@ function buildScene(state, opts) {
       if (statusOn && n.stat) statDot(n.bx + n.bw + 1, by, Math.max(4, Math.min(6, h * 0.26)), n.stat);
       if (blockedIds.has(id)) blockBadge(n.bx - 1, by, Math.max(5.5, Math.min(8, h * 0.34))); // on the bar's top-left corner, clear of its label and the arrows
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
+      outlines.push({ id, kind: kindOf(n), shape: 'rect', x: gx - 3, y: by - 3, w: gw + 6, h: h + 6, r: r ? r + 3 : 2, resize: !n.hasKids, bx: gx, bw: gw, cy: n.cy, bh: h });
       if (!n.hasKids) {
         if (tracked && !byMarker) {
           items.push({ t: 'rect', x: n.bx + pw - 8, y: n.y + 2, w: 16, h: n.h - 4, hit: true, id, role: 'progress' });
@@ -1861,9 +1882,16 @@ function buildScene(state, opts) {
     if (markerPill) items.push({ t: 'rect', x: ppx, y: laneY, w: pw, h: tlh + 2, hit: true, role: 'today' });
   }
 
+  // ---- the selection: a ring round each selected item (on top of everything), and grips on the ends of a single bar that can be resized
+  const selIdsNow = exec ? [] : opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : [];
+  selIdsNow.forEach(sid => outlines.filter(o => o.id === sid).forEach(o => {
+    ringItems(o, SEL_RING, 2).forEach(it => items.push(it));
+    if (selIdsNow.length === 1 && o.resize) gripItems(o, SEL_RING).forEach(it => items.push(it));
+  }));
+
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

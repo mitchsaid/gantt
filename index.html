@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=106">
+<link rel="stylesheet" href="css/style.css?v=107">
 </head>
 <body>
 <header class="topbar">
@@ -80,6 +80,7 @@
   <section class="stage-wrap">
     <div class="stage" id="stage">
       <div class="chart-col" id="chart-col">
+        <div class="chart-top"><button class="qs-btn qs-span" id="qs-span"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg><span class="qs-span-k">Timeline</span><span id="qs-span-text"></span></button></div>
         <div class="canvas-wrap" id="canvas-wrap">
           <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
@@ -91,7 +92,7 @@
           <span class="chart-warn" id="chart-warn" hidden></span>
           <span class="chart-warn" id="chart-out" hidden></span>
           <button class="link-btn quiet" id="chart-spread" hidden title="Rescale every item to fill the fixed timeline">↔ Spread across the timeline</button>
-          <span class="qs" role="group" aria-label="Progress and baseline">
+          <span class="qs" role="group" aria-label="View, progress and baseline">
             <button class="qs-btn" id="qs-exec" aria-pressed="false" title="Exec view: one bar per area, milestones and status — the plan itself is untouched">Exec view</button>
             <button class="qs-btn" id="qs-progress" aria-pressed="false" title="Show progress in the bars">Progress</button>
             <button class="qs-btn" id="qs-base" aria-pressed="false"><span class="qs-dot"></span><span id="qs-base-text">Set baseline</span><span class="qs-count" id="qs-base-count" hidden></span></button>
@@ -160,7 +161,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=106"></script>
-<script src="js/app.js?v=106"></script>
+<script src="js/core.js?v=107"></script>
+<script src="js/app.js?v=107"></script>
 </body>
 </html>

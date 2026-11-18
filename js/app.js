@@ -156,7 +156,7 @@ function sceneToSvg(sc, interactive) {
     if (!interactive && (it.ui || it.hit)) continue;
     if (it.t === 'rect') {
       if (it.hit) out += `<rect x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(Math.max(0, it.w))}" height="${n2(it.h)}" data-role="${it.role}"${it.id ? ` data-id="${esc(it.id)}"` : ''}${it.id && it.id === sel ? ' class="touchlock"' : ''}/>`;
-      else out += `<rect x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(Math.max(0, it.w))}" height="${n2(it.h)}"${it.r ? ` rx="${n2(Math.min(it.r, it.w / 2, it.h / 2))}"` : ''} fill="${it.fill}"${it.opacity != null ? ` opacity="${it.opacity}"` : ''}${it.stroke ? ` stroke="${it.stroke}" stroke-width="${it.sw || 1}"` : ''}/>`;
+      else out += `<rect x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(Math.max(0, it.w))}" height="${n2(it.h)}"${it.r ? ` rx="${n2(Math.min(it.r, it.w / 2, it.h / 2))}"` : ''} fill="${it.fill}"${it.opacity != null ? ` opacity="${it.opacity}"` : ''}${it.stroke ? ` stroke="${it.stroke}" stroke-width="${it.sw || 1}"` : ''}${it.ui ? ' pointer-events="none"' : ''}/>`;
     } else if (it.t === 'line') {
       out += `<line x1="${n2(it.x1)}" y1="${n2(it.y1)}" x2="${n2(it.x2)}" y2="${n2(it.y2)}" stroke="${it.stroke}" stroke-width="${it.sw}"${it.dash ? ` stroke-dasharray="${it.dash.join(' ')}"` : ''}${it.cap ? ` stroke-linecap="${it.cap}"` : ''}/>`;
     } else if (it.t === 'text') {
@@ -168,7 +168,7 @@ function sceneToSvg(sc, interactive) {
       }
     } else if (it.t === 'diamond') {
       const { cx, cy, r } = it;
-      out += `<polygon points="${n2(cx)},${n2(cy - r)} ${n2(cx + r)},${n2(cy)} ${n2(cx)},${n2(cy + r)} ${n2(cx - r)},${n2(cy)}" fill="${it.fill}"${it.stroke ? ` stroke="${it.stroke}" stroke-width="1.5"` : ''} stroke-linejoin="round"/>`;
+      out += `<polygon points="${n2(cx)},${n2(cy - r)} ${n2(cx + r)},${n2(cy)} ${n2(cx)},${n2(cy + r)} ${n2(cx - r)},${n2(cy)}" fill="${it.fill}"${it.stroke ? ` stroke="${it.stroke}" stroke-width="${it.sw || 1.5}"` : ''}${it.opacity != null ? ` opacity="${it.opacity}"` : ''}${it.ui ? ' pointer-events="none"' : ''} stroke-linejoin="round"/>`;
     } else if (it.t === 'poly') {
       const pts = it.pts.map(p => p.slice());
       const [ex, ey] = pts[pts.length - 1];
@@ -216,7 +216,7 @@ function drawScene(sc, scale) {
       const { cx, cy, r } = it;
       g.beginPath(); g.moveTo(cx, cy - r); g.lineTo(cx + r, cy); g.lineTo(cx, cy + r); g.lineTo(cx - r, cy); g.closePath();
       g.fillStyle = it.fill; g.fill();
-      if (it.stroke) { g.strokeStyle = it.stroke; g.lineWidth = 1.5; g.lineJoin = 'round'; g.stroke(); }
+      if (it.stroke) { g.strokeStyle = it.stroke; g.lineWidth = it.sw || 1.5; g.lineJoin = 'round'; g.stroke(); }
     } else if (it.t === 'poly') {
       const pts = it.pts.map(p => p.slice());
       const [ex, ey] = pts[pts.length - 1];
@@ -238,7 +238,8 @@ function renderChart() {
   scene = buildScene(state, o);
   svg.setAttribute('viewBox', `0 0 ${scene.w} ${scene.h}`);
   svg.setAttribute('font-family', `'${scene.font}', system-ui, sans-serif`);
-  svg.innerHTML = sceneToSvg(scene, true);
+  svg.innerHTML = sceneToSvg(scene, true) + '<g id="hov" pointer-events="none"></g>';
+  drawHover();
   const wrap = $('#canvas-wrap');
   wrap.classList.toggle('transparent', scene.transparent);
   wrap.classList.toggle('dark', scene.transparent && scene.lightText);
@@ -1998,10 +1999,11 @@ function popHtml() {
     const colourSec = acc('colour', 'Colour', swatch + (r.color == null ? 'Auto' : 'Custom'), colorHtml(r));
     const statSec = acc('status', 'Status', statusSummary(n), statusHtml(r, n));
     const whoSec = acc('assignees', 'Assignees', names.length ? esc(names.join(', ')) : 'None', assigneeHtml(r));
+    const styleSec = styleAcc(n.isArea ? 'area' : n.milestone ? 'ms' : 'task');
     if (n.isArea) { // an area: what is in it, who owns it, its colour, and quick actions
       const inside = blockEnd(state.rows, n.i) - n.i - 1;
       return h + `<p class="note">${fmtRange(n)} · ${inside} ${inside === 1 ? 'item' : 'items'}${S.progress && n.progress != null ? ' · ' + Math.round(n.progress) + '% done' : ''}. Its dates follow what is inside it; drag its bar to shift everything together.</p>`
-        + `<div class="accs">${statSec}${whoSec}${colourSec}</div>`
+        + `<div class="accs">${statSec}${whoSec}${colourSec}${styleSec}</div>`
         + `<div class="pop-btns"><button class="btn ghost" data-act="area-del">Delete…</button><button class="btn primary" data-act="area-add">+ Task here</button></div>`;
     }
     if (n.hasKids) h += `<p class="note">${fmtRange(n)} — spans the items inside it. Drag the bar to shift them all.</p>`;
@@ -2018,6 +2020,7 @@ function popHtml() {
     if (n.milestone) secs.push(acc('keyms', 'Key milestone', r.key ? 'Yes' : S.keyStrip ? 'No' : 'Off', keyHtml(r)));
     if (n.milestone) secs.push(acc('ms', 'Sits in its day', { '': 'Default', auto: 'Auto', start: 'Start', middle: 'Middle', end: 'End' }[r.msAlign || ''], msHtml(r)));
     secs.push(colourSec);
+    secs.push(styleSec);
     return h + `<div class="accs">${secs.join('')}</div>` + popFootHtml(n, state.rows);
   }
   if (pop.kind === 'today') {
@@ -2028,7 +2031,8 @@ function popHtml() {
       <label class="check"><input type="checkbox" data-f="markerLabelOn"${lab ? ' checked' : ''}> Show label</label>
       <div class="field"><span>Line</span>${seg('marker-style', S.markerStyle || 'solid', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']])}</div>
       <div class="field"><span>Thickness</span>${seg('marker-width', S.markerWidth || 2, [[1, 'Thin'], [2, 'Regular'], [3, 'Bold']])}</div>
-      <div class="field"><span>Colour</span><div class="swatches mk-sw" data-sig="${paletteOf(S).colors.join()}">${markerSwHtml()}</div></div>`;
+      <div class="field"><span>Colour</span><div class="swatches mk-sw" data-sig="${paletteOf(S).colors.join()}">${markerSwHtml()}</div></div>
+      <button class="link-btn quiet pop-more" data-reveal="progress">More in Design → Progress</button>`;
   }
   const fixed = S.rangeMode === 'fixed' && S.rangeStart != null;
   const [a, b] = fixed ? [S.rangeStart, S.rangeEnd] : autoSpan();
@@ -2036,7 +2040,8 @@ function popHtml() {
     <div class="seg" data-f="rangeMode"><button data-v="auto" class="${fixed ? '' : 'on'}">Fit to tasks</button><button data-v="fixed" class="${fixed ? 'on' : ''}">Fixed</button></div>
     <div class="two">${date('From', 'rangeStart', a)}${date('To', 'rangeEnd', b)}</div>
     <div class="field"><span>Length</span>${durControl(a, b, 'len-n', 'len-u')}</div>
-    <button class="btn ghost wide" data-act="fit"${fixed && state.rows.length ? '' : ' disabled'}>Spread tasks across it</button>`;
+    <button class="btn ghost wide" data-act="fit"${fixed && state.rows.length ? '' : ' disabled'}>Spread tasks across it</button>
+    <div class="accs">${styleAcc('timeline')}</div>`;
 }
 function openPop(kind, rect, id, x) {
   pop = { kind, id: id || null };
@@ -2056,8 +2061,9 @@ function openPop(kind, rect, id, x) {
   popEl.style.top = top + 'px';
   popEl.style.left = clamp(x != null ? Math.max(x, rect.left) : rect.left, 8, Math.max(8, innerWidth - w - 8)) + 'px';
   if (kind === 'paste') { syncPasteNote(); const ta = $('#pop-paste'); if (ta) ta.focus(); }
+  drawHover();
 }
-function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; }
+function closePop() { if (!pop) return; pop = null; popEl.hidden = true; popEl.innerHTML = ''; hint = null; hintKey = ''; drawHover(); }
 function syncPop() {
   if (!pop) return;
   // a row's popover belongs to the selected row: once the selection moves (paste, duplicate, group…) it must not stay on the old one
@@ -2082,6 +2088,7 @@ function syncPop() {
 document.addEventListener('pointerdown', e => { if (pop && !popEl.contains(e.target)) closePop(); }, true);
 popEl.addEventListener('input', e => {
   const t = e.target, f = t.dataset.f;
+  if (pop && t.dataset.k) return; // style controls apply on change
   if (!pop || !f) return;
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowInput(r, t); }
   else if (f === 'paste') { pop.text = t.value; syncPasteNote(); }
@@ -2090,6 +2097,7 @@ popEl.addEventListener('input', e => {
 });
 popEl.addEventListener('change', e => {
   const t = e.target, f = t.dataset.f;
+  if (pop && t.dataset.k) { setSetting(t.dataset.k, t.type === 'checkbox' ? t.checked : t.value); return; } // a shared setting, from the Style section
   if (!pop || !f) return;
   if (pop.kind === 'row') { const r = state.rows[rowIndex(pop.id)]; if (r) rowChange(r, t); return; }
   const S = state.settings;
@@ -2102,6 +2110,7 @@ popEl.addEventListener('change', e => {
   } else commit();
 });
 popEl.addEventListener('click', e => {
+  if (pop && styleClick(e)) return;
   if (pop && pop.kind === 'today') {
     if (markerColorEvent(e, 'click')) return;
     const sb = e.target.closest('.seg[data-f="marker-style"] button, .seg[data-f="marker-width"] button');
@@ -2854,6 +2863,8 @@ window.addEventListener('resize', () => requestAnimationFrame(syncMarkerJump));
 function syncQuickStatus() {
   const S = state.settings, prog = $('#qs-progress'), base = $('#qs-base');
   if (!prog || !base) return;
+  const sp = $('#qs-span-text');
+  if (sp) { const t = spanLabel(); if (sp.textContent !== t) sp.textContent = t; $('#qs-span').title = `The overall timeline (${S.rangeMode === 'fixed' ? 'fixed' : 'fits the tasks'}) — click to change its dates or length`; }
   prog.setAttribute('aria-pressed', String(!!S.progress));
   $('#qs-exec').setAttribute('aria-pressed', String(!!S.execView));
   const has = hasBaseline(), on = !!S.showChanges && has;
@@ -2908,6 +2919,198 @@ $('#selbar').addEventListener('click', e => {
   else if (b.dataset.sel === 'even') evenLengths();
   else if (b.dataset.sel === 'clear') select(null);
 });
+
+// ---------------------------------------------------------------- hover: what can be grabbed, and what a setting changes
+// A layer on top of the chart (never exported) rings the item under the pointer, with grips on the ends of bars that can be
+// resized, and outlines what a hovered setting would change: every task, the date header, the marker… The same layer shows
+// the timeline header while its popover is open, so the dates being edited are visibly the ones on the chart.
+let hover = null, hoverKey = ''; // the pointer on the chart: { id } or { roles: [...] }
+let hint = null, hintKey = '';   // a setting being pointed at (Design panel, Style section, the timeline pill): { kinds }, { roles } or { id }
+function hoverLayerHtml() {
+  if (!scene || (drag && drag.moved)) return '';
+  const items = [], picked = selIds();
+  const box = it => [
+    { t: 'rect', x: it.x - 3, y: it.y - 3, w: it.w + 6, h: it.h + 6, r: 6, fill: SEL_RING, opacity: 0.07, ui: true },
+    { t: 'rect', x: it.x - 3, y: it.y - 3, w: it.w + 6, h: it.h + 6, r: 6, fill: 'none', stroke: SEL_RING, sw: 1.5, opacity: 0.6, ui: true },
+  ];
+  const popMark = pop && pop.kind === 'timeline' ? { roles: ['timeline'] } : pop && pop.kind === 'today' ? { roles: ['today'] } : null;
+  [hover, hint, popMark].filter(Boolean).forEach(h => {
+    if (h.id && !picked.includes(h.id)) {
+      const n = scene.info.find(x => x.row.id === h.id);
+      if (n) items.push({ t: 'rect', x: scene.pad - 10, y: n.y, w: scene.w - 2 * scene.pad + 20, h: n.h, r: 6, fill: SEL_RING, opacity: 0.045, ui: true });
+      scene.outlines.filter(o => o.id === h.id).forEach(o => { items.push(...ringItems(o, SEL_RING, 1.5, 0.5)); if (o.resize) items.push(...gripItems(o, SEL_RING, 0.9)); });
+    }
+    if (h.kinds) scene.outlines.filter(o => h.kinds.includes(o.kind)).forEach(o => items.push(...ringItems(o, SEL_RING, 1.5, 0.6)));
+    if (h.roles) scene.items.filter(it => it.hit && h.roles.includes(it.role)).forEach(it => items.push(...box(it)));
+  });
+  return sceneToSvg({ items, w: scene.w }, true);
+}
+function drawHover() {
+  const g = $('#hov', svg);
+  if (g) { const html = hoverLayerHtml(); if (g.innerHTML !== html) g.innerHTML = html; }
+  $$('.orow.hov').forEach(el => { if (!hover || !hover.id || el.dataset.id !== hover.id) el.classList.remove('hov'); });
+  if (hover && hover.id) { const el = $(`.orow[data-id="${hover.id}"]`); if (el) el.classList.add('hov'); }
+}
+function setHint(h) {
+  const key = h ? JSON.stringify(h) : '';
+  if (key === hintKey) return;
+  hintKey = key; hint = h; drawHover();
+}
+// a short tip for the parts of the chart that are not items: they do something when clicked, which nothing else says
+const tip = document.createElement('div');
+tip.className = 'chart-tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
+document.body.appendChild(tip);
+let tipTimer = 0, tipXY = [0, 0];
+function tipHtml(role) {
+  if (role === 'timeline') return `<b>Click to change the timeline</b><span>${esc(spanLabel())} · ${state.settings.rangeMode === 'fixed' ? 'fixed' : 'fits the tasks'}</span>`;
+  if (role === 'title') return '<b>Click to edit the title</b>';
+  if (role === 'today') return '<b>Drag to move the date marker</b><span>Click for its date, label and line</span>';
+  return '';
+}
+function placeTip() {
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = clamp(tipXY[0] + 14, 8, innerWidth - w - 8) + 'px';
+  tip.style.top = (tipXY[1] + 20 + h > innerHeight - 8 ? tipXY[1] - h - 12 : tipXY[1] + 20) + 'px';
+}
+function showTip(role) {
+  clearTimeout(tipTimer); tip.hidden = true;
+  const html = role && !pop ? tipHtml(role) : '';
+  if (html) tipTimer = setTimeout(() => { tip.innerHTML = html; tip.hidden = false; placeTip(); }, 300);
+}
+svg.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch' || drag) return;
+  tipXY = [e.clientX, e.clientY];
+  const t = e.target.closest && e.target.closest('[data-role]'), role = t && t.dataset.role, id = t && t.dataset.id;
+  const next = !t || state.settings.execView ? null : id && /^(move|resize-l|resize-r|progress|row)$/.test(role) ? { id } : /^(timeline|title|today)$/.test(role) ? { roles: [role] } : null;
+  const key = next ? next.id || next.roles[0] : '';
+  if (key === hoverKey) { if (!tip.hidden) placeTip(); return; }
+  hoverKey = key; hover = next; drawHover();
+  showTip(next && next.roles ? next.roles[0] : null);
+});
+svg.addEventListener('pointerleave', () => { hoverKey = ''; hover = null; drawHover(); showTip(null); });
+svg.addEventListener('pointerdown', () => showTip(null), true);
+$('#stage').addEventListener('scroll', () => showTip(null), { passive: true });
+// pointing at a row in the Plan panel rings it on the chart
+$('#outline').addEventListener('mouseover', e => { const r = e.target.closest('.orow[data-id]'); setHint(r ? { id: r.dataset.id } : null); });
+$('#outline').addEventListener('mouseleave', () => setHint(null));
+
+/** the plan's overall span as it stands: fixed, or fitted to the tasks */
+function currentSpan() {
+  const S = state.settings;
+  return S.rangeMode === 'fixed' && S.rangeStart != null && S.rangeEnd != null ? [S.rangeStart, S.rangeEnd] : autoSpan();
+}
+function spanLabel() {
+  const [a, b] = currentSpan(), [n, u] = spanUnits(a, b);
+  return `${shortDate(a)} – ${shortDate(b)} · ${n} ${n === 1 ? u.replace(/s$/, '') : u}`;
+}
+/** open the timeline popover under the date header (or under the pill, in exec view where the header isn't clickable) */
+function openTimelinePop() {
+  const head = $('#chart [data-role="timeline"]');
+  if (head) {
+    const st = $('#stage'), sr = st.getBoundingClientRect();
+    let r = head.getBoundingClientRect();
+    if (r.top < sr.top || r.bottom > sr.bottom) { st.scrollTop += r.top - sr.top - 20; r = head.getBoundingClientRect(); }
+    openPop('timeline', r, null, r.left + r.width / 2 - 134);
+  } else { const r = $('#qs-span').getBoundingClientRect(); openPop('timeline', { top: r.top, bottom: r.top - 330, left: r.left }, null, r.left); }
+}
+$('#qs-span').addEventListener('click', () => { if (pop && pop.kind === 'timeline') closePop(); else openTimelinePop(); });
+$('#qs-span').addEventListener('mouseenter', () => setHint({ roles: ['timeline'] }));
+$('#qs-span').addEventListener('mouseleave', () => setHint(null));
+
+// ---------------------------------------------------------------- style from where you are
+// Each popover carries a short Style section with the few shared settings that shape what was clicked (names on bars, their
+// alignment and colour, corners…). They are the Design panel's own settings, so they change every item of that kind: the
+// section says so, and pointing at a setting rings every item it changes. “More in Design” opens the full section.
+const STYLE = {
+  task: { title: 'Style for all tasks', sec: 'tasks', kinds: ['task', 'subtask'], note: 'Changes every task on the chart. This one’s colour is under Colour.', keys: ['taskLabels', 'barAlign', 'barDates', 'barDateKind', 'barText', '_textSize', 'corners', 'density'] },
+  ms: { title: 'Style for all milestones', sec: 'milestones', kinds: ['ms'], note: 'Changes every milestone on the chart.', keys: ['msLines', 'keyStrip', '_textSize', 'textCase'] },
+  area: { title: 'Style for all areas', sec: 'tasks', kinds: ['area'], note: 'Changes every area on the chart.', keys: ['areaLabels', 'colorBy', '_textSize', 'textCase'] },
+  timeline: { title: 'Style', sec: 'timeline', roles: ['timeline'], note: 'How the dates along the top (or bottom) are shown.', keys: ['scale', 'datePos', 'dateFormat', 'periodNames', 'gridCells'] },
+};
+const STYLE_LABEL = { taskLabels: 'Names', barAlign: 'Align names', barText: 'Name colour', barDates: 'Dates or duration under names', barDateKind: 'Show', density: 'Row height', areaLabels: 'Names', msLines: 'Guide lines', textCase: 'Name case', datePos: 'Dates at', gridCells: 'Period lines' };
+function styleSummary(kind) {
+  const S = state.settings;
+  if (kind === 'task') { const onBars = S.pack || S.taskLabels === 'bars'; return onBars ? `Names on bars · ${{ left: 'left', center: 'centred', right: 'right' }[S.barAlign] || 'left'}` : 'Names on the left'; }
+  if (kind === 'ms') return S.msLines ? 'Guide lines' : 'Diamonds only';
+  if (kind === 'area') return S.areaLabels === 'side' ? 'Names at the side' : 'As headings';
+  return [{ days: 'Days', weeks: 'Weeks', sprints: 'Sprints', months: 'Months', quarters: 'Quarters' }[S.scale], { top: 'top', bottom: 'bottom', both: 'top and bottom' }[S.datePos]].filter(Boolean).join(' · ');
+}
+function styleCtlHtml(keys) {
+  const S = state.settings;
+  return keys.map(k => {
+    if (k === '_textSize') { // one size for every name and date on the chart: nudge it, or go back to Auto
+      const auto = S.textAuto !== false, pt = auto && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
+      return `<div class="ctl" data-sk="${k}"><span class="lbl">Text size</span><div class="seg ts"><button data-ts="-0.5" aria-label="Smaller text" title="Smaller (all text)">A−</button><button data-ts="auto" class="${auto ? 'on' : ''}" title="${auto ? 'Sized to the canvas automatically' : 'Back to automatic'}">${auto ? 'Auto' : pt + ' pt'}</button><button data-ts="0.5" aria-label="Larger text" title="Larger (all text)">A+</button></div></div>`;
+    }
+    const c = designCtl[k];
+    if (!c || (c.when && !c.when(S))) return '';
+    const label = esc(STYLE_LABEL[k] || c.label), sub = c.sub ? ' sub' : '';
+    if (c.type === 'seg') {
+      const locked = k === 'taskLabels' && S.pack, cur = locked ? 'bars' : String(S[k]);
+      return `<div class="ctl col${sub}${locked ? ' disabled' : ''}" data-sk="${k}"><span class="lbl">${label}</span><div class="seg" data-k="${k}">${c.opts.map(o => `<button data-v="${o[0]}" class="${String(o[0]) === cur ? 'on' : ''}">${o[1]}</button>`).join('')}</div></div>`;
+    }
+    if (c.type === 'toggle') return `<label class="ctl${sub}" data-sk="${k}"><span class="lbl">${label}</span><span class="switch"><input type="checkbox" data-k="${k}"${S[k] ? ' checked' : ''}><i></i></span></label>`;
+    if (c.type === 'select') return `<label class="ctl col${sub}" data-sk="${k}"><span class="lbl">${label}</span><select class="inp" data-k="${k}">${c.opts.map(o => `<option value="${o[0]}"${String(S[k]) === String(o[0]) ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>`;
+    return '';
+  }).join('');
+}
+function styleAcc(kind) {
+  const st = STYLE[kind], secName = (DESIGN.find(d => d[0] === st.sec) || [, ''])[1];
+  return acc('style-' + kind, st.title, esc(styleSummary(kind)), `<p class="note style-note">${st.note}</p>${styleCtlHtml(st.keys)}<button class="link-btn quiet pop-more" data-reveal="${st.sec}">More in Design → ${secName}</button>`);
+}
+/** clicks inside a Style section (and the “More in Design” links); true when handled */
+function styleClick(e) {
+  const rv = e.target.closest('[data-reveal]');
+  if (rv) { revealDesign(rv.dataset.reveal); return true; }
+  const ts = e.target.closest('[data-ts]');
+  if (ts) {
+    const S = state.settings;
+    if (ts.dataset.ts === 'auto') { if (S.textAuto === false) setSetting('textAuto', true); return true; }
+    const from = S.textAuto !== false && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
+    S.textAuto = false;
+    setSetting('textPt', clamp(from + +ts.dataset.ts, 5, 48));
+    return true;
+  }
+  const b = e.target.closest('.seg[data-k] button');
+  if (b) { const k = b.parentNode.dataset.k, c = designCtl[k]; setSetting(k, c.num ? +b.dataset.v : c.bool ? b.dataset.v === 'true' : b.dataset.v); return true; }
+  return false;
+}
+// pointing at a shared setting in a popover rings everything it changes
+popEl.addEventListener('mouseover', e => {
+  const c = e.target.closest('[data-sk]'), a = c && c.closest('.acc[data-acc^="style-"]');
+  const st = a && STYLE[a.dataset.acc.slice(6)];
+  setHint(!st ? null : c.dataset.sk === '_textSize' ? { kinds: ['task', 'subtask', 'ms', 'area'], roles: ['timeline'] } : st.roles ? { roles: st.roles } : { kinds: st.kinds });
+});
+popEl.addEventListener('mouseleave', () => setHint(null));
+/** open the Design panel at a section, with nothing filtered, and flash it so the eye finds it */
+function revealDesign(sec) {
+  closePop();
+  if (ui.hideDesign) { ui.hideDesign = false; saveUi(); syncPanels(); }
+  if (isSheet() && !$('#panel-design').classList.contains('open')) openSheet('panel-design');
+  if (designQuery) setDesignQuery('');
+  setSectionOpen(sec, true);
+  const el = $(`.group[data-sec="${sec}"]`, designEl);
+  if (!el) return;
+  el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1600);
+}
+// …and pointing at a setting in the Design panel shows on the chart what it changes
+const TITLE_KEYS = ['showTitle', 'titleAuto', 'title', 'projectStatus', 'slipChip'];
+const MARKER_KEYS = ['todayLine', 'todayDate', 'markerLabelOn', 'todayLabel', 'markerStyle', 'markerWidth', 'markerColor', 'planDaysLeft'];
+function designHint(k) {
+  const it = designItems.find(x => x.c.k === k);
+  if (!it) return null;
+  if (TITLE_KEYS.includes(k)) return { roles: ['title'] };
+  if (MARKER_KEYS.includes(k)) return { roles: ['today'] };
+  if (k === 'areaLabels' || k === 'colorBy') return { kinds: ['area'] };
+  if (k === 'msAlign' || it.sec === 'milestones') return { kinds: ['ms'] };
+  if (it.sec === 'timeline') return ['Scale', 'Span', 'Dates'].includes(it.head) ? { roles: ['timeline'] } : null;
+  if (it.sec === 'tasks' || k === 'barText' || it.head === 'Progress in bars' || it.head === 'Days left') return { kinds: ['task', 'subtask'] };
+  return null;
+}
+designEl.addEventListener('mouseover', e => { const w = e.target.closest('[data-w]'); setHint(w ? designHint(w.dataset.w) : null); });
+designEl.addEventListener('mouseleave', () => setHint(null));
 
 // ---------------------------------------------------------------- go
 { // the tips card: ⌘ on a Mac, and it remembers whether it was left open
