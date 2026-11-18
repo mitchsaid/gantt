@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v105 · 17 Nov';
+const APP_VERSION = 'v106 · 18 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1125,7 +1125,8 @@ function buildScene(state, opts) {
   // dates under the names on the bars: the bars must hold two lines
   const barDates = !!S.barDates && (pack || S.taskLabels === 'bars');
   const dateGap = sz => Math.round(sz * 0.2); // a little air between a name and the dates under it
-  const twoLineH = sz => Math.ceil(sz * 1.12 + dateGap(sz) + dateSizeOf(sz) * 1.12 + 6);
+  // a bar holding a name and its dates: the two lines as drawn, with padding above and below in proportion to the text, so it never feels cramped
+  const twoLineH = sz => Math.ceil(sz * 1.15 + dateGap(sz) + dateSizeOf(sz) * 1.12 + 2 * Math.max(6, Math.round(sz * 0.5)));
   if (barDates) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
   const barH = Math.round(rowH * 0.64);
   const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), barDates ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
