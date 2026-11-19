@@ -258,7 +258,7 @@ function renderChart() {
   placeSelBar();
   syncQuickStatus();
   const sp = $('#chart-spread');
-  if (sp) sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length);
+  if (sp) { sp.hidden = !(state.settings.rangeMode === 'fixed' && state.settings.rangeStart != null && state.rows.length); sp.disabled = !!state.settings.execView; $('#chart-spread-sep').hidden = sp.hidden; } // kept in place in exec view, so the toolbar doesn't move
   syncMarkerJump();
   const co = $('#chart-out');
   if (co) {
@@ -1993,23 +1993,12 @@ function outsideDialog() {
     ['Cancel', 'ghost', null],
   ]);
 }
-const sameDates = (a, b) => !!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => b[k] && b[k][0] === a[k][0] && b[k][1] === a[k][1]);
-const isSpread = () => !!spreadMemo && sameDates(spreadMemo.after, datesNow());
 function fitPlan() {
   const S = state.settings;
   if (S.rangeMode !== 'fixed' || S.rangeStart == null || !state.rows.length) return;
   fitRows(state.rows, S.rangeStart, S.rangeEnd);
   commit(); refresh();
   toast('Tasks spread across the timeline — Undo reverts');
-}
-/** the chart's button: spread across the fixed timeline, and a second click puts the dates back */
-function toggleSpread() {
-  if (isSpread()) {
-    state.rows.forEach(r => { const b = spreadMemo.before[r.id]; if (b) { r.start = b[0]; r.end = b[1]; } });
-    spreadMemo = null;
-    commit(); refresh();
-    toast('Back to the dates from before spreading');
-  } else fitPlan();
 }
 
 // ---------------------------------------------------------------- popover: edit things where they are
@@ -2197,29 +2186,82 @@ popEl.addEventListener('keydown', e => {
 });
 
 // ---------------------------------------------------------------- inline text editing on the chart
-function inlineEdit(rect, value, fontPx, weight, onInput) {
+function inlineEdit(rect, value, fontPx, weight, onInput, opt = {}) {
   closePop();
   const inp = document.createElement('input');
   inp.className = 'inline-edit';
   inp.value = value;
-  Object.assign(inp.style, { left: rect.left + 'px', top: rect.top + 'px', width: Math.max(rect.width, 180) + 'px', height: rect.height + 'px', fontSize: fontPx + 'px', fontWeight: weight, fontFamily: `'${state.settings.font}', system-ui, sans-serif` });
+  const place = (r, px) => Object.assign(inp.style, { left: r.left + 'px', top: r.top + 'px', width: Math.max(r.width, 180) + 'px', height: r.height + 'px', fontSize: px + 'px' });
+  place(rect, fontPx);
+  Object.assign(inp.style, { fontWeight: weight, fontFamily: `'${state.settings.font}', system-ui, sans-serif` });
   document.body.appendChild(inp);
-  let done = false;
-  const finish = revert => {
+  let done = false, bar = null;
+  const close = () => { done = true; inp.remove(); if (bar) bar.remove(); commit(); refresh(); };
+  const api = { inp, place: (r, px) => { place(r, px); if (bar && opt.placeBar) opt.placeBar(bar, inp); } };
+  api.finish = revert => {
     if (done) return;
-    done = true;
-    if (revert) onInput(value);
-    inp.remove(); commit(); refresh();
+    if (revert) (opt.onRevert || (() => onInput(value)))();
+    close();
   };
-  inp.addEventListener('input', () => onInput(inp.value));
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(false); else if (e.key === 'Escape') { e.stopPropagation(); finish(true); } });
-  inp.addEventListener('blur', () => finish(false));
+  api.drop = () => { if (!done) close(); }; // ends editing; whatever the caller just set stands
+  inp.addEventListener('input', () => { onInput(inp.value); if (opt.onTyped) opt.onTyped(bar); });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') api.finish(false); else if (e.key === 'Escape') { e.stopPropagation(); api.finish(true); } });
+  inp.addEventListener('blur', () => api.finish(false));
+  if (opt.bar) { bar = opt.bar(api); document.body.appendChild(bar); if (opt.placeBar) opt.placeBar(bar, inp); }
   inp.focus(); inp.select();
+  return api;
 }
+const SPARKLE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.3 3.6 3.6 1.3-3.6 1.3L8 11.6 6.7 8 3.1 6.7l3.6-1.3zM12.8 10.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg>';
+// The title edits in place, with its options in a small bar underneath: have the headline written from the plan, its size, or hide it.
 function editTitle(rect) {
-  const s = svg.getBoundingClientRect().width / scene.w;
+  const S = state.settings, s = svg.getBoundingClientRect().width / scene.w;
+  const before = { titleAuto: S.titleAuto, title: S.title };
+  const box = r => ({ left: r.left, top: r.top, width: Math.max(r.width + 80, 420 * s), height: r.height });
+  const px = r => Math.max(13, r.height / 1.45); // the title's hit area is 1.45 × its type size
+  const titleRect = () => { const el = $('#chart [data-role="title"]'); return el && el.getBoundingClientRect(); };
+  const syncBar = bar => {
+    if (!bar) return;
+    $('[data-tt="auto"]', bar).setAttribute('aria-pressed', String(!!S.titleAuto));
+    $$('[data-tt="size"]', bar).forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === (+S.titleScale || 1))));
+  };
   // a headline written from the plan becomes an ordinary title the moment it is typed over
-  inlineEdit({ left: rect.left, top: rect.top, width: Math.max(rect.width + 80, 420 * s), height: rect.height }, state.settings.titleAuto ? scene.title : state.settings.title, Math.max(13, 30 * s), 700, v => { state.settings.titleAuto = false; state.settings.title = v; renderChart(); syncDesign(); });
+  inlineEdit(box(rect), S.titleAuto ? scene.title : S.title, px(rect), 700, v => { S.titleAuto = false; S.title = v; renderChart(); syncDesign(); }, {
+    onRevert: () => { Object.assign(S, before); },
+    onTyped: syncBar,
+    bar: api => {
+      const bar = document.createElement('div');
+      bar.className = 'title-bar';
+      bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Title options');
+      bar.innerHTML = `<button data-tt="auto" data-tip="Write it for me" data-tip-sub="A headline from the plan: where the finish stands, then the biggest issue or the next milestone. It keeps itself up to date; type over it to take it back">${SPARKLE}Write it for me</button>`
+        + '<span class="tb-sep"></span><span class="tb-k">Size</span><span class="tb-seg">' + [[0.8, 'S', 'Small'], [1, 'M', 'Regular'], [1.3, 'L', 'Large']].map(([v, t, l]) => `<button data-tt="size" data-v="${v}" data-tip="${l}" aria-label="${l} title">${t}</button>`).join('') + '</span>'
+        + '<span class="tb-sep"></span><button data-tt="hide" data-tip="Hide the title" data-tip-sub="Design → Canvas → Show title brings it back">Hide</button>';
+      bar.addEventListener('pointerdown', e => e.preventDefault()); // keep typing in the title
+      bar.addEventListener('mousedown', e => e.preventDefault());
+      bar.addEventListener('click', e => {
+        const b = e.target.closest('[data-tt]');
+        if (!b) return;
+        const t = b.dataset.tt;
+        hideQuickTip();
+        if (t === 'auto') {
+          if (S.titleAuto) { S.titleAuto = false; S.title = api.inp.value; syncBar(bar); renderChart(); syncDesign(); return; } // keep the words, as an ordinary title
+          S.titleAuto = true; api.drop(); toast('The headline is written from the plan, and keeps itself up to date'); return;
+        }
+        if (t === 'hide') { S.showTitle = false; api.drop(); toast('Title hidden — Design → Canvas → Show title brings it back'); return; }
+        if (t === 'size') {
+          S.titleScale = +b.dataset.v; renderChart(); syncDesign(); syncBar(bar);
+          const r = titleRect(); if (r) api.place(box(r), px(r));
+        }
+      });
+      attachTips(bar);
+      syncBar(bar);
+      return bar;
+    },
+    placeBar: (bar, inp) => {
+      const r = inp.getBoundingClientRect(), w = bar.offsetWidth, h = bar.offsetHeight;
+      bar.style.left = clamp(r.left, 8, innerWidth - w - 8) + 'px';
+      bar.style.top = (r.bottom + 8 + h > innerHeight - 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    },
+  });
 }
 function editRowName(id, rect) {
   const n = scene.info.find(x => x.row.id === id);
@@ -2948,17 +2990,19 @@ function syncQuickStatus() {
   if (!prog || !base) return;
   const sp = $('#qs-span-text');
   if (sp) { const t = spanLabel(); if (sp.textContent !== t) sp.textContent = t; $('#qs-span').dataset.tipSub = `The plan's span (${S.rangeMode === 'fixed' ? 'fixed' : 'fits the tasks'}) — click to change its dates, periods or date format`; }
-  prog.setAttribute('aria-pressed', String(!!S.progress));
-  $('#qs-exec').setAttribute('aria-pressed', String(!!S.execView));
+  // each button holds all its labels in one cell and shows one, so it is as wide as its longest and nothing shifts as states change
+  const say = (b, k) => $$('[data-l]', b).forEach(l => { l.classList.toggle('on', l.dataset.l === k); });
+  prog.setAttribute('aria-pressed', String(!!S.progress)); say(prog, S.progress ? 'on' : 'off');
+  $('#qs-exec').setAttribute('aria-pressed', String(!!S.execView)); say($('#qs-exec'), S.execView ? 'on' : 'off');
   const has = hasBaseline(), on = !!S.showChanges && has;
-  base.setAttribute('aria-pressed', String(on));
-  base.classList.toggle('none', !has);
+  base.setAttribute('aria-pressed', String(on)); say(base, !has ? 'none' : on ? 'on' : 'off');
   const changed = on && scene ? scene.info.filter(n => n.changed && !n.isArea).length : 0;
-  $('#qs-base-text').textContent = has ? `Baseline${S.baselineDate != null ? ' · ' + shortDate(S.baselineDate) : ''}` : 'Set baseline';
   const cnt = $('#qs-base-count');
   cnt.hidden = !changed; cnt.textContent = changed;
-  base.dataset.tip = has ? 'Changes from the baseline' : 'Set a baseline';
-  base.dataset.tipSub = has ? (on ? 'Shown: moved or longer items keep their original dates under the bar. Click to hide them' : 'Click to show what has moved since the baseline was set') : 'Saves the dates as they are now, so later moves and slips show on the chart';
+  const when = S.baselineDate != null ? ` (set ${shortDate(S.baselineDate)})` : '';
+  base.dataset.tip = !has ? 'Set a baseline' : on ? 'Hide the baseline' : 'Show the baseline';
+  base.dataset.tipSub = !has ? 'Saves the dates as they are now, so later moves and slips show on the chart'
+    : on ? `Moved or longer items keep their original dates${when} under the bar${changed ? ` — ${changed} changed` : ''}` : `Shows what has moved since the baseline${when} was set`;
   $('#qs-base-menu').disabled = !has; // always there, so nothing shifts when a baseline is set
 }
 $('#qs-progress').addEventListener('click', () => setSetting('progressMode', state.settings.progress ? 'off' : state.settings.progressSource === 'marker' ? 'marker' : 'manual'));
@@ -3016,6 +3060,16 @@ $('#plan-select').addEventListener('click', () => setSelecting(!selecting));
 // the timeline header while its popover is open, so the dates being edited are visibly the ones on the chart.
 let hover = null, hoverKey = ''; // the pointer on the chart: { id } or { roles: [...] }
 let hint = null, hintKey = '';   // a setting being pointed at (Design panel, Style section, the timeline pill): { kinds }, { roles } or { id }
+// the date marker is its own control: pointing at it thickens its line and puts drag arrows either side of its label
+function markerHover(m) {
+  const k = scene.k || 1, hw = m.sw + 6 * k, hd = m.head, cy = hd.y + hd.h / 2, a = 3.2 * k, g = 5 * k;
+  const chev = dir => { const x = dir < 0 ? hd.x - g : hd.x + hd.w + g; return { t: 'poly', pts: [[x - dir * a * 0.2, cy - a], [x + dir * a * 0.8, cy], [x - dir * a * 0.2, cy + a]], stroke: m.col, sw: 1.6 * k, ui: true }; };
+  return [
+    { t: 'rect', x: m.x - hw / 2, y: m.y1, w: hw, h: Math.max(0, m.y2 - m.y1), r: hw / 2, fill: m.col, opacity: 0.12, ui: true },
+    { t: 'rect', x: hd.x - 2.5, y: hd.y - 2.5, w: hd.w + 5, h: hd.h + 5, r: hd.r + 2.5, fill: 'none', stroke: m.col, sw: 1.5, opacity: 0.55, ui: true },
+    chev(-1), chev(1),
+  ];
+}
 function hoverLayerHtml() {
   if (!scene || (drag && drag.moved)) return '';
   const items = [], picked = selIds();
@@ -3031,7 +3085,10 @@ function hoverLayerHtml() {
       scene.outlines.filter(o => o.id === h.id).forEach(o => { items.push(...ringItems(o, SEL_RING, 1.5, 0.5)); if (o.resize) items.push(...gripItems(o, SEL_RING, 0.9, scene.k, scene.touch)); });
     }
     if (h.kinds) scene.outlines.filter(o => h.kinds.includes(o.kind)).forEach(o => items.push(...ringItems(o, SEL_RING, 1.5, 0.6)));
-    if (h.roles) scene.items.filter(it => it.hit && h.roles.includes(it.role)).forEach(it => items.push(...box(it)));
+    if (h.roles) h.roles.forEach(role => {
+      if (role === 'today' && scene.marker) items.push(...markerHover(scene.marker));
+      else scene.items.filter(it => it.hit && it.role === role).forEach(it => items.push(...box(it)));
+    });
   });
   return sceneToSvg({ items, w: scene.w }, true);
 }

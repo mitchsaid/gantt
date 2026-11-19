@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v114 · 19 Nov';
+const APP_VERSION = 'v115 · 19 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -1876,6 +1876,7 @@ function buildScene(state, opts) {
 
   // ---- the date marker: a line (and optional label) at a chosen date — today, a status date, a deadline…
   let markerXpos = null; // the marker's x, so the app can tell when it is scrolled out of view
+  let markerInfo = null; // the line and its label, for the app's hover state
   let markerPill = null; // where the marker's label (or its diamond) sits, so the plan's days-left can go beside it
   if (S.todayLine && todayD >= rs && todayD <= re) {
     const tx = X(todayD + 0.5);
@@ -1887,6 +1888,7 @@ function buildScene(state, opts) {
     const lw = label ? M(label, 11 * kk, 700) + 18 : 0;
     const px = clamp(tx - lw / 2, pad, W - pad - lw);
     markerPill = label ? { l: px, r: px + lw } : { l: tx - 7, r: tx + 7 };
+    markerInfo = { x: tx, y1: laneY + (label ? tlh : 4), y2: bodyEnd, sw: mw, col: mcol, head: label ? { x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2 } : { x: tx - 6, y: laneY, w: 12, h: 12, r: 3, diamond: true } };
     items.push({ t: 'line', x1: tx, y1: laneY + (label ? tlh : 4), x2: tx, y2: bodyEnd, stroke: mcol, sw: mw, dash: mdash, cap: S.markerStyle === 'dotted' ? 'round' : undefined, dashType: S.markerStyle === 'dotted' ? 'sysDot' : undefined });
     if (label) {
       items.push({ t: 'rect', x: px, y: laneY, w: lw, h: tlh, r: S.corners === 'square' ? 3 : tlh / 2, fill: mcol });
@@ -1932,7 +1934,7 @@ function buildScene(state, opts) {
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { k: K, touch, w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { k: K, touch, w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, marker: markerInfo, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { useStatuses, DEFAULT_STATUSES, execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

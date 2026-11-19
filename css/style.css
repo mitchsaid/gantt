@@ -59,15 +59,40 @@ svg { display: block; }
 .stage-wrap { position: relative; min-width: 0; min-height: 0; }
 .stage { position: absolute; inset: 0; overflow: auto; padding: 28px 28px 64px; scroll-padding-bottom: 64px; display: flex; } /* room at the foot so the chart's toolbar can always scroll clear of the zoom control */
 .chart-col { margin: auto; flex: none; width: 100%; max-width: 1280px; }
-.chart-add { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 12px 2px 0; position: sticky; left: 0; width: max-content; max-width: 100%; }
-.chart-add .chip-btn { background: #fff; }
-.chart-add { min-width: 100%; }
+/* under the chart: the add actions (dashed: they make something new) on the left, the view toolbar on the right */
+.chart-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 2px 0; position: sticky; left: 0; width: max-content; max-width: 100%; min-width: 100%; }
+.ca-adds { display: inline-flex; align-items: center; gap: 6px; }
+.chart-add .add-btn { background: #fff; display: inline-flex; align-items: center; gap: 4px; padding: 0 13px 0 9px; }
+.add-btn svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.chart-add-note { color: #9096a3; font-size: 12px; }
+/* notes and warnings take a line of their own underneath, so the buttons above never move when one comes or goes */
+.ca-notes { order: 9; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 0 4px; }
+.ca-notes:not(:has(> :not([hidden]):not(:empty))) { display: none; }
+.paste-link { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.paste-link:hover { color: var(--accent); background: var(--accent-soft); }
+.paste-link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.chart-add .paste-link { display: none; } /* on a desktop the Plan panel's paste button is always in view */
+/* the view toolbar: one white bar like the look bar, pinned to the chart's right edge */
+.qs { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding: 3px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.05); }
+.qs-btn { position: relative; flex: none; height: 30px; padding: 0 10px; border-radius: 8px; border: 0; background: none; color: #3b4252; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.qs-btn > svg { width: 15px; height: 15px; flex: none; fill: none; stroke: #8a90a0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.qs-btn:hover { background: #f1f2f6; color: #111827; }
+.qs-btn:hover > svg { stroke: currentColor; }
+.qs-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.qs-btn[aria-pressed="true"] > svg { stroke: currentColor; }
+/* every label a button can show sits in one cell, so it is always as wide as its longest and nothing moves when it changes */
+.qs-l { display: inline-grid; }
+.qs-l > span { grid-area: 1 / 1; visibility: hidden; }
+.qs-l > span.on { visibility: visible; }
+.qs-count { position: absolute; top: -7px; right: -5px; background: var(--accent); color: #fff; border: 2px solid #fff; border-radius: 999px; font-size: 10.5px; font-weight: 700; line-height: 14px; min-width: 18px; padding: 0 4px; text-align: center; }
+.qs-more { width: 30px; padding: 0; justify-content: center; }
+.qs-more > svg circle { fill: currentColor; stroke: none; }
+.qs-btn:disabled { opacity: 0.35; cursor: default; }
+.qs-btn:disabled:hover { background: none; color: #3b4252; }
+.qs-btn:disabled:hover > svg { stroke: #8a90a0; }
+.qs-sep { flex: none; width: 1px; height: 18px; background: var(--line); margin: 0 3px; }
 .link-btn.quiet { font-size: 12px; color: var(--muted); padding: 4px 6px; }
 .link-btn.quiet:hover { color: var(--accent); }
-#qs-progress { min-width: 88px; justify-content: center; }
-#qs-base { min-width: 176px; justify-content: center; }
-.qs-more:disabled { opacity: 0.35; cursor: default; }
-.qs-more:disabled:hover { border-color: var(--line-strong); color: #3b4252; }
 .marker-jump { position: absolute; left: 16px; bottom: 16px; z-index: 6; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: #fff; color: #3b4252; font-weight: 600; font-size: 12.5px; box-shadow: 0 4px 14px rgba(20, 24, 40, 0.12); }
 .marker-jump:hover { border-color: var(--accent); color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 32px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; padding: 3px 5px; }
@@ -76,17 +101,6 @@ svg { display: block; }
 .chip-x { border: 0; background: none; color: inherit; opacity: 0.6; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; padding: 0; line-height: 1; }
 .chip-x:hover { opacity: 1; background: rgba(79, 70, 229, 0.15); }
 .chip-in { flex: 1; min-width: 70px; border: 0; outline: none; background: none; font: inherit; padding: 3px 4px; }
-.qs { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 14px; } /* pinned to the right edge of the chart */
-.qs-btn { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: #fff; color: #3b4252; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
-.qs-btn:hover { border-color: var(--accent); color: var(--accent); }
-.qs-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.qs-btn.none { border-style: dashed; }
-.qs-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
-.qs-btn.none .qs-dot { display: none; }
-.qs-btn[aria-pressed="true"] .qs-dot { background: currentColor; }
-.qs-count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; line-height: 16px; min-width: 16px; padding: 0 5px; text-align: center; }
-.qs-more { width: 30px; padding: 0; justify-content: center; }
-.chart-add-note { color: #9096a3; font-size: 12px; margin-left: 6px; }
 .canvas-wrap { border-radius: 12px; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 10px 36px rgba(20, 24, 40, 0.1); overflow: hidden; background: #fff; }
 .canvas-wrap.transparent { background: repeating-conic-gradient(#e9ebf0 0% 25%, #fff 0% 50%) 0 0 / 18px 18px; }
 .canvas-wrap.transparent.dark { background: repeating-conic-gradient(#232733 0% 25%, #181b24 0% 50%) 0 0 / 18px 18px; }
@@ -171,10 +185,6 @@ svg { display: block; }
 .paste-btn { display: flex; align-items: center; gap: 8px; width: calc(100% - 22px); height: 34px; margin: 0 0 4px 22px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; color: #3b4252; font-size: 12.5px; font-weight: 500; text-align: left; }
 .paste-btn:hover { border-color: var(--accent); color: var(--accent); }
 .paste-btn svg { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.chart-add-sep { width: 1px; height: 18px; background: var(--line-strong); margin: 0 4px 0 6px; }
-.paste-link { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12.5px; font-weight: 500; }
-.paste-link:hover { color: var(--accent); background: var(--accent-soft); }
-.paste-link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .link-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 4px 2px; font-weight: 500; font-size: 12.5px; color: var(--muted); }
 .link-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .link-btn:hover { color: var(--accent); text-decoration: underline; }
@@ -358,6 +368,7 @@ body.resizing * { cursor: col-resize !important; }
 .ctl.disabled { opacity: 0.5; pointer-events: none; }
 .ctl-note.warn { color: #b45309; }
 .chart-warn { color: #b45309; font-size: 12px; font-weight: 600; margin-left: 6px; }
+.ca-notes .chart-warn { margin-left: 0; }
 .design-search { position: relative; margin: 0 12px 6px; display: flex; align-items: center; }
 .design-search svg { position: absolute; left: 10px; width: 15px; height: 15px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
 .design-search input { width: 100%; height: 32px; padding: 0 56px 0 32px; border: 1px solid var(--line-strong); border-radius: 8px; background: #f8f9fb; font: inherit; font-size: 13px; color: inherit; outline: none; }
@@ -436,9 +447,13 @@ body.resizing * { cursor: col-resize !important; }
   #panel-plan, #panel-design { width: auto; max-width: none; }
   /* the chart is wider than the screen (app.js sets its width from the zoom); its toolbars stay screen-wide and in view as it scrolls */
   .lookbar, .chart-add { width: calc(100vw - 28px); min-width: 0; max-width: none; }
-  .qs { margin-left: 0; padding-left: 0; flex-wrap: wrap; }
-  .qs-btn { white-space: nowrap; }
-  #qs-base { min-width: 0; }
+  .ca-notes:not(:has(> .chart-warn:not([hidden]))) { display: none; } /* the add note is hidden here */
+  .chart-add .paste-link { display: inline-flex; } /* the Plan panel's paste button is a sheet away here */
+  .qs { margin-left: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .qs::-webkit-scrollbar { display: none; }
+  .qs-btn { padding: 0 7px; font-size: 12.5px; }
+  .qs { gap: 1px; }
+  .paste-link { white-space: nowrap; }
   .chart-add-note { display: none; }
   .panel { position: fixed; left: 0; right: 0; bottom: 0; height: min(66vh, 620px); border: 0 !important; border-radius: 18px 18px 0 0; box-shadow: 0 -12px 40px rgba(20, 24, 40, 0.22); transform: translateY(105%); transition: transform 0.22s ease; z-index: 60; padding-bottom: env(safe-area-inset-bottom); }
   .panel.open { transform: none; }
@@ -629,3 +644,20 @@ body.selecting .outline .orow { cursor: pointer; }
 .pick-btn + .collapse-btn { margin-left: 0; }
 .lb-tip { z-index: 96; max-width: 260px; }
 .lb-tip span { color: #c7ccd8; }
+
+/* ---------- the title's options, under it while it is being edited */
+.title-bar { position: fixed; z-index: 96; display: flex; align-items: center; gap: 2px; padding: 3px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 8px 24px rgba(20, 24, 40, 0.16); white-space: nowrap; }
+.title-bar button { height: 28px; padding: 0 9px; border: 0; border-radius: 8px; background: none; color: #3b4252; font: inherit; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.title-bar button:hover { background: #f1f2f6; color: #111827; }
+.title-bar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.title-bar svg { width: 14px; height: 14px; fill: var(--accent); }
+.title-bar .tb-seg { display: inline-flex; gap: 1px; background: #f1f2f6; border-radius: 8px; padding: 2px; }
+.title-bar .tb-seg button { width: 28px; height: 24px; padding: 0; justify-content: center; border-radius: 6px; font-weight: 600; }
+.title-bar .tb-seg button[aria-pressed="true"] { background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.12); }
+.title-bar .tb-k { color: var(--muted); font-size: 12px; margin: 0 4px 0 6px; }
+.title-bar .tb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 3px; }
+@media (max-width: 860px) {
+  .qs-count { position: static; border: 0; } /* the toolbar scrolls here, which would clip a badge on its corner */
+  .title-bar button { height: 34px; }
+  .title-bar .tb-seg button { width: 34px; height: 30px; }
+}
