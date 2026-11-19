@@ -777,13 +777,14 @@ $$('[data-add]').forEach(b => b.addEventListener('click', () => addRow(b.dataset
 
 // ---------------------------------------------------------------- chart interactions
 svg.addEventListener('pointerdown', e => {
-  if (e.button) return;
+  if (e.button || !e.isPrimary || pinch) return; // a second finger is a pinch, not a tap or a drag
   const t = e.target.closest('[data-role]');
   if (!t) { if (sel) select(null); return; }
   const role = t.dataset.role, id = t.dataset.id || null;
   const touch = e.pointerType === 'touch';
   const rect = t.getBoundingClientRect();
-  if (touch && id && (id !== sel || role === 'row')) { select(id); if (role !== 'row') openPop('row', rect, id, e.clientX); return; }
+  // a finger on an item that isn't selected yet: select it when the finger lifts, unless it scrolled or pinched in between
+  if (touch && id && (id !== sel || role === 'row')) { touchTap = { id, role, rect, x: e.clientX, y: e.clientY, pid: e.pointerId }; return; }
   e.preventDefault();
   if (document.activeElement && document.activeElement !== document.body) { commit(); document.activeElement.blur(); }
   try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -1010,9 +1011,22 @@ function endDrag() {
     else { openPop('row', d.rect, d.id, d.x - 60); if (dbl) { const inp = $('#pop-name'); if (inp) inp.select(); } }
   }
 }
-let lastClick = { id: null, t: 0 };
-svg.addEventListener('pointerup', endDrag);
-svg.addEventListener('pointercancel', endDrag);
+/** drop a drag without applying it (a second finger came down to pinch): back to the plan as it was when the drag began */
+function cancelDrag() {
+  const d = drag;
+  drag = null;
+  svg.classList.remove('dragging');
+  if (d && d.moved) { state = JSON.parse(lastSnap); refresh(); }
+}
+let lastClick = { id: null, t: 0 }, touchTap = null;
+svg.addEventListener('pointerup', e => {
+  const t = touchTap;
+  touchTap = null;
+  if (t && t.pid === e.pointerId && !pinch) { select(t.id); if (t.role !== 'row') openPop('row', t.rect, t.id, t.x); }
+  endDrag();
+});
+svg.addEventListener('pointermove', e => { if (touchTap && Math.hypot(e.clientX - touchTap.x, e.clientY - touchTap.y) > 10) touchTap = null; });
+svg.addEventListener('pointercancel', () => { touchTap = null; endDrag(); }); // the browser took the finger to scroll
 
 // ---------------------------------------------------------------- design panel
 // Sections run from the page as a whole (Canvas) through time (Timeline), what sits on it (Tasks, Milestones), how the plan is
@@ -2203,13 +2217,24 @@ function editRowName(id, rect) {
 // ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
 const stage = $('#stage'), wrapEl = $('#chart-col');
 let zoom = 1;
+// On a phone the chart starts PHONE_CHART_W wide (readable, scrolled sideways) and a pinch can bring it down to the screen's width.
+const PHONE_CHART_W = 760;
+function fitWidth() { const cs = getComputedStyle(stage); return stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); }
+const phoneBase = () => Math.max(PHONE_CHART_W, fitWidth());
 function applyZoom() {
-  wrapEl.style.width = zoom * 100 + '%';
-  wrapEl.style.maxWidth = (scene ? scene.w : 1280) * zoom + 'px';
+  if (isSheet()) {
+    zoom = Math.max(zoom, Math.min(1, fitWidth() / phoneBase())); // never narrower than the screen (it may have turned)
+    wrapEl.style.width = phoneBase() * zoom + 'px';
+    wrapEl.style.maxWidth = 'none';
+  } else {
+    wrapEl.style.width = zoom * 100 + '%';
+    wrapEl.style.maxWidth = (scene ? scene.w : 1280) * zoom + 'px';
+  }
   $('#zoom-val').textContent = Math.round(zoom * 100) + '%';
+  $('.zoombar').classList.toggle('zoomed', Math.abs(zoom - 1) > 0.005);
 }
 function setZoom(z, cx, cy) {
-  z = clamp(z, 0.4, 6);
+  z = clamp(z, isSheet() ? Math.min(1, fitWidth() / phoneBase()) : 0.4, 6);
   if (Math.abs(z - zoom) < 0.001) return;
   closePop();
   const sb = stage.getBoundingClientRect();
@@ -2228,9 +2253,37 @@ stage.addEventListener('wheel', e => {
   const d = clamp(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY, -30, 30);
   setZoom(zoom * Math.exp(-d * 0.008), e.clientX, e.clientY);
 }, { passive: false });
-let gestureZoom = 1;
+let gestureZoom = 1, pinch = null;
 stage.addEventListener('gesturestart', e => { e.preventDefault(); gestureZoom = zoom; });
-stage.addEventListener('gesturechange', e => { e.preventDefault(); setZoom(gestureZoom * e.scale, e.clientX, e.clientY); });
+stage.addEventListener('gesturechange', e => { e.preventDefault(); if (!pinch) setZoom(gestureZoom * e.scale, e.clientX, e.clientY); }); // Safari; on a touch screen the touch events below do it
+// Touch screens: two fingers on the chart zoom the chart (not the page) around the point between them, and pan as they move.
+// The stage's touch-action keeps the browser from zooming the page; preventing touchmove does the same on iOS.
+const touchMid = t => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
+const touchGap = t => Math.max(1, Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY));
+// Touch events keep going to the element a finger first touched, even once the chart has been redrawn without it, and then never
+// reach the stage: so the move and end handlers go on that element.
+const touchHeard = new WeakSet();
+function onTouchMove(e) {
+  if (drag && !pinch && e.touches.length === 1) { if (e.cancelable) e.preventDefault(); return; } // a finger dragging a bar: not a scroll
+  if (!pinch || e.touches.length < 2) return;
+  e.preventDefault();
+  const mid = touchMid(e.touches);
+  setZoom(pinch.z * touchGap(e.touches) / pinch.gap, mid[0], mid[1]);
+  stage.scrollLeft -= mid[0] - pinch.mid[0]; stage.scrollTop -= mid[1] - pinch.mid[1];
+  pinch.mid = mid;
+}
+const pinchEnd = e => { if (e.touches.length < 2) pinch = null; };
+stage.addEventListener('touchstart', e => {
+  for (const t of e.changedTouches) {
+    const el = t.target;
+    if (el && !touchHeard.has(el)) { touchHeard.add(el); el.addEventListener('touchmove', onTouchMove, { passive: false }); el.addEventListener('touchend', pinchEnd); el.addEventListener('touchcancel', pinchEnd); }
+  }
+  if (e.touches.length !== 2) return;
+  touchTap = null; // a pinch selects nothing…
+  if (drag) cancelDrag(); // …and the first finger may have started dragging a bar: a pinch means it wasn't meant
+  pinch = { gap: touchGap(e.touches), z: zoom, mid: touchMid(e.touches) };
+}, { passive: false }); // not passive: the touch's moves must be cancellable
+addEventListener('resize', applyZoom);
 $('#zoom-in').addEventListener('click', () => setZoom(zoom * 1.25));
 $('#zoom-out').addEventListener('click', () => setZoom(zoom / 1.25));
 $('#zoom-val').addEventListener('click', () => setZoom(1));
