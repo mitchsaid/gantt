@@ -2947,7 +2947,7 @@ function syncQuickStatus() {
   const S = state.settings, prog = $('#qs-progress'), base = $('#qs-base');
   if (!prog || !base) return;
   const sp = $('#qs-span-text');
-  if (sp) { const t = spanLabel(); if (sp.textContent !== t) sp.textContent = t; $('#qs-span').title = `The overall timeline (${S.rangeMode === 'fixed' ? 'fixed' : 'fits the tasks'}) — click to change its dates or length`; }
+  if (sp) { const t = spanLabel(); if (sp.textContent !== t) sp.textContent = t; $('#qs-span').dataset.tipSub = `The plan's span (${S.rangeMode === 'fixed' ? 'fixed' : 'fits the tasks'}) — click to change its dates, periods or date format`; }
   prog.setAttribute('aria-pressed', String(!!S.progress));
   $('#qs-exec').setAttribute('aria-pressed', String(!!S.execView));
   const has = hasBaseline(), on = !!S.showChanges && has;
@@ -2957,7 +2957,8 @@ function syncQuickStatus() {
   $('#qs-base-text').textContent = has ? `Baseline${S.baselineDate != null ? ' · ' + shortDate(S.baselineDate) : ''}` : 'Set baseline';
   const cnt = $('#qs-base-count');
   cnt.hidden = !changed; cnt.textContent = changed;
-  base.title = has ? (on ? 'Baseline shown — click to hide its changes' : 'A baseline exists — click to show changes from it') : 'Save the dates as they are now, to see what changes later';
+  base.dataset.tip = has ? 'Changes from the baseline' : 'Set a baseline';
+  base.dataset.tipSub = has ? (on ? 'Shown: moved or longer items keep their original dates under the bar. Click to hide them' : 'Click to show what has moved since the baseline was set') : 'Saves the dates as they are now, so later moves and slips show on the chart';
   $('#qs-base-menu').disabled = !has; // always there, so nothing shifts when a baseline is set
 }
 $('#qs-progress').addEventListener('click', () => setSetting('progressMode', state.settings.progress ? 'off' : state.settings.progressSource === 'marker' ? 'marker' : 'manual'));
@@ -2967,6 +2968,7 @@ $('#qs-base').addEventListener('click', () => {
   else setSetting('showChanges', !S.showChanges);
 });
 $('#qs-base-menu').addEventListener('click', baselineDialog);
+attachTips($('.chart-add'), true);
 $('#qs-exec').addEventListener('click', () => { closePop(); setSetting('execView', !state.settings.execView); syncAddNote(); });
 /** the selection's toolbar floats just above the selected bars (below them if there is no room), kept within view */
 function placeSelBar() {
@@ -3416,6 +3418,36 @@ function lookContext() {
   if (!ns.length) return { kind: 'none' };
   return { kind: ns.every(n => n.isArea) ? 'area' : ns.every(n => n.milestone) ? 'ms' : 'task', ns };
 }
+// Quick tooltips (mouse only) for controls carrying data-tip (and data-tip-sub): the name and what it does, beside the control.
+// Quicker than a browser title, and instant while moving along a row of them. `above` puts them over the control.
+const quickTip = document.createElement('div');
+quickTip.className = 'chart-tip lb-tip'; quickTip.hidden = true; quickTip.setAttribute('role', 'tooltip');
+document.body.appendChild(quickTip);
+let qtFor = null, qtTimer = 0, qtWarm = 0;
+function hideQuickTip() { clearTimeout(qtTimer); qtFor = null; if (!quickTip.hidden) { quickTip.hidden = true; qtWarm = Date.now(); } }
+function showQuickTip(el, above) {
+  quickTip.innerHTML = `<b>${esc(el.dataset.tip)}</b>${el.dataset.tipSub ? `<span>${esc(el.dataset.tipSub)}</span>` : ''}`;
+  quickTip.hidden = false;
+  const r = el.getBoundingClientRect(), w = quickTip.offsetWidth, h = quickTip.offsetHeight;
+  const up = above ? r.top - h - 8 >= 8 : r.bottom + 8 + h > innerHeight - 8;
+  quickTip.style.left = Math.round(clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)) + 'px';
+  quickTip.style.top = Math.round(up ? r.top - h - 8 : r.bottom + 8) + 'px';
+}
+function attachTips(root, above) {
+  root.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.target.closest('[data-tip]');
+    if (el === qtFor) return;
+    if (!el || !root.contains(el)) { hideQuickTip(); return; }
+    clearTimeout(qtTimer); qtFor = el;
+    if (!quickTip.hidden || Date.now() - qtWarm < 400) showQuickTip(el, above);
+    else qtTimer = setTimeout(() => { if (qtFor === el && el.isConnected) showQuickTip(el, above); }, 350);
+  });
+  root.addEventListener('pointerleave', hideQuickTip);
+  root.addEventListener('pointerdown', hideQuickTip);
+  root.addEventListener('scroll', hideQuickTip, { passive: true });
+  root.addEventListener('change', hideQuickTip);
+}
 // what each look-bar control changes, said in its tooltip under the name
 const LB_SCOPE = { task: 'Changes every task', ms: 'Changes every milestone', area: 'Changes every area', all: 'Changes all text on the chart', timeline: 'Changes the dates across the top' };
 const tipAttr = (main, sub) => ` data-tip="${esc(main)}"${sub ? ` data-tip-sub="${esc(sub)}"` : ''}`;
@@ -3496,32 +3528,7 @@ if (lookbar) {
   lookbar.addEventListener('change', e => { const k = e.target.dataset.lbk; if (k) setSetting(k, e.target.value); });
   lookbar.addEventListener('mouseover', e => { const h = e.target.closest('[data-hint]'); if (!e.target.closest('#qs-span')) setHint(h ? LB_HINTS[h.dataset.hint] : null); });
   lookbar.addEventListener('mouseleave', () => setHint(null));
-  // Tooltips (mouse only): name and what it changes, under the control. Quick to appear, and instant while moving along the bar.
-  const lbTip = document.createElement('div');
-  lbTip.className = 'chart-tip lb-tip'; lbTip.hidden = true; lbTip.setAttribute('role', 'tooltip');
-  document.body.appendChild(lbTip);
-  let lbTipFor = null, lbTipTimer = 0, lbTipWarm = 0;
-  const hideLbTip = () => { clearTimeout(lbTipTimer); lbTipFor = null; if (!lbTip.hidden) { lbTip.hidden = true; lbTipWarm = Date.now(); } };
-  const showLbTip = el => {
-    lbTip.innerHTML = `<b>${esc(el.dataset.tip)}</b>${el.dataset.tipSub ? `<span>${esc(el.dataset.tipSub)}</span>` : ''}`;
-    lbTip.hidden = false;
-    const r = el.getBoundingClientRect(), w = lbTip.offsetWidth, h = lbTip.offsetHeight;
-    lbTip.style.left = Math.round(clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)) + 'px';
-    lbTip.style.top = Math.round(r.bottom + 8 + h > innerHeight - 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
-  };
-  lookbar.addEventListener('pointerover', e => {
-    if (e.pointerType !== 'mouse') return;
-    const el = e.target.closest('[data-tip]');
-    if (el === lbTipFor) return;
-    if (!el) { hideLbTip(); return; }
-    clearTimeout(lbTipTimer); lbTipFor = el;
-    if (!lbTip.hidden || Date.now() - lbTipWarm < 400) showLbTip(el);
-    else lbTipTimer = setTimeout(() => { if (lbTipFor === el && el.isConnected) showLbTip(el); }, 350);
-  });
-  lookbar.addEventListener('pointerleave', hideLbTip);
-  lookbar.addEventListener('pointerdown', hideLbTip);
-  lookbar.addEventListener('scroll', hideLbTip, { passive: true });
-  lookbar.addEventListener('change', hideLbTip);
+  attachTips(lookbar);
   // when the row is too narrow for everything: a softer “Timeline” label, a fade where more is hidden, and the wheel scrolls it sideways
   const edge = () => { lookbar.classList.toggle('more-right', lookbar.scrollLeft + lookbar.clientWidth < lookbar.scrollWidth - 2); };
   lookbar.addEventListener('scroll', edge, { passive: true });
@@ -3537,7 +3544,7 @@ if (lookbar) {
     const mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
     $$('[data-mod]', tips).forEach(k => { k.textContent = mac ? '⌘' : 'Ctrl'; });
     $$('[data-alt]', tips).forEach(k => { k.textContent = mac ? '⌥' : 'Alt'; });
-    if (ui.tipsOpen === false) tips.open = false;
+    tips.open = ui.tipsOpen === true; // tucked away unless it was opened on purpose
     tips.addEventListener('toggle', () => { ui.tipsOpen = tips.open; saveUi(); });
   }
 }

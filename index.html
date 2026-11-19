@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=113">
+<link rel="stylesheet" href="css/style.css?v=114">
 </head>
 <body>
 <header class="topbar">
@@ -57,9 +57,9 @@
         <button class="chip-btn" data-add="task">+ Task</button>
         <button class="chip-btn" data-add="milestone">+ Milestone</button>
       </div>
-      <div class="paste-row"><button class="link-btn" data-paste><svg viewBox="0 0 24 24"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>Paste a list of tasks…</button></div>
-      <details class="tips" id="tips" open>
-        <summary>Tips &amp; shortcuts</summary>
+      <button class="paste-btn" data-paste title="Paste or type a list, or rows from a spreadsheet: each line becomes an item"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>Paste a list of tasks…</button>
+      <details class="tips" id="tips">
+        <summary><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>Shortcuts &amp; tips</summary>
         <ul class="tip-list">
           <li><span class="tip-k"><span class="grip-demo">⋮⋮</span></span><span>Drag to reorder, or sideways to nest</span></li>
           <li><span class="tip-k"><kbd>Enter</kbd></span><span>Add a row under the selected one</span></li>
@@ -94,13 +94,15 @@
           <button class="chip-btn" data-add="area" data-chart>+ Area</button>
           <button class="chip-btn" data-add="task" data-chart>+ Task</button>
           <button class="chip-btn" data-add="milestone" data-chart>+ Milestone</button>
+          <span class="chart-add-sep" aria-hidden="true"></span>
+          <button class="paste-link" data-paste title="Paste or type a list, or rows from a spreadsheet: each line becomes an item"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>Paste a list…</button>
           <span class="chart-add-note" id="chart-add-note"></span>
           <span class="chart-warn" id="chart-warn" hidden></span>
           <span class="chart-warn" id="chart-out" hidden></span>
           <button class="link-btn quiet" id="chart-spread" hidden title="Rescale every item to fill the fixed timeline">↔ Spread across the timeline</button>
           <span class="qs" role="group" aria-label="View, progress and baseline">
-            <button class="qs-btn" id="qs-exec" aria-pressed="false" title="Exec view: one bar per area, milestones and status — the plan itself is untouched">Exec view</button>
-            <button class="qs-btn" id="qs-progress" aria-pressed="false" title="Show progress in the bars">Progress</button>
+            <button class="qs-btn" id="qs-exec" aria-pressed="false" data-tip="Exec view" data-tip-sub="A one-glance summary for leadership: one bar per area with its dates, progress and status rolled up, and the milestones in a strip above. Your plan isn’t changed — switch it off to keep editing.">Exec view</button>
+            <button class="qs-btn" id="qs-progress" aria-pressed="false" data-tip="Progress" data-tip-sub="Fills each bar to show how much is done. Set the % in a task’s popover, or have bars fill up to the date marker (Design → Progress).">Progress</button>
             <button class="qs-btn" id="qs-base" aria-pressed="false"><span class="qs-dot"></span><span id="qs-base-text">Set baseline</span><span class="qs-count" id="qs-base-count" hidden></span></button>
             <button class="qs-btn qs-more" id="qs-base-menu" aria-label="Update or remove the baseline" title="Update or remove the baseline" disabled>⋯</button>
           </span>
@@ -162,7 +164,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=113"></script>
-<script src="js/app.js?v=113"></script>
+<script src="js/core.js?v=114"></script>
+<script src="js/app.js?v=114"></script>
 </body>
 </html>
