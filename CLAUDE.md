@@ -41,5 +41,5 @@ drag editing, palettes, assignees, progress, a date marker, baselines, and expor
 - Long inline Python or shell one-liners can trip the sandbox safety check; put patch scripts in a file instead.
 
 ## Workflow
-- Develop on the branch the session names (currently `claude/gantt-chart-tool-7vbp7n`); commit, push, and don't open a pull request unless asked.
+- Develop on the branch the session names; commit, push it, and also push to `main` (fast-forward) unless the user says otherwise. Don't open a pull request unless asked.
 - Test in the browser (screenshots for anything visual) before reporting something done; run `bash tests/run.sh` before committing.
