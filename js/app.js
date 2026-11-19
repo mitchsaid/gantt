@@ -565,7 +565,7 @@ function addBtnsHtml(n) {
 }
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
-  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button><button data-act="pick" class="pf-pick" title="Select several — then tap others to add them (or Shift / Ctrl/⌘-click)" aria-label="Select several"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><path d="m5.5 7 1.3 1.3L9 6"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/><path d="M14 6h6M14 9h4M4 15h6M4 18h4"/></svg></button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
 }
 function setRowStatus(ids, v) {
   commit();
@@ -631,7 +631,7 @@ function renderOutline() {
     const r = n.row, c = rowBaseColor(info, n, palette);
     const color = n.sub ? mix(c, '#ffffff', 0.45) : c;
     html += `<div class="orow lvl${n.level}${picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}">
-      <span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
+      <span class="pick" aria-hidden="true"></span><span class="grip" title="Drag to reorder">⋮⋮</span><span class="indent" style="width:${n.level * 14}px"></span>
       <span class="dot${n.milestone ? ' ms' : ''}" style="background:${color}"></span>
       <input class="nm" value="${esc(r.name)}" placeholder="${n.milestone ? 'Milestone' : n.isArea ? 'Area name' : 'Task name'}" aria-label="Name" autocomplete="off">
       <span class="dates">${fmtRange(n)}</span>
@@ -689,7 +689,7 @@ outline.addEventListener('click', e => {
     if (!segBtn.classList.contains('on')) setType(id, segBtn.dataset.v);
     return;
   }
-  if (host.classList.contains('orow') && !e.target.closest('input,.grip')) { if (e.shiftKey || e.ctrlKey || e.metaKey) multiSelect(id, e.shiftKey ? 'range' : 'toggle'); else select(id); }
+  if (host.classList.contains('orow') && !e.target.closest('input,.grip')) { if (e.shiftKey || e.ctrlKey || e.metaKey || selecting) multiSelect(id, e.shiftKey ? 'range' : 'toggle'); else select(id); }
 });
 // shift / ctrl-click on a row's name picks it instead of editing it
 outline.addEventListener('mousedown', e => {
@@ -790,7 +790,7 @@ $$('[data-add]').forEach(b => b.addEventListener('click', () => addRow(b.dataset
 svg.addEventListener('pointerdown', e => {
   if (e.button || !e.isPrimary || pinch) return; // a second finger is a pinch, not a tap or a drag
   const t = e.target.closest('[data-role]');
-  if (!t) { if (sel) select(null); return; }
+  if (!t) { if (sel && !selecting) select(null); return; }
   const role = t.dataset.role, id = t.dataset.id || null;
   const touch = e.pointerType === 'touch';
   const rect = t.getBoundingClientRect();
@@ -801,7 +801,7 @@ svg.addEventListener('pointerdown', e => {
   try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   const box = svg.getBoundingClientRect();
   const n = id ? scene.info.find(x => x.row.id === id) : null;
-  drag = { touch, role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect, mod: e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : null };
+  drag = { touch, role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect, mod: e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey || selecting) ? 'toggle' : null };
   if (role !== 'row' && role !== 'title' && role !== 'timeline') drag.range = scene.range.slice();
   if (role === 'move') {
     const i = n.i; drag.i = i; drag.lv0 = n.level;
@@ -1033,7 +1033,7 @@ let lastClick = { id: null, t: 0 }, touchTap = null;
 svg.addEventListener('pointerup', e => {
   const t = touchTap;
   touchTap = null;
-  if (t && t.pid === e.pointerId && !pinch) { select(t.id); openPop('row', t.rect, t.id, t.x - 60); } // a name too: on a phone the popover is the only way to its actions
+  if (t && t.pid === e.pointerId && !pinch) { if (selecting) multiSelect(t.id, 'toggle'); else { select(t.id); openPop('row', t.rect, t.id, t.x - 60); } } // a name too: on a phone the popover is the only way to its actions
   endDrag();
 });
 svg.addEventListener('pointermove', e => { if (touchTap && Math.hypot(e.clientX - touchTap.x, e.clientY - touchTap.y) > 10) touchTap = null; });
@@ -1804,7 +1804,7 @@ $$('.panel').forEach(p => {
 $$('.panel').forEach(p => p.addEventListener('focusin', e => { if (isSheet() && p.classList.contains('open') && e.target.matches('input:not([type="checkbox"]):not([type="color"]), textarea')) setSheetFull(p, true); }));
 $$('[data-sheet]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.sheet)));
 $$('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
-$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add, #lookbar')) { closeSheets(); if (sel) select(null); } });
+$('#stage').addEventListener('pointerdown', e => { if (!e.composedPath().includes(svg) && !e.target.closest('.chart-add, #lookbar')) { closeSheets(); if (sel && !selecting) select(null); } });
 
 document.addEventListener('keydown', e => {
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
@@ -1812,6 +1812,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (!modal.hidden) closeModal();
     else if (pop) closePop();
+    else if (selecting) setSelecting(false);
     else if (!exportMenu.hidden) exportMenu.hidden = true;
     else if (inField) e.target.blur();
     else if (sel) select(null);
@@ -2163,6 +2164,7 @@ popEl.addEventListener('click', e => {
     if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== rowAct.dataset.dep); commit(); refresh(); }
     else if (a === 'del') { closePop(); askDelete(id); }
     else if (a === 'dup') { closePop(); duplicateRow(id); }
+    else if (a === 'pick') setSelecting(true); // keeps this item selected; taps add more
     else if (a === 'indent') shiftLevel(id, 1);
     else if (a === 'outdent') shiftLevel(id, -1);
     return;
@@ -2884,11 +2886,39 @@ function evenLengths() {
   commit(); refresh();
   toast(`${items.length} tasks set to ${len} ${len === 1 ? 'day' : 'days'} each — Undo reverts`);
 }
+// Select mode: without a keyboard there is no Shift or Ctrl/⌘-click, so a Select button (Plan panel head, or an item's popover)
+// turns taps into "add or remove this item", and the selection bars carry what a keyboard would do (duplicate, delete).
+let selecting = false;
+const SB_ICON = {
+  dup: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+};
+function selBarHtml(n, countId, inPanel) { // the Plan panel's copy leaves out Done: the Select button in its head says it
+  const many = n >= 2, none = n ? '' : ' disabled';
+  return `<span class="selbar-count"${countId ? ` id="${countId}"` : ''}>${n ? `${n} selected` : 'Tap items to select'}</span>`
+    + `<button class="selbar-btn" data-sel="even"${many ? '' : ' disabled'} title="Give every selected task the same length (the average of their lengths)">Same length</button>`
+    + `<button class="selbar-btn primary" data-sel="group"${many ? '' : ' disabled'} title="Group them into a new area (Ctrl/⌘+G)"><span class="sb-long">Add to new area</span><span class="sb-short">Group</span></button>`
+    + `<button class="selbar-btn ib" data-sel="dup"${none} title="Duplicate (Ctrl/⌘+D)" aria-label="Duplicate">${SB_ICON.dup}</button>`
+    + `<button class="selbar-btn ib danger" data-sel="del"${none} title="Delete (Delete key)" aria-label="Delete">${SB_ICON.del}</button>`
+    + (inPanel ? '' : selecting ? '<button class="selbar-btn done" data-sel="done" title="Stop selecting (Esc)">Done</button>' : '<button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>');
+}
 function syncSelBar() {
-  const n = selIds().length, bar = $('#selbar');
+  const n = selIds().length, bar = $('#selbar'), pb = $('#plan-selbar');
   if (!bar) return;
-  bar.hidden = n < 2;
-  if (n >= 2) { $('#selbar-count').textContent = `${n} selected`; placeSelBar(); }
+  bar.hidden = !(n >= 2 || selecting);
+  if (!bar.hidden) { const h = selBarHtml(n, 'selbar-count'); if (bar.innerHTML !== h) bar.innerHTML = h; placeSelBar(); }
+  if (pb) { pb.hidden = !selecting; if (selecting) { const h = selBarHtml(n, null, true); if (pb.innerHTML !== h) pb.innerHTML = h; } }
+  const pbtn = $('#plan-select');
+  if (pbtn) { pbtn.textContent = selecting ? 'Done' : 'Select'; pbtn.setAttribute('aria-pressed', String(selecting)); }
+}
+function setSelecting(on) {
+  if (selecting === on) return;
+  selecting = on;
+  document.body.classList.toggle('selecting', on);
+  closePop();
+  if (on) detailId = null;
+  else { multi = new Set(); sel = null; }
+  renderChart(); renderOutline(); syncAddNote();
 }
 /** the date marker can be scrolled or zoomed out of view: a small pill at the edge of the canvas says which way, and brings it back */
 function markerOffscreen() {
@@ -2965,13 +2995,18 @@ let selBarRaf = 0;
 const queueSelBar = () => { if (!selBarRaf) selBarRaf = requestAnimationFrame(() => { selBarRaf = 0; placeSelBar(); }); };
 $('#stage').addEventListener('scroll', queueSelBar, { passive: true });
 window.addEventListener('resize', queueSelBar);
-$('#selbar').addEventListener('click', e => {
+['#selbar', '#plan-selbar'].forEach(q => $(q).addEventListener('click', e => {
   const b = e.target.closest('[data-sel]');
-  if (!b) return;
-  if (b.dataset.sel === 'group') { commit(); groupIntoNewArea(); }
-  else if (b.dataset.sel === 'even') evenLengths();
-  else if (b.dataset.sel === 'clear') select(null);
-});
+  if (!b || b.disabled) return;
+  const a = b.dataset.sel;
+  if (a === 'group') { commit(); groupIntoNewArea(); }
+  else if (a === 'even') evenLengths();
+  else if (a === 'dup') { commit(); duplicateSelection(); }
+  else if (a === 'del') askDeleteSel();
+  else if (a === 'done') setSelecting(false);
+  else if (a === 'clear') select(null);
+}));
+$('#plan-select').addEventListener('click', () => setSelecting(!selecting));
 
 // ---------------------------------------------------------------- hover: what can be grabbed, and what a setting changes
 // A layer on top of the chart (never exported) rings the item under the pointer, with grips on the ends of bars that can be
@@ -3381,34 +3416,38 @@ function lookContext() {
   if (!ns.length) return { kind: 'none' };
   return { kind: ns.every(n => n.isArea) ? 'area' : ns.every(n => n.milestone) ? 'ms' : 'task', ns };
 }
+// what each look-bar control changes, said in its tooltip under the name
+const LB_SCOPE = { task: 'Changes every task', ms: 'Changes every milestone', area: 'Changes every area', all: 'Changes all text on the chart', timeline: 'Changes the dates across the top' };
+const tipAttr = (main, sub) => ` data-tip="${esc(main)}"${sub ? ` data-tip-sub="${esc(sub)}"` : ''}`;
 function lookHtml(c) {
   const S = state.settings;
-  const ib = (attrs, icon, label, on, hint, dis) => `<button class="lb-ib${on ? ' on' : ''}" ${attrs} title="${label}" aria-label="${label}"${on != null ? ` aria-pressed="${!!on}"` : ''}${hint ? ` data-hint="${hint}"` : ''}${dis ? ' disabled' : ''}>${icon}</button>`;
+  // a disabled button never gets the pointer, so its reason stays a plain title
+  const ib = (attrs, icon, label, on, hint, dis) => `<button class="lb-ib${on ? ' on' : ''}" ${attrs}${dis ? ` title="${label}"` : tipAttr(label, LB_SCOPE[hint])} aria-label="${label}"${on != null ? ` aria-pressed="${!!on}"` : ''}${hint ? ` data-hint="${hint}"` : ''}${dis ? ' disabled' : ''}>${icon}</button>`;
   const set = (k, v, icon, label, hint, dis) => ib(`data-lb="set" data-k="${k}" data-v="${v}"`, icon, label, String(S[k]) === String(v), hint, dis);
-  const seg = (k, opts, hint, label) => `<span class="lb-seg" role="group" aria-label="${label}" data-hint="${hint}">${opts.map(([v, l]) => `<button data-lb="set" data-k="${k}" data-v="${v}" class="${String(S[k]) === String(v) ? 'on' : ''}" aria-pressed="${String(S[k]) === String(v)}">${l}</button>`).join('')}</span>`;
+  const seg = (k, opts, hint, label) => `<span class="lb-seg" role="group" aria-label="${label}" data-hint="${hint}"${tipAttr(label, LB_SCOPE[hint])}>${opts.map(([v, l]) => `<button data-lb="set" data-k="${k}" data-v="${v}" class="${String(S[k]) === String(v) ? 'on' : ''}" aria-pressed="${String(S[k]) === String(v)}">${l}</button>`).join('')}</span>`;
   const sep = '<span class="lb-sep" aria-hidden="true"></span>';
   const scope = t => `<span class="lb-scope">${t}</span>`;
-  const more = (sec, label) => `<button class="lb-more" data-lb="more" data-sec="${sec}" title="Every setting for this in the Design panel">${label || 'More'}${LB_ICON.more}</button>`;
+  const more = (sec, label) => `<button class="lb-more" data-lb="more" data-sec="${sec}"${tipAttr('Every setting for this', 'Opens it in the Design panel')}>${label || 'More'}${LB_ICON.more}</button>`;
   const auto = S.textAuto !== false, pt = auto && scene ? Math.round(scene.fs * 0.75 * 2) / 2 : S.textPt;
   const size = ib('data-lb="ts" data-v="-0.5"', LB_ICON.smaller, 'Smaller text (all text on the chart)', null, 'all')
-    + `<button class="lb-ts" data-lb="ts" data-v="auto" data-hint="all" title="${auto ? `Sized to the canvas automatically (${pt} pt)` : 'Back to the automatic size'}">${auto ? 'Auto' : pt + ' pt'}</button>`
+    + `<button class="lb-ts" data-lb="ts" data-v="auto" data-hint="all"${auto ? tipAttr(`Text size: automatic (${pt} pt)`, 'Follows the canvas size; − and + set your own') : tipAttr(`Text size: ${pt} pt`, 'Click to go back to the automatic size')}>${auto ? 'Auto' : pt + ' pt'}</button>`
     + ib('data-lb="ts" data-v="0.5"', LB_ICON.larger, 'Larger text (all text on the chart)', null, 'all');
   if (c.kind === 'timeline') {
     return scope('Dates') + seg('scale', [['days', 'Days'], ['weeks', 'Weeks'], ['sprints', 'Sprints'], ['months', 'Months'], ['quarters', 'Qtrs']], 'timeline', 'Periods')
       + sep + `<span class="lb-lbl">At</span>` + seg('datePos', [['top', 'Top'], ['bottom', 'Bottom'], ['both', 'Both']], 'timeline', 'Where the dates sit')
-      + sep + `<select class="lb-sel" data-lbk="dateFormat" data-hint="timeline" aria-label="Date format">${designCtl.dateFormat.opts.map(o => `<option value="${o[0]}"${S.dateFormat === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`
+      + sep + `<select class="lb-sel" data-lbk="dateFormat" data-hint="timeline" aria-label="Date format"${tipAttr('Date format', LB_SCOPE.timeline)}>${designCtl.dateFormat.opts.map(o => `<option value="${o[0]}"${S.dateFormat === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`
       + more('timeline');
   }
   if (c.kind === 'none') {
     const cols = paletteOf(S).colors.slice(0, 6);
-    return scope('Whole chart') + `<select class="lb-sel" data-lbk="font" data-hint="all" aria-label="Font">${FONTS.map(f => `<option${S.font === f ? ' selected' : ''}>${esc(f)}</option>`).join('')}</select>`
+    return scope('Whole chart') + `<select class="lb-sel" data-lbk="font" data-hint="all" aria-label="Font"${tipAttr('Font', 'For all text on the chart and in exports')}>${FONTS.map(f => `<option${S.font === f ? ' selected' : ''}>${esc(f)}</option>`).join('')}</select>`
       + sep + size + sep
-      + `<button class="lb-pal" data-lb="more" data-sec="colour" title="Palette and colours"><span class="lb-dots">${cols.map(x => `<i style="background:${x}"></i>`).join('')}</span>Palette</button>`
+      + `<button class="lb-pal" data-lb="more" data-sec="colour"${tipAttr('Palette and colours', 'Opens Colour in the Design panel')}><span class="lb-dots">${cols.map(x => `<i style="background:${x}"></i>`).join('')}</span>Palette</button>`
       + more('canvas', 'More in Design');
   }
   const info = derive(state.rows), n0 = info.find(x => x.row.id === c.ns[0].row.id) || c.ns[0];
   const noun = { task: 'task', ms: 'milestone', area: 'area' }[c.kind], many = c.ns.length > 1;
-  const colour = `<button class="lb-colour" data-lb="colour" aria-haspopup="menu" aria-expanded="false" title="Colour of ${many ? 'the selected items' : 'this ' + noun}"><span class="lb-sw" style="background:${rowBaseColor(info, n0, paletteOf(S).colors)}"></span>${many ? `These ${c.ns.length}` : 'This ' + noun}</button>`;
+  const colour = `<button class="lb-colour" data-lb="colour" aria-haspopup="menu" aria-expanded="false"${tipAttr(`Colour of ${many ? 'the selected items' : 'this ' + noun}`, 'Pick from the palette, or any colour')}><span class="lb-sw" style="background:${rowBaseColor(info, n0, paletteOf(S).colors)}"></span>${many ? `These ${c.ns.length}` : 'This ' + noun}</button>`;
   let h = colour + sep;
   if (c.kind === 'task') {
     const onBars = S.pack || S.taskLabels === 'bars';
@@ -3457,6 +3496,32 @@ if (lookbar) {
   lookbar.addEventListener('change', e => { const k = e.target.dataset.lbk; if (k) setSetting(k, e.target.value); });
   lookbar.addEventListener('mouseover', e => { const h = e.target.closest('[data-hint]'); if (!e.target.closest('#qs-span')) setHint(h ? LB_HINTS[h.dataset.hint] : null); });
   lookbar.addEventListener('mouseleave', () => setHint(null));
+  // Tooltips (mouse only): name and what it changes, under the control. Quick to appear, and instant while moving along the bar.
+  const lbTip = document.createElement('div');
+  lbTip.className = 'chart-tip lb-tip'; lbTip.hidden = true; lbTip.setAttribute('role', 'tooltip');
+  document.body.appendChild(lbTip);
+  let lbTipFor = null, lbTipTimer = 0, lbTipWarm = 0;
+  const hideLbTip = () => { clearTimeout(lbTipTimer); lbTipFor = null; if (!lbTip.hidden) { lbTip.hidden = true; lbTipWarm = Date.now(); } };
+  const showLbTip = el => {
+    lbTip.innerHTML = `<b>${esc(el.dataset.tip)}</b>${el.dataset.tipSub ? `<span>${esc(el.dataset.tipSub)}</span>` : ''}`;
+    lbTip.hidden = false;
+    const r = el.getBoundingClientRect(), w = lbTip.offsetWidth, h = lbTip.offsetHeight;
+    lbTip.style.left = Math.round(clamp(r.left + r.width / 2 - w / 2, 8, innerWidth - w - 8)) + 'px';
+    lbTip.style.top = Math.round(r.bottom + 8 + h > innerHeight - 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+  };
+  lookbar.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    const el = e.target.closest('[data-tip]');
+    if (el === lbTipFor) return;
+    if (!el) { hideLbTip(); return; }
+    clearTimeout(lbTipTimer); lbTipFor = el;
+    if (!lbTip.hidden || Date.now() - lbTipWarm < 400) showLbTip(el);
+    else lbTipTimer = setTimeout(() => { if (lbTipFor === el && el.isConnected) showLbTip(el); }, 350);
+  });
+  lookbar.addEventListener('pointerleave', hideLbTip);
+  lookbar.addEventListener('pointerdown', hideLbTip);
+  lookbar.addEventListener('scroll', hideLbTip, { passive: true });
+  lookbar.addEventListener('change', hideLbTip);
   // when the row is too narrow for everything: a softer “Timeline” label, a fade where more is hidden, and the wheel scrolls it sideways
   const edge = () => { lookbar.classList.toggle('more-right', lookbar.scrollLeft + lookbar.clientWidth < lookbar.scrollWidth - 2); };
   lookbar.addEventListener('scroll', edge, { passive: true });

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=112">
+<link rel="stylesheet" href="css/style.css?v=113">
 </head>
 <body>
 <header class="topbar">
@@ -45,9 +45,11 @@
     <div class="resizer" data-for="plan" role="separator" aria-orientation="vertical" aria-label="Resize the Plan panel" title="Drag to resize · double-click to reset" tabindex="0"></div>
     <div class="panel-head">
       <h2>Plan</h2>
+      <button class="pick-btn" id="plan-select" aria-pressed="false" title="Select several items to move, group, duplicate or delete together (or Shift / Ctrl/⌘-click)">Select</button>
       <button class="collapse-btn" title="Collapse or expand the Plan panel" aria-label="Collapse or expand the Plan panel"><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
       <button class="sheet-close" data-close aria-label="Close">✕</button>
     </div>
+    <div class="selbar plan-selbar" id="plan-selbar" role="toolbar" aria-label="Selection" hidden></div>
     <div class="panel-body">
       <div id="outline" class="outline"></div>
       <div class="add-row">
@@ -81,7 +83,7 @@
     <div class="stage" id="stage">
       <div class="chart-col" id="chart-col">
         <div class="lookbar" id="lookbar" role="toolbar" aria-label="Chart look">
-          <button class="lb-time" id="qs-span" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg><span class="qs-span-k">Timeline</span><span id="qs-span-text"></span></button>
+          <button class="lb-time" id="qs-span" aria-pressed="false" data-tip="Timeline" data-tip-sub="Its span, periods and date format"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg><span class="qs-span-k">Timeline</span><span id="qs-span-text"></span></button>
           <span class="lb-sep" aria-hidden="true"></span>
           <div class="lb-ctx" id="lookbar-ctx"></div>
         </div>
@@ -105,12 +107,7 @@
         </div>
       </div>
     </div>
-    <div class="selbar" id="selbar" role="toolbar" aria-label="Selection" hidden>
-      <span id="selbar-count"></span>
-      <button class="selbar-btn" data-sel="even" title="Give every selected task the same length (the average of their lengths)">Same length</button>
-      <button class="selbar-btn primary" data-sel="group" title="Group them into a new area (Ctrl/⌘+G)">Add to new area</button>
-      <button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>
-    </div>
+    <div class="selbar" id="selbar" role="toolbar" aria-label="Selection" hidden></div>
     <button class="marker-jump" id="marker-jump" hidden title="Bring the date marker into view">Date marker →</button>
     <div class="zoombar" role="group" aria-label="Zoom">
       <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
@@ -165,7 +162,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=112"></script>
-<script src="js/app.js?v=112"></script>
+<script src="js/core.js?v=113"></script>
+<script src="js/app.js?v=113"></script>
 </body>
 </html>
