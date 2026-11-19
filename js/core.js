@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v109 · 19 Nov';
+const APP_VERSION = 'v110 · 19 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -985,10 +985,12 @@ function ringItems(o, color, sw, opacity) {
   if (o.shape === 'diamond') return [Object.assign({ t: 'diamond', cx: o.cx, cy: o.cy, r: o.r, fill: 'none', stroke: color, sw, ui: true }, op)];
   return [Object.assign({ t: 'rect', x: o.x, y: o.y, w: o.w, h: o.h, r: o.r, fill: 'none', stroke: color, sw, ui: true }, op)];
 }
-/** small handles on both ends of a bar: the ends can be dragged to change its dates */
-function gripItems(o, color, opacity) {
-  const gh = Math.max(8, Math.min(o.bh - 4, 16)), gw = 5, op = opacity != null ? { opacity } : {};
-  return [o.bx, o.bx + o.bw].map(x => Object.assign({ t: 'rect', x: x - gw / 2, y: o.cy - gh / 2, w: gw, h: gh, r: 2.5, fill: '#ffffff', stroke: color, sw: 1.5, ui: true }, op));
+/** handles on both ends of a bar's ring (the ends can be dragged to change its dates), sized in screen pixels: `k` is chart units per
+ *  pixel, and `touch` makes them bigger for a finger */
+function gripItems(o, color, opacity, k, touch) {
+  k = k || 1;
+  const gw = (touch ? 9 : 7) * k, gh = Math.min(o.h + 6 * k, (touch ? 24 : 18) * k), op = opacity != null ? { opacity } : {};
+  return [o.x, o.x + o.w].map(x => Object.assign({ t: 'rect', x: x - gw / 2, y: o.cy - gh / 2, w: gw, h: gh, r: gw / 2, fill: '#ffffff', stroke: color, sw: 1.5 * k, ui: true }, op));
 }
 function buildScene(state, opts) {
   opts = opts || {};
@@ -1806,14 +1808,13 @@ function buildScene(state, opts) {
       if (statusOn && n.stat) statDot(n.bx + n.bw + 1, by, Math.max(4, Math.min(6, h * 0.26)), n.stat);
       if (blockedIds.has(id)) blockBadge(n.bx - 1, by, Math.max(5.5, Math.min(8, h * 0.34))); // on the bar's top-left corner, clear of its label and the arrows
       items.push({ t: 'rect', x: n.bx, y: n.y + 2, w: n.bw, h: n.h - 4, hit: true, id, role: 'move' });
-      outlines.push({ id, kind: kindOf(n), shape: 'rect', x: gx - 3, y: by - 3, w: gw + 6, h: h + 6, r: r ? r + 3 : 2, resize: !n.hasKids, bx: gx, bw: gw, cy: n.cy, bh: h });
+      const pgOn = !n.hasKids && tracked && !byMarker;
+      outlines.push({ id, kind: kindOf(n), shape: 'rect', x: gx - 3, y: by - 3, w: gw + 6, h: h + 6, r: r ? r + 3 : 2, resize: !n.hasKids, bx: gx, bw: gw, cy: n.cy, bh: h, by, rowY: n.y, rowH: n.h, pg: pgOn ? n.bx + pw : null, pgc: pgOn ? mix(base, '#000000', 0.35) : null });
       if (!n.hasKids) {
-        if (tracked && !byMarker) {
-          items.push({ t: 'rect', x: n.bx + pw - 8, y: n.y + 2, w: 16, h: n.h - 4, hit: true, id, role: 'progress' });
-          if (opts.sel === id) items.push({ t: 'rect', x: n.bx + pw - 3, y: by - 3, w: 6, h: h + 6, r: 3, fill: '#ffffff', stroke: mix(base, '#000000', 0.35), sw: 1.5, ui: true, pass: true });
-        }
-        items.push({ t: 'rect', x: n.bx - 4, y: n.y + 2, w: Math.min(9, n.bw / 3 + 4), h: n.h - 4, hit: true, id, role: 'resize-l' });
-        items.push({ t: 'rect', x: n.bx + n.bw - Math.min(5, n.bw / 3), y: n.y + 2, w: Math.min(9, n.bw / 3 + 4), h: n.h - 4, hit: true, id, role: 'resize-r' });
+        if (pgOn) items.push({ t: 'rect', x: n.bx + pw - 8, y: n.y + 2, w: 16, h: n.h - 4, hit: true, id, role: 'progress' });
+        const ro = Math.max(4, 6 * (opts.k || 1)), ri = Math.min(Math.max(5, 5 * (opts.k || 1)), n.bw / 3); // the ends, in screen pixels: as wide as the grips drawn there
+        items.push({ t: 'rect', x: n.bx - ro, y: n.y + 2, w: ro + ri, h: n.h - 4, hit: true, id, role: 'resize-l' });
+        items.push({ t: 'rect', x: n.bx + n.bw - ri, y: n.y + 2, w: ro + ri, h: n.h - 4, hit: true, id, role: 'resize-r' });
       }
     }
     n.tail.forEach(t => {
@@ -1911,14 +1912,27 @@ function buildScene(state, opts) {
 
   // ---- the selection: a ring round each selected item (on top of everything), and grips on the ends of a single bar that can be resized
   const selIdsNow = exec ? [] : opts.selSet && opts.selSet.length ? opts.selSet : opts.sel ? [opts.sel] : [];
+  // A single selected bar gets its own hit areas on top of everything, sized in screen pixels (opts.k chart units per pixel, bigger for
+  // a finger): its ends reach a little outside the bar, and the progress knob sits on the bar's lower edge, clear of the ends.
+  const K = opts.k || 1, touch = !!opts.touch;
   selIdsNow.forEach(sid => outlines.filter(o => o.id === sid).forEach(o => {
     ringItems(o, SEL_RING, 2).forEach(it => items.push(it));
-    if (selIdsNow.length === 1 && o.resize) gripItems(o, SEL_RING).forEach(it => items.push(it));
+    if (selIdsNow.length !== 1 || !o.resize) return;
+    const out = (touch ? 22 : 9) * K, inn = Math.min((touch ? 14 : 6) * K, o.bw / 4), hy = Math.min(o.rowY, o.cy - (touch ? 22 : 0) * K), hh = Math.max(o.rowH, (touch ? 44 : 0) * K);
+    items.push({ t: 'rect', x: o.bx - out, y: hy, w: out + inn, h: hh, hit: true, id: sid, role: 'resize-l' });
+    items.push({ t: 'rect', x: o.bx + o.bw - inn, y: hy, w: out + inn, h: hh, hit: true, id: sid, role: 'resize-r' });
+    gripItems(o, SEL_RING, null, K, touch).forEach(it => items.push(it));
+    if (o.pg != null) {
+      const kr = (touch ? 6 : 4.5) * K, ky = o.by + o.bh, kh = (touch ? 28 : 16) * K, gap = (touch ? 12 : 9) * K;
+      const px = o.bw > 4 * gap ? clamp(o.pg, o.bx + gap, o.bx + o.bw - gap) : o.pg; // kept clear of the end grips (the fill's edge still shows the exact amount)
+      items.push({ t: 'rect', x: px - kr, y: ky - kr, w: 2 * kr, h: 2 * kr, r: kr, fill: '#ffffff', stroke: o.pgc, sw: 1.5 * K, ui: true });
+      items.push({ t: 'rect', x: px - kh / 2, y: ky - kr, w: kh, h: kh * 0.75, hit: true, id: sid, role: 'progress' }); // mostly below the edge: the bar's ends stay for resizing
+    }
   }));
 
   if (opts.dropY != null) { const dx = pad - 10 + (opts.dropLevel || 0) * 16; items.push({ t: 'rect', x: dx, y: opts.dropY - 1.5, w: W - pad + 10 - dx, h: 3, r: 1.5, fill: hi, ui: true }); }
 
-  return { w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
+  return { k: K, touch, w: W, h: H, items: exec ? items.filter(it => !it.hit || it.role === 'title') : items, outlines: exec ? [] : outlines, exec, title: shownTitle, ppd, range: [rs, re], info, cidx, markerX: markerXpos, rowH, font, transparent: S.bgTransparent, lightText, pad, x0, fs, fixed, canvas: cv, fixedPx, needH: Hc, fits: !fixedPx || Hc <= fixedPx + 1, hs2 };
 }
 
 if (typeof module !== 'undefined') module.exports = { useStatuses, DEFAULT_STATUSES, execState, autoHeadline, fmtDate, splitNames, titleCase, applyCase, expandPaste, daysLeftBetween, markChanges, applyDateProgress, parseImport, parseDate, derive, normalizeLevels, areaPalette, suggestPalettes, PRESETS, parseColor, dayToIso, toDay };

@@ -237,8 +237,11 @@ function drawScene(sc, scale) {
   return c;
 }
 
+const coarse = matchMedia('(pointer: coarse)');
 function renderChart() {
-  const o = { sel, selSet: selIds() };
+  const sw = svg.getBoundingClientRect().width;
+  // handles are sized in screen pixels (k = chart units per pixel), and bigger for a finger
+  const o = { sel, selSet: selIds(), k: sw > 0 ? (scene ? scene.w : 1280) / sw : 1, touch: coarse.matches };
   if (drag && drag.range) o.range = drag.range;
   if (drag && drag.dropY != null) { o.dropY = drag.dropY; o.dropLevel = drag.dropLevel; }
   if (drag && drag.toRow != null) o.rowHi = drag.toRowY;
@@ -2216,7 +2219,7 @@ function editRowName(id, rect) {
 
 // ---------------------------------------------------------------- zoom (ctrl/⌘ + wheel, trackpad pinch, buttons)
 const stage = $('#stage'), wrapEl = $('#chart-col');
-let zoom = 1;
+let zoom = 1, zoomRender = 0;
 // On a phone the chart starts PHONE_CHART_W wide (readable, scrolled sideways) and a pinch can bring it down to the screen's width.
 const PHONE_CHART_W = 760;
 function fitWidth() { const cs = getComputedStyle(stage); return stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); }
@@ -2243,6 +2246,7 @@ function setZoom(z, cx, cy) {
   const fx = (cx - a.left) / a.width, fy = (cy - a.top) / a.height;
   zoom = z;
   applyZoom();
+  clearTimeout(zoomRender); if (sel) zoomRender = setTimeout(() => { if (!drag) renderChart(); }, 120); // the handles keep their size on screen
   const b = wrapEl.getBoundingClientRect();
   stage.scrollLeft += b.left + fx * b.width - cx;
   stage.scrollTop += b.top + fy * b.height - cy;
@@ -2977,7 +2981,7 @@ function hoverLayerHtml() {
     if (h.id && !picked.includes(h.id)) {
       const n = scene.info.find(x => x.row.id === h.id);
       if (n) items.push({ t: 'rect', x: scene.pad - 10, y: n.y, w: scene.w - 2 * scene.pad + 20, h: n.h, r: 6, fill: SEL_RING, opacity: 0.045, ui: true });
-      scene.outlines.filter(o => o.id === h.id).forEach(o => { items.push(...ringItems(o, SEL_RING, 1.5, 0.5)); if (o.resize) items.push(...gripItems(o, SEL_RING, 0.9)); });
+      scene.outlines.filter(o => o.id === h.id).forEach(o => { items.push(...ringItems(o, SEL_RING, 1.5, 0.5)); if (o.resize) items.push(...gripItems(o, SEL_RING, 0.9, scene.k, scene.touch)); });
     }
     if (h.kinds) scene.outlines.filter(o => h.kinds.includes(o.kind)).forEach(o => items.push(...ringItems(o, SEL_RING, 1.5, 0.6)));
     if (h.roles) scene.items.filter(it => it.hit && h.roles.includes(it.role)).forEach(it => items.push(...box(it)));
