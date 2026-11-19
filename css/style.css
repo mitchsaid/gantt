@@ -393,8 +393,9 @@ body.resizing * { cursor: col-resize !important; }
 .pop h4 { margin: 0; font-size: 12.5px; }
 .pop .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 @supports (-webkit-touch-callout: none) { /* iOS gives date fields a minimum width of their own, which spills out of a half-width column */
-  input.inp[type='date'] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; }
-  input.inp[type='date']::-webkit-date-and-time-value { text-align: left; }
+  /* iOS lays its date fields out as a flexbox to centre the date: keep that (full width), and drop the value's own margins */
+  input.inp[type='date'] { -webkit-appearance: none; appearance: none; display: flex; align-items: center; min-width: 0; max-width: 100%; padding-top: 0; padding-bottom: 0; }
+  input.inp[type='date']::-webkit-date-and-time-value { text-align: left; margin: 0; }
 }
 .pop .note { margin: 0; color: var(--muted); font-size: 12px; }
 .pop .pop-name { font-weight: 600; }
