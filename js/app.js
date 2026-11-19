@@ -556,9 +556,16 @@ function fmtRange(n) {
   if (n.milestone) return '◆ ' + shortDate(n.start);
   return shortDate(n.start) + ' – ' + shortDate(n.end);
 }
+/** buttons that add next to an item, so a subtask is never only a keyboard shortcut away: a task gets “+ Subtask” (inside it)
+ *  and “+ Task below”; a subtask, which can't hold anything, “+ Subtask below”; a milestone “+ Task below” */
+const canHoldSub = n => !n.milestone && !n.sub && !n.isArea;
+function addBtnsHtml(n) {
+  const below = n.sub ? '+ Subtask below' : '+ Task below';
+  return `<div class="pop-adds">${canHoldSub(n) ? '<button class="chip-btn" data-act="sub-add" title="Add a subtask inside it (Shift+Enter)">+ Subtask</button>' : ''}<button class="chip-btn" data-act="next-add" title="Add an item after it (Enter)">${below}</button></div>`;
+}
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
-  return `<div class="pop-foot"><span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
 }
 function setRowStatus(ids, v) {
   commit();
@@ -584,7 +591,7 @@ function depsHtml(n, info, rows) {
     <select class="inp" data-f="dep-add"><option value="">Add a dependency…</option>${others.map(o => `<option value="${o.row.id}">${'  '.repeat(o.level)}${esc(o.row.name || 'Untitled')}</option>`).join('')}</select></div>`;
 }
 function rowActionsHtml(n, rows) {
-  return `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${canIndent(rows, n.i) ? '' : 'disabled'}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div>`;
+  return (n.isArea ? '' : addBtnsHtml(n)) + `<div class="row-actions"><button data-act="outdent" title="Outdent (Shift+Tab)" ${n.level === 0 ? 'disabled' : ''}>← Outdent</button><button data-act="indent" title="Indent (Tab)" ${canIndent(rows, n.i) ? '' : 'disabled'}>Indent →</button><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></div>`;
 }
 function detailHtml(n, info, rows) {
   const r = n.row;
@@ -669,6 +676,7 @@ outline.addEventListener('click', e => {
     else if (a === 'outdent') shiftLevel(id, -1);
     else if (a === 'del') askDelete(id);
     else if (a === 'dup') duplicateRow(id);
+    else if (a === 'sub-add' || a === 'next-add') { commit(); addRow('task', id, true, false, a === 'sub-add'); }
     else if (a === 'dep-rm') { const r = state.rows[rowIndex(id)]; r.deps = r.deps.filter(d => d !== act.dataset.dep); commit(); refresh(); }
     return;
   }
@@ -793,7 +801,7 @@ svg.addEventListener('pointerdown', e => {
   try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   const box = svg.getBoundingClientRect();
   const n = id ? scene.info.find(x => x.row.id === id) : null;
-  drag = { role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect, mod: e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : null };
+  drag = { touch, role, id, x: e.clientX, y: e.clientY, k: scene.w / box.width, left: box.left, top: box.top, ppd: scene.ppd, moved: false, rect, mod: e.shiftKey ? 'range' : (e.ctrlKey || e.metaKey) ? 'toggle' : null };
   if (role !== 'row' && role !== 'title' && role !== 'timeline') drag.range = scene.range.slice();
   if (role === 'move') {
     const i = n.i; drag.i = i; drag.lv0 = n.level;
@@ -1009,7 +1017,7 @@ function endDrag() {
     lastClick = { id: d.id, t: now };
     if (sel !== d.id) select(d.id);
     const isArea = !!(scene.info.find(n => n.row.id === d.id) || {}).isArea;
-    if (d.role === 'row' && !isArea) { if (dbl) editRowName(d.id, d.rect); } // an area's name or heading opens its popover too
+    if (d.role === 'row' && !isArea && !d.touch) { if (dbl) editRowName(d.id, d.rect); } // an area's name or heading opens its popover too, and on a touch screen any name does
     else if (d.role === 'row' && dbl) editRowName(d.id, d.rect);
     else { openPop('row', d.rect, d.id, d.x - 60); if (dbl) { const inp = $('#pop-name'); if (inp) inp.select(); } }
   }
@@ -1025,7 +1033,7 @@ let lastClick = { id: null, t: 0 }, touchTap = null;
 svg.addEventListener('pointerup', e => {
   const t = touchTap;
   touchTap = null;
-  if (t && t.pid === e.pointerId && !pinch) { select(t.id); if (t.role !== 'row') openPop('row', t.rect, t.id, t.x); }
+  if (t && t.pid === e.pointerId && !pinch) { select(t.id); openPop('row', t.rect, t.id, t.x - 60); } // a name too: on a phone the popover is the only way to its actions
   endDrag();
 });
 svg.addEventListener('pointermove', e => { if (touchTap && Math.hypot(e.clientX - touchTap.x, e.clientY - touchTap.y) > 10) touchTap = null; });
@@ -2147,6 +2155,8 @@ popEl.addEventListener('click', e => {
     }
     return;
   }
+  const addB = e.target.closest('.pop-adds [data-act]');
+  if (addB && pop && pop.kind === 'row') { const id = pop.id; closePop(); commit(); addRow('task', id, true, true, addB.dataset.act === 'sub-add'); return; }
   const rowAct = e.target.closest('.row-actions [data-act], .pop-foot [data-act], [data-act="dep-rm"]');
   if (rowAct && pop && pop.kind === 'row' && !rowAct.disabled) {
     const id = pop.id, a = rowAct.dataset.act;
