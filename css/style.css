@@ -62,7 +62,7 @@ svg { display: block; }
 /* under the chart: the add actions (dashed: they make something new) on the left, the view toolbar on the right */
 .chart-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 2px 0; position: sticky; left: 0; width: max-content; max-width: 100%; min-width: 100%; }
 .ca-adds { display: inline-flex; align-items: center; gap: 6px; }
-.chart-add .add-btn { background: #fff; display: inline-flex; align-items: center; gap: 4px; padding: 0 13px 0 9px; }
+.chart-add .add-btn { background: #fff; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 13px 0 9px; }
 .add-btn svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
 .chart-add-note { color: #9096a3; font-size: 12px; }
 /* notes and warnings take a line of their own underneath, so the buttons above never move when one comes or goes */
@@ -73,8 +73,8 @@ svg { display: block; }
 .paste-link svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .chart-add .paste-link { display: none; } /* on a desktop the Plan panel's paste button is always in view */
 /* the view toolbar: one white bar like the look bar, pinned to the chart's right edge */
-.qs { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding: 3px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.05); }
-.qs-btn { position: relative; flex: none; height: 30px; padding: 0 10px; border-radius: 8px; border: 0; background: none; color: #3b4252; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.qs { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding: 2px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.05); }
+.qs-btn { position: relative; flex: none; height: 26px; padding: 0 10px; border-radius: 7px; border: 0; background: none; color: #3b4252; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .qs-btn > svg { width: 15px; height: 15px; flex: none; fill: none; stroke: #8a90a0; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .qs-btn:hover { background: #f1f2f6; color: #111827; }
 .qs-btn:hover > svg { stroke: currentColor; }
@@ -85,7 +85,7 @@ svg { display: block; }
 .qs-l > span { grid-area: 1 / 1; visibility: hidden; }
 .qs-l > span.on { visibility: visible; }
 .qs-count { position: absolute; top: -7px; right: -5px; background: var(--accent); color: #fff; border: 2px solid #fff; border-radius: 999px; font-size: 10.5px; font-weight: 700; line-height: 14px; min-width: 18px; padding: 0 4px; text-align: center; }
-.qs-more { width: 30px; padding: 0; justify-content: center; }
+.qs-more { width: 28px; padding: 0; justify-content: center; }
 .qs-more > svg circle { fill: currentColor; stroke: none; }
 .qs-btn:disabled { opacity: 0.35; cursor: default; }
 .qs-btn:disabled:hover { background: none; color: #3b4252; }
@@ -451,7 +451,8 @@ body.resizing * { cursor: col-resize !important; }
   .chart-add .paste-link { display: inline-flex; } /* the Plan panel's paste button is a sheet away here */
   .qs { margin-left: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
   .qs::-webkit-scrollbar { display: none; }
-  .qs-btn { padding: 0 7px; font-size: 12.5px; }
+  .qs-btn { height: 30px; padding: 0 7px; font-size: 12.5px; }
+  .chart-add .add-btn { height: 36px; } /* the same height as the view toolbar beside them, a little taller for fingers */
   .qs { gap: 1px; }
   .paste-link { white-space: nowrap; }
   .chart-add-note { display: none; }
@@ -630,10 +631,11 @@ body.selecting .outline .orow { cursor: pointer; }
 .plan-selbar .selbar-btn { padding: 0 8px; }
 .plan-selbar .selbar-btn.ib { width: 30px; padding: 0; }
 .plan-selbar::after { display: none; }
-.pop-foot .pf-pick { padding: 0; width: 30px; display: inline-grid; place-items: center; margin-left: 4px; }
+.pop-foot .pf-pick { padding: 0 9px 0 7px; display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; }
+.pop-foot .pf-pick:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .pop-foot .pf-pick svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 860px) {
-  .sb-long { display: none; }
+  .sb-long, .sb-hint { display: none; } /* a phone has no room for the hint beside the buttons */
   .sb-short { display: inline; }
   .pick-btn { height: 30px; padding: 0 14px; font-size: 13px; }
   .selbar-btn { height: 32px; }

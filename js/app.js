@@ -565,7 +565,7 @@ function addBtnsHtml(n) {
 }
 /** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
 function popFootHtml(n, rows) {
-  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button><button data-act="pick" class="pf-pick" title="Select several — then tap others to add them (or Shift / Ctrl/⌘-click)" aria-label="Select several"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><path d="m5.5 7 1.3 1.3L9 6"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/><path d="M14 6h6M14 9h4M4 15h6M4 18h4"/></svg></button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button><button data-act="pick" class="pf-pick" title="Keeps this one selected; then ${tapWord()} other items to add them (with a keyboard: Shift or Ctrl/⌘-click)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.3 2.8 2.8L16.2 9"/></svg>Select more</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
 }
 function setRowStatus(ids, v) {
   commit();
@@ -2931,13 +2931,15 @@ function evenLengths() {
 // Select mode: without a keyboard there is no Shift or Ctrl/⌘-click, so a Select button (Plan panel head, or an item's popover)
 // turns taps into "add or remove this item", and the selection bars carry what a keyboard would do (duplicate, delete).
 let selecting = false;
+const tapWord = () => (matchMedia('(hover: hover) and (pointer: fine)').matches ? 'click' : 'tap');
 const SB_ICON = {
   dup: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
 };
 function selBarHtml(n, countId, inPanel) { // the Plan panel's copy leaves out Done: the Select button in its head says it
   const many = n >= 2, none = n ? '' : ' disabled';
-  return `<span class="selbar-count"${countId ? ` id="${countId}"` : ''}>${n ? `${n} selected` : 'Tap items to select'}</span>`
+  const tw = tapWord(), say = !n ? `${tw[0].toUpperCase() + tw.slice(1)} items to select` : n === 1 && selecting && !inPanel ? `1 selected<span class="sb-hint"> — ${tw} more to add</span>` : `${n} selected`;
+  return `<span class="selbar-count"${countId ? ` id="${countId}"` : ''}>${say}</span>`
     + `<button class="selbar-btn" data-sel="even"${many ? '' : ' disabled'} title="Give every selected task the same length (the average of their lengths)">Same length</button>`
     + `<button class="selbar-btn primary" data-sel="group"${many ? '' : ' disabled'} title="Group them into a new area (Ctrl/⌘+G)"><span class="sb-long">Add to new area</span><span class="sb-short">Group</span></button>`
     + `<button class="selbar-btn ib" data-sel="dup"${none} title="Duplicate (Ctrl/⌘+D)" aria-label="Duplicate">${SB_ICON.dup}</button>`
@@ -3466,7 +3468,7 @@ const LB_ICON = {
   strip: '<svg viewBox="0 0 16 16"><path d="M2 5h12"/><path d="M5 3.5l1.5 1.5L5 6.5 3.5 5zM11 3.5l1.5 1.5L11 6.5 9.5 5z"/><rect x="2" y="9" width="7" height="3" rx="1"/></svg>',
   more: '<svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>',
 };
-const LB_HINTS = { task: { kinds: ['task', 'subtask'] }, ms: { kinds: ['ms'] }, area: { kinds: ['area'] }, all: { kinds: ['task', 'subtask', 'ms', 'area'], roles: ['timeline', 'title'] }, timeline: { roles: ['timeline'] } };
+const LB_HINTS = { task: { kinds: ['task', 'subtask'] }, ms: { kinds: ['ms'] }, area: { kinds: ['area'] }, timeline: { roles: ['timeline'] } }; // 'all' (font, text size) rings nothing: it would cover the whole chart
 function lookContext() {
   if (state.settings.execView) return { kind: 'none' };
   if (pop && pop.kind === 'timeline') return { kind: 'timeline' };
@@ -3583,7 +3585,7 @@ if (lookbar) {
     else if (a === 'more') revealDesign(b.dataset.sec);
   });
   lookbar.addEventListener('change', e => { const k = e.target.dataset.lbk; if (k) setSetting(k, e.target.value); });
-  lookbar.addEventListener('mouseover', e => { const h = e.target.closest('[data-hint]'); if (!e.target.closest('#qs-span')) setHint(h ? LB_HINTS[h.dataset.hint] : null); });
+  lookbar.addEventListener('mouseover', e => { const h = e.target.closest('[data-hint]'); if (!e.target.closest('#qs-span')) setHint(h && LB_HINTS[h.dataset.hint] || null); });
   lookbar.addEventListener('mouseleave', () => setHint(null));
   attachTips(lookbar);
   // when the row is too narrow for everything: a softer “Timeline” label, a fade where more is hidden, and the wheel scrolls it sideways
