@@ -24,7 +24,9 @@ svg { display: block; }
 /* ---------- top bar */
 .topbar { height: 52px; flex: none; min-width: 0; display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); z-index: 30; }
 .brand { min-width: 0; white-space: nowrap; display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
-.version { font-weight: 500; font-size: 11px; color: #9096a3; background: #f0f1f5; border-radius: 999px; padding: 2px 8px; letter-spacing: 0; }
+.version { font-weight: 500; font-size: 11px; color: #4f46e5; background: #eef0ff; border-radius: 999px; padding: 2px 8px; letter-spacing: 0; }
+.version b { font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+#version-num { color: #8b8fc7; }
 .top-actions { display: flex; align-items: center; gap: 6px; }
 .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
 .btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 8px; border: 1px solid transparent; background: none; font-weight: 600; white-space: nowrap; }
@@ -492,7 +494,7 @@ body.resizing * { cursor: col-resize !important; }
   .pop { width: min(320px, calc(100vw - 16px)); }
   .grip { width: 28px; height: 40px; font-size: 14px; }
   .themes { grid-template-columns: repeat(8, 1fr); }
-  .version { display: none; }
+  #version-num { display: none; } /* phones: just the Beta tag */
   .top-actions { gap: 4px; }
   input:not([type="checkbox"]):not([type="color"]), select, textarea, .design-search input { font-size: 16px; } /* below 16px iOS zooms the page on focus */
   .srch-kbd { display: none; }

@@ -3695,7 +3695,7 @@ if (lookbar) {
     tips.addEventListener('toggle', () => { ui.tipsOpen = tips.open; saveUi(); });
   }
 }
-$('#version').textContent = APP_VERSION;
+$('#version-num').textContent = APP_VERSION;
 buildDesign();
 syncUndo();
 ensureFont();
