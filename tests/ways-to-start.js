@@ -32,10 +32,22 @@ const { chromium } = require('playwright');
   console.log('paste → import open:', await p.evaluate(() => !document.querySelector('#import-modal').hidden), 'card:', await shown(p));
   await p.click('#import-modal [data-close-modal]');
   await p.click('#btn-new'); await p.waitForTimeout(200);
-  await p.click('[data-guide="ai"]'); await p.waitForTimeout(200);
+  await p.click('[data-guide="ai"]'); await p.waitForTimeout(300);
   const clip = await p.evaluate(() => navigator.clipboard.readText());
-  console.log('ask an AI → clipboard:', clip, '| card:', await shown(p));
+  console.log('ask your AI → clipboard:', clip, '| card:', await shown(p), '| copy button:', await p.textContent('[data-guide="copy"]'));
   if (!/slideline\.co\/llms\.txt/.test(clip)) throw new Error('the AI prompt was not copied');
+  if (await shown(p) !== 'Ask your AI for the plan') throw new Error('Ask your AI should leave its steps on screen');
+  await p.screenshot({ path: 'ways-to-start-ai-steps.png' });
+  await p.waitForTimeout(4000);
+  console.log('steps still there after 4 s:', await shown(p));
+  await p.click('[data-guide="copy"]'); await p.waitForTimeout(150);
+  await p.click('[data-guide="back"]'); await p.waitForTimeout(150);
+  console.log('back →', await shown(p));
+  await p.click('[data-guide="ai"]'); await p.waitForTimeout(200);
+  await p.evaluate(() => { location.hash = '#plan=' + encodeURIComponent('{"title":"From AI","items":[{"name":"A","start":"2027-01-04","end":"2027-01-08"}]}'); }); await p.waitForTimeout(500);
+  if (await p.$('text=Open shared plan')) { await p.click('text=Open shared plan'); await p.waitForTimeout(300); }
+  console.log('AI link opened → card:', await shown(p), '| title:', await p.evaluate(() => state.settings.title));
+  if (await shown(p)) throw new Error('the steps should go once the plan arrives');
   await p.click('#btn-new'); await p.waitForTimeout(200);
   await p.click('#btn-undo'); await p.waitForTimeout(200);
   console.log('undo the new plan → card:', await shown(p));
@@ -49,7 +61,7 @@ const { chromium } = require('playwright');
   if (!await shown(p)) throw new Error('the new-plan card should come back on the next new plan');
   const ev = await events(p);
   console.log('events:', ev);
-  for (const want of ['guide-paste', 'guide-ask-ai', 'guide-dismiss']) if (!ev.includes(want)) throw new Error('missing event ' + want);
+  for (const want of ['guide-paste', 'guide-ask-ai', 'guide-copy-prompt', 'guide-dismiss']) if (!ev.includes(want)) throw new Error('missing event ' + want);
   console.log('stored ui:', await p.evaluate(() => { const u = JSON.parse(localStorage.getItem('gantt:ui')); return u.guideFirst; }));
 
   // someone who already has a plan here never sees the first-visit card; a shared link doesn't show it either

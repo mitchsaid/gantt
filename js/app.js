@@ -1905,7 +1905,9 @@ const GUIDE_ICON = {
   paste: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>',
   ai: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>',
 };
+let guideBack = null; // the card the Ask-your-AI steps go back to
 function showGuide(mode) {
+  if (mode === 'ai') return showAiSteps();
   guideMode = mode;
   const first = mode === 'first';
   const opt = (act, icon, title, sub) => `<button class="guide-opt" type="button" data-guide="${act}">${GUIDE_ICON[icon]}<span class="guide-t">${title}</span><span class="guide-s">${sub}</span></button>`;
@@ -1915,28 +1917,53 @@ function showGuide(mode) {
     + '<div class="guide-opts">'
     + opt('edit', 'edit', first ? 'Edit this example' : 'Type it in', first ? 'Rename, drag and add to it' : 'Rename tasks, add more')
     + opt('paste', 'paste', 'Paste a list', 'From a doc, email or sheet')
-    + opt('ai', 'ai', 'Ask an AI', 'Copy a prompt for ChatGPT etc.')
+    + opt('ai', 'ai', 'Ask your AI', 'Copy a prompt for ChatGPT etc.')
     + '</div>';
   el.hidden = false;
   if (first) { ui.guideFirst = 'shown'; saveUi(); }
 }
 function hideGuide(done) {
   if (guideMode === 'first' || done === 'first') { ui.guideFirst = 'done'; saveUi(); }
-  guideMode = null;
+  guideMode = null; guideBack = null;
   $('#guide').hidden = true;
 }
-async function copyAiPrompt() {
-  const text = $('#imp-ai-prompt').textContent + ' The plan: ';
-  try { await navigator.clipboard.writeText(text); toast('Prompt copied — paste it into your AI chat, describe the project, and open the link it gives you'); } catch (e) { toast('Copy this into your AI chat: ' + text); }
+/** Ask your AI: the card turns into the steps to follow, and stays until it is closed or the plan arrives (any change to the plan) */
+function showAiSteps() {
+  if (guideMode && guideMode !== 'ai') guideBack = guideMode;
+  if (guideMode === 'first' || guideBack === 'first') { ui.guideFirst = 'done'; saveUi(); } // a choice was made: the first-visit card has done its job
+  guideMode = 'ai';
+  const el = $('#guide');
+  el.innerHTML = `<div class="guide-head"><b>${GUIDE_ICON.ai}Ask your AI for the plan</b>`
+    + '<button class="guide-x" type="button" data-guide="dismiss" title="Close" aria-label="Close">✕</button></div>'
+    + '<ol class="guide-steps">'
+    + `<li><span class="guide-n">1</span><div><b>Copy this prompt</b><div class="guide-prompt"><q>${esc($('#imp-ai-prompt').textContent)}</q><button class="btn primary" type="button" data-guide="copy">Copy prompt</button></div></div></li>`
+    + '<li><span class="guide-n">2</span><div><b>Paste it into your AI chat</b><span>ChatGPT, Claude, Gemini or Copilot, with web access on. After it, describe the project: phases, rough dates, owners.</span></div></li>'
+    + '<li><span class="guide-n">3</span><div><b>Open the link it gives you</b><span>It starts with slideline.co/#plan= and opens your plan right here, ready to edit and export.</span></div></li>'
+    + '</ol>'
+    + `<div class="guide-foot">${guideBack ? '<button class="link-btn" type="button" data-guide="back">← Other ways to start</button>' : ''}<a href="llms.txt" target="_blank" rel="noopener">How it works</a></div>`;
+  el.hidden = false;
+}
+const aiPromptText = () => $('#imp-ai-prompt').textContent + ' The plan: ';
+async function copyAiPrompt(quiet) {
+  const text = aiPromptText();
+  try { await navigator.clipboard.writeText(text); if (!quiet) toast('Prompt copied — paste it into your AI chat, describe the project, and open the link it gives you'); return true; } catch (e) { if (!quiet) toast('Copy this into your AI chat: ' + text); return false; }
+}
+async function guideCopied() {
+  const ok = await copyAiPrompt(true), b = $('#guide [data-guide="copy"]');
+  if (!b) return;
+  b.textContent = ok ? 'Copied ✓' : 'Select and copy it';
+  b.classList.toggle('done', ok);
 }
 $('#guide').addEventListener('click', e => {
   const b = e.target.closest('[data-guide]');
   if (!b) return;
   const act = b.dataset.guide, mode = guideMode;
+  if (act === 'back') { showGuide(guideBack || 'new'); guideBack = null; return; }
+  if (act === 'copy') { track('guide-copy-prompt'); guideCopied(); return; }
   track('guide-' + (act === 'edit' && mode === 'first' ? 'edit-example' : act === 'edit' ? 'type-in' : act === 'ai' ? 'ask-ai' : act));
+  if (act === 'ai') { showAiSteps(); guideCopied(); return; }
   hideGuide();
   if (act === 'paste') openModal();
-  else if (act === 'ai') copyAiPrompt();
   else if (act === 'edit') {
     const r = state.rows.find(x => x.type !== 'milestone' && blockEnd(state.rows, rowIndex(x.id)) === rowIndex(x.id) + 1) || state.rows[0];
     if (r) { sel = r.id; refresh(); editOnChart(r.id); }

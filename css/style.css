@@ -703,3 +703,22 @@ body.selecting .outline .orow { cursor: pointer; }
   .guide-t { font-size: 13px; }
   .guide-s { display: none; }
 }
+/* Ask your AI: the card's steps view */
+.guide-head b svg { display: inline-block; width: 17px; height: 17px; vertical-align: -3px; margin-right: 7px; fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+.guide-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.guide-steps li { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfc; min-width: 0; }
+.guide-steps li > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.guide-steps b { font-size: 13.5px; font-weight: 600; }
+.guide-steps span:not(.guide-n) { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.guide-n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.guide-prompt { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.guide-prompt q { font-size: 12.5px; color: var(--text); line-height: 1.45; quotes: '“' '”'; user-select: all; }
+.guide-prompt .btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.guide-prompt .btn.done { background: #16a34a; border-color: #16a34a; }
+.guide-foot { display: flex; align-items: center; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+.guide-foot a { color: var(--muted); margin-left: auto; }
+.guide-foot .link-btn { font-size: 12.5px; }
+@media (max-width: 860px) {
+  .guide-steps { grid-template-columns: 1fr; gap: 6px; }
+  .guide-steps li { padding: 9px 10px; }
+}
