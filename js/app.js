@@ -267,7 +267,7 @@ function renderChart() {
     if (out.length) co.innerHTML = `⚠ ${out.length} ${out.length === 1 ? 'item is' : 'items are'} outside the timeline <button class="link-btn" data-act="pull">Fit them in…</button>`;
   }
   const warn = $('#chart-warn');
-  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = '⚠ Doesn’t fit the canvas — see Design → Canvas'; }
+  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = state.settings.density === 'roomy' ? '⚠ Doesn’t fit the canvas with Roomy rows — Auto row height fits it in as far as it can' : '⚠ Too tall for the canvas, even with the tightest rows — see Design → Canvas'; }
 }
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
@@ -1383,7 +1383,7 @@ function syncDesign() {
   if (scene) { // sizes in real units, and a warning when a fixed canvas can't hold the plan
     const cv = scene.canvas, f = x => (Math.round(x * 100) / 100).toString();
     const ci = $('#canvas-info'), ti = $('#text-info');
-    if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. Use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
+    if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. ${state.settings.density === 'roomy' ? 'Use Auto row height, “Fit content”' : 'Rows and text are already as small as they go: use “Fit content”'}, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
     syncDaysOff();
     const de = $('#date-ex');
     if (de) de.textContent = `Example: ${fmtDate(toDay(2026, 11, 9), { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' })} — also used for milestone dates, the legend and the panels.`;

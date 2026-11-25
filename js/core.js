@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v116 · 20 Nov';
+const APP_VERSION = 'v117 · 25 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -992,7 +992,32 @@ function gripItems(o, color, opacity, k, touch) {
   const gw = (touch ? 9 : 7) * k, gh = Math.min(o.h + 6 * k, (touch ? 24 : 18) * k), op = opacity != null ? { opacity } : {};
   return [o.x, o.x + o.w].map(x => Object.assign({ t: 'rect', x: x - gw / 2, y: o.cy - gh / 2, w: gw, h: gh, r: gw / 2, fill: '#ffffff', stroke: color, sw: 1.5 * k, ui: true }, op));
 }
+/**
+ * The plan as a flat list of drawable items. On a fixed canvas, Auto (and Compact, a step under it) promise to fit the plan in:
+ * when it is taller than the canvas, the rows are built again tighter — and with automatic text, the text a little smaller,
+ * down to about 8 pt — until it fits, or until nothing gets any smaller. Roomy asked for space, so it is left as it is.
+ */
 function buildScene(state, opts) {
+  let s = buildSceneAt(state, opts, null);
+  if (!s.fixedPx || s.fits || state.settings.density === 'roomy') return s;
+  const at = k => buildSceneAt(state, opts, { k, fsMin: 11 });
+  let over = 1, k = 1;
+  for (let i = 0; i < 6 && !s.fits; i++) {
+    k *= Math.max(0.6, Math.min(s.fixedPx / s.needH, 1 - 1.5 / s.rowH)); // at least a pixel a step; the title, dates and legend shrink less than the rows, so it can take a few
+    const t = at(k);
+    const stuck = i > 0 && t.rowH >= s.rowH && t.fs >= s.fs; // as tight as it goes: it can't fit
+    if (!t.fits) over = k;
+    s = t;
+    if (stuck) return s;
+  }
+  // it fits: a few halvings between the last size that didn't and this one, so the rows are as tall as the canvas allows
+  for (let i = 0; i < 4 && s.fits && over - k > 0.01; i++) {
+    const m = (k + over) / 2, t = at(m);
+    if (t.fits) { s = t; k = m; } else over = m;
+  }
+  return s;
+}
+function buildSceneAt(state, opts, sq) {
   opts = opts || {};
   const headline = state.settings.titleAuto ? autoHeadline(state) : null; // read from the whole plan, whatever is drawn
   const exec = !!state.settings.execView;
@@ -1112,7 +1137,8 @@ function buildScene(state, opts) {
 
   // metrics — sizes are px at 96 per inch, so text is in true points on the output
   const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
-  const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, 14.5, 20) * 2) / 2);
+  const fsMin = sq ? sq.fsMin : 14.5; // squeezed to fit a fixed canvas, automatic text may go a little smaller
+  const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, fsMin, 20) * 2) / 2);
   const tierOf = f => Math.round(26 * f / 14);
   const avOn = S.assigneeAvatar !== false || S.assigneePos === 'bars'; // (on the bars the avatar is the point, so it is always on)
   // the little initials circle beside an owner's name
@@ -1152,18 +1178,19 @@ function buildScene(state, opts) {
   }
   // Compact and Roomy are steps either side of that baseline, so they always sit in order around Auto whatever the plan or canvas
   rowH = Math.max(rowH, Math.ceil(fsOf(rowH) * 2.4)); // the baseline always fits its text — even on a canvas that can't hold the plan
-  rowH = Math.round(clamp(rowH * ({ compact: 0.78, roomy: 1.3 }[S.density] || 1), 26, 120));
+  if (sq) { const r = Math.round(rowH * sq.k); rowH = Math.max(r, Math.ceil(fsOf(r) * 2)); } // …unless it is being squeezed in: rows as tight as their text allows
+  rowH = Math.round(clamp(rowH * ({ compact: 0.78, roomy: 1.3 }[S.density] || 1), sq ? 20 : 26, 120));
   const fs = fsOf(rowH);
   const kk = fs / 14; // whatever was sized for 14px text scales with it
   const subLine = subLineOf(fs), dd = Math.round(18 * kk), dU = Math.round(16 * kk), tlh = Math.round(20 * kk), hs1 = 13.5 * kk, hs2 = 12.5 * kk;
-  rowH = Math.max(rowH, Math.ceil(fs * 2.2)); // and no row is too tight for its text
+  rowH = Math.max(rowH, Math.ceil(fs * (sq ? 2 : 2.2))); // and no row is too tight for its text
   // dates under the names on the bars: the bars must hold two lines
   const barDates = !!S.barDates && (pack || S.taskLabels === 'bars');
   const dateGap = sz => Math.round(sz * 0.2); // a little air between a name and the dates under it
   // a bar holding a name and its dates: the two lines as drawn, with padding above and below in proportion to the text, so it never feels cramped
   const twoLineH = sz => Math.ceil(sz * 1.15 + dateGap(sz) + dateSizeOf(sz) * 1.12 + 2 * Math.max(6, Math.round(sz * 0.5)));
   if (barDates) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
-  const barH = Math.round(rowH * 0.64);
+  const barH = Math.max(Math.round(rowH * 0.64), sq ? Math.ceil(fs * 1.35) : 0); // squeezed rows keep bars tall enough for their names
   const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), barDates ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
   const subRow = Math.max(Math.round(rowH * 0.6), Math.ceil((fs - 1.5) * 2.1), subH + 6);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
