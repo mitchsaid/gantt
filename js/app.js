@@ -501,6 +501,23 @@ function snapToWorkdays(s, e, hi) {
   }
   return [s, e];
 }
+/** Analytics: GoatCounter (cookie-free, no consent banner), loaded only on the live site so local copies, forks and tests send
+ *  nothing. It counts page views by path (never the #… part, where share links carry the plan), and track() counts a few major
+ *  actions by a fixed name only: never anything from the plan — no names, dates, owners or links. */
+const trackQueue = []; // actions taken before the script has loaded (opening a #plan= link happens on arrival)
+if (/^(www\.)?slideline\.co$/.test(location.hostname)) {
+  const gc = document.createElement('script');
+  gc.async = true; gc.src = 'https://gc.zgo.at/count.js'; gc.dataset.goatcounter = 'https://slideline.goatcounter.com/count';
+  gc.onload = () => trackQueue.splice(0).forEach(track);
+  document.head.appendChild(gc);
+}
+function track(name) {
+  try {
+    const gc = window.goatcounter;
+    if (gc && typeof gc.count === 'function') gc.count({ path: name, title: name, event: true });
+    else if (trackQueue.length < 20) trackQueue.push(name);
+  } catch (e) { /* analytics must never break the app */ }
+}
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
@@ -514,6 +531,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
     const [s2, e2] = snapToWorkdays(s, s + defaultTaskDays() - 1);
     rows.push(area, newRow({ level: 1, name: 'New task', start: s2, end: e2 }));
     sel = area.id; commit(); refresh(); show(area.id);
+    track('add-area');
     return;
   }
   if (i < 0) { at = rows.length; ref = info.length ? info[info.length - 1] : null; level = ref ? Math.min(ref.level, 1) : 0; }
@@ -543,6 +561,7 @@ function addRow(kind, afterId, asSibling, onChart, asChild) {
   if (childOf && childOf.level === 0) childOf.row.keepTask = true; // the task stays a task, now holding a subtask
   normalizeLevels(rows);
   sel = row.id; commit(); refresh(); show(row.id);
+  track(kind === 'milestone' ? 'add-milestone' : 'add-task'); // subtasks count as tasks
 }
 /** after adding from the chart, name the new row right where it appeared */
 function editOnChart(id) {
@@ -1532,8 +1551,9 @@ function previewImport(rows, note) {
   const parts = [areas && `${areas} area${areas > 1 ? 's' : ''}`, `${tasks} task${tasks === 1 ? '' : 's'}`, ms && `${ms} milestone${ms > 1 ? 's' : ''}`].filter(Boolean);
   box.innerHTML = `<div class="sum">${note ? esc(note) + ' — ' : ''}Found ${parts.join(', ')}</div>` + info.map(n => `<div class="pr l${n.level}"><span>${n.milestone ? '◆ ' : ''}${esc(n.row.name)}</span><span>${esc(n.row.assignee)}</span><span>${fmtRange(n)}</span></div>`).join('');
 }
-let impTimer = null;
+let impTimer = null, impSrc = 'paste';
 $('#imp-text').addEventListener('input', () => {
+  impSrc = 'paste';
   clearTimeout(impTimer);
   impTimer = setTimeout(() => { let rows = []; try { rows = parseImport($('#imp-text').value); } catch (e) { console.error(e); } previewImport(rows); }, 150);
 });
@@ -1556,6 +1576,7 @@ $('#imp-file').addEventListener('change', async e => {
       $('#imp-preview').innerHTML = `<div class="sum">Project file “${esc(file.name)}” — ${st.rows.length} rows. Importing replaces the current plan and its styling.</div>`;
       $('#imp-go').disabled = false;
     } else if (/\.(xlsx|xlsm|xls|ods)$/i.test(file.name)) {
+      impSrc = 'spreadsheet';
       await loadScript('vendor/xlsx.full.min.js');
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -1564,6 +1585,7 @@ $('#imp-file').addEventListener('change', async e => {
       previewImport(parseImport(grid), file.name);
       if (!pending) previewImport(null, 'No tasks found in ' + file.name);
     } else {
+      impSrc = 'text-file';
       $('#imp-text').value = await file.text();
       previewImport(parseImport($('#imp-text').value), file.name);
     }
@@ -1571,6 +1593,7 @@ $('#imp-file').addEventListener('change', async e => {
 });
 $('#imp-go').addEventListener('click', () => {
   if (!pending) return;
+  track('import-' + (pending.state ? 'project-file' : impSrc));
   if (pending.state) state = pending.state;
   else if ($('#imp-replace').checked) state.rows = pending.rows;
   else state.rows = state.rows.concat(pending.rows);
@@ -1582,11 +1605,12 @@ $('#imp-go').addEventListener('click', () => {
   commit(); ensureFont(); refresh(); closeModal();
   toast(spread ? 'Imported and spread across your timeline' : 'Imported — drag the bars to fine-tune dates');
 });
-function openModal() { modal.hidden = false; $('#imp-text').value = ''; previewImport(null); setTimeout(() => $('#imp-text').focus(), 30); }
+function openModal() { impSrc = 'paste'; modal.hidden = false; $('#imp-text').value = ''; previewImport(null); setTimeout(() => $('#imp-text').focus(), 30); }
 function closeModal() { modal.hidden = true; }
 $('#btn-import').addEventListener('click', openModal);
 $('#imp-ai-copy').addEventListener('click', async () => {
   const text = $('#imp-ai-prompt').textContent + ' The plan: ';
+  track('copy-ai-prompt');
   try { await navigator.clipboard.writeText(text); toast('Prompt copied — paste it into your AI chat and describe the project'); } catch (e) { toast('Copy this into your AI chat: ' + text); }
 });
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
@@ -1781,6 +1805,7 @@ function linkDialog(url) { // when the browser won't let the page write to the c
 async function shareLink() {
   commit();
   const url = location.origin + location.pathname + '#p=' + await planToHash(state);
+  track('share-link');
   try { await navigator.clipboard.writeText(url); } catch (e) { linkDialog(url); return; }
   toast(url.length > 8000 ? `Link copied — it is long (${url.length.toLocaleString()} characters) and some apps cut long links; for a plan this size the project file is safer` : 'Link copied — whoever opens it gets this plan as it is now');
 }
@@ -1790,11 +1815,12 @@ async function openSharedLink() {
   const clear = () => history.replaceState(null, '', location.pathname + location.search);
   let plan = null;
   try { plan = m ? await hashToPlan(m[1]) : aiHashToPlan(ai[1]); } catch (e) { console.warn('shared link', e); }
-  if (!plan) { clear(); toast(ai ? 'That plan link couldn’t be read — ask the AI to check it against slideline.co/llms.txt' : 'That link is incomplete or damaged — ask for it to be sent again'); return; }
+  if (!plan) { clear(); track(ai ? 'open-ai-plan-link-failed' : 'open-share-link-failed'); toast(ai ? 'That plan link couldn’t be read — ask the AI to check it against slideline.co/llms.txt' : 'That link is incomplete or damaged — ask for it to be sent again'); return; }
   const open = () => {
     commit(); closePop();
     state = plan; sel = null; multi = new Set(); detailId = null;
     commit(); ensureFont(); refresh(); clear();
+    track(ai ? 'open-ai-plan-link' : 'open-share-link');
     toast('Shared plan opened — it is now saved in this browser');
   };
   let mine = null;
@@ -1818,6 +1844,7 @@ exportMenu.addEventListener('click', e => {
   if (!b) return;
   exportMenu.hidden = true;
   const fn = { png: exportPng, copy: exportCopy, pdf: exportPdf, pptx: exportPptx, json: exportJson, link: shareLink }[b.dataset.export];
+  if (b.dataset.export !== 'link') track('export-' + b.dataset.export);
   Promise.resolve().then(fn).catch(err => { console.error(err); toast('Export failed — ' + (err && err.message ? err.message : 'please try again')); });
 });
 
@@ -1853,6 +1880,7 @@ $('#btn-new').addEventListener('click', () => {
   state = blankState(state.settings);
   sel = null;
   commit(); refresh();
+  track('new-chart');
   toast('New plan started — Undo brings the old one back');
 });
 function syncTabs() { $$('[data-sheet]').forEach(b => b.classList.toggle('on', $('#' + b.dataset.sheet).classList.contains('open'))); }
