@@ -1,12 +1,13 @@
-// The readable #plan= link an AI writes from llms.txt: the worked example opens, lighter encodings and base64 open, a broken one says so, and the Import dialog points to it
+// The #plan= links in llms.txt: the worked examples (create, edit) open, standard JSON with the lightest encoding opens, lighter encodings and base64 open, a broken one says so, and the Import dialog points to it
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
   const b = await chromium.launch();
   const errs = [];
   const txt = fs.readFileSync(path.join(__dirname, '..', 'llms.txt'), 'utf8');
-  const example = txt.match(/https:\/\/slideline\.co\/#plan=\S+/g).pop().replace('https://slideline.co/', 'http://localhost:8765/');
-  const json = decodeURIComponent(example.split('#plan=')[1]);
+  const links = txt.match(/https:\/\/slideline\.co\/#plan=\{\S+/g).map(u => u.replace('https://slideline.co/', 'http://localhost:8765/'));
+  const [example, before, after] = links; // creating, then editing
+  const json = JSON.stringify(JSON.parse(txt.split('## Worked example: creating a plan')[1].split('The plan:')[1].split('The link to give back:')[0])); // standard JSON, as some AIs write it
   const open = async (url, viewport) => {
     const ctx = await b.newContext({ viewport: viewport || { width: 1400, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
     const p = await ctx.newPage(); p.on('pageerror', e => errs.push('ERR ' + e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
@@ -21,6 +22,12 @@ const fs = require('fs'), path = require('path');
   console.log('worked example:', await sum(p));
   await p.screenshot({ path: 'ai-example.png' });
   if (await p.evaluate(() => state.rows.length) !== 12) throw new Error('worked example did not open whole');
+
+  // the editing example: the edit landed and the design came along
+  const ep = await open(after);
+  console.log('edit example:', await ep.evaluate(() => { const f = state.rows.find(r => r.name === 'Front-end'); return JSON.stringify({ frontEnd: dayToIso(f.end) + ' @' + f.assignee + ' ' + f.progress + '%', font: state.settings.font, palette: state.settings.palette.id, rows: state.rows.length }); }));
+  const bp0 = await open(before);
+  console.log('before example font:', await bp0.evaluate(() => state.settings.font));
 
   // the minimum hand encoding (spaces and quotes only), and base64url from an agent that runs code
   const light = await open('http://localhost:8765/#plan=' + json.replace(/%/g, '%25').replace(/ /g, '%20').replace(/"/g, '%22'));

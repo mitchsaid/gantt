@@ -11,14 +11,19 @@ drag editing, palettes, assignees, progress, a date marker, baselines, and expor
 
 ## Layout
 - `index.html` — shell; scripts and CSS are loaded with `?v=N` for cache busting.
+- `js/link.js` — share links: `planToLink` / `linkToState` (loaded between core.js and app.js).
 - `js/core.js` — renderer-independent engine: `DEFAULT_SETTINGS`, palettes, `derive(rows)` (hierarchy, rolled-up dates / progress /
   status), `buildScene(state, opts)` (turns the plan into a flat list of drawable items), date helpers, `APP_VERSION`.
 - `js/app.js` — UI and state: `sanitize()`, the `DESIGN` control list (right-hand panel), plan outline, popover (`popHtml`, `syncPop`),
   keyboard handling, selection, exports (`sceneToSvg`, canvas `drawScene`, PptxGenJS in `exportPptx`).
 - `css/style.css`, `vendor/` (jsPDF, PptxGenJS, SheetJS — do not edit).
 - Storage: localStorage `gantt:v1` (plan + settings) and `gantt:ui` (panel state, saved palettes, accordion state).
-- Share links carry the plan in the URL hash (`#p=…`, `packPlan` / `unpackPlan` in app.js) and must keep opening: treat the
-  packed format like a saved file. Exec view (`execState`) and the headline (`autoHeadline`) live in core.js and are
+- Share links carry the plan in the URL hash in a readable format people and AI share (`js/link.js`, documented in
+  `llms.txt`): `#plan=<quote-light JSON>&style=<settings that differ from DEFAULT_SETTINGS>`. Links must keep opening, so
+  treat the format like a saved file; a new per-item field must be written in `linkPlanObject` and read in `linkPlanToState`
+  (`tests/share-link-format.js` round-trips every field). Because only changed settings travel, changing a default also
+  changes how existing links look. Old `#p=` links (compressed, `packPlan` / `unpackPlan`) are still read.
+- Exec view (`execState`) and the headline (`autoHeadline`) live in core.js and are
   applied inside `buildScene`, so every renderer gets them; in exec view `scene.info` is the collapsed plan, not `state.rows`.
 
 ## Conventions
@@ -28,7 +33,7 @@ drag editing, palettes, assignees, progress, a date marker, baselines, and expor
 - New design option: add the default in `DEFAULT_SETTINGS`, a control in `DESIGN` (it appears in the panel automatically), use it in
   `buildScene`. Plans already saved keep their stored settings, so changing a default only affects new plans.
 - New per-item flag: validate it in `sanitize()`, add a section in `popHtml()` (accordion `acc(...)`), and handle it in `rowChange` /
-  `rowInput`. Areas are items too (`n.isArea`); an area's own dates and progress are derived from what is inside it.
+  `rowInput`, and carry it in the share link (`js/link.js`). Areas are items too (`n.isArea`); an area's own dates and progress are derived from what is inside it.
 - Bump `APP_VERSION` (core.js) and every `?v=` in `index.html` together for each shipped change.
 
 ## Gotchas

@@ -1,68 +1,84 @@
 # Slideline
 
-> Slideline (https://slideline.co) turns a project plan into a clean, slide-ready Gantt chart. A plan can be handed over as a single link: the whole plan travels inside the URL, nothing is uploaded, and no account or API key is needed.
+> Slideline (https://slideline.co) turns a project plan into a clean, slide-ready Gantt chart. A whole plan, design included, travels inside one link: nothing is uploaded, and no account or API key is needed. The same link works for people and for AI: you can read it, edit it, or write a new one.
 
-This file tells an AI assistant or agent how to write that link. When someone asks you to make a plan in Slideline, or for a Slideline link, chart or Gantt chart, follow it: give back a link that opens the finished chart, not a task list for them to paste into Import.
+When someone asks you to make a plan in Slideline, or for a Slideline link, chart or Gantt chart, give back a link that opens the finished chart, not a task list for them to paste into Import. When someone gives you a Slideline link and asks for changes, read the plan from the link, change it, and give back a new link.
 
-## What to give back
+## The link
 
-1. Work out the plan with the person as you normally would: phases, tasks, dates, owners.
-2. Write the plan as JSON in the format below.
-3. Percent-encode it, put it after https://slideline.co/#plan= and give the person that link.
-4. Tell them to open it, then edit, restyle and export it (PowerPoint, PDF, PNG) in Slideline.
+    https://slideline.co/#plan=<the plan as JSON>&style=<design settings>
 
-Always start the link with exactly https://slideline.co/#plan= . The plan sits after the #, so it never reaches a server.
+- The plan part is JSON describing the items: names, dates, owners, progress, status and dependencies.
+- The style part is the design: palette, font, layout and so on. Only settings that differ from the defaults are listed. It is optional. Leave it out when you create a plan from scratch.
+- Slideline writes the JSON "quote-light" so the link stays short and readable: ' instead of ", and _ instead of a space. Inside a name, %5F is a real underscore, %5C%27 is an apostrophe, and other %XX codes are ordinary percent-encoding (%26 is &, %23 is #, %E2%80%94 is an em dash).
+- When you write a link, you can use the same quote-light style, or plain JSON percent-encoded with encodeURIComponent. Both open.
+
+## Editing a link someone gives you
+
+1. Read the plan part as JSON, as described above.
+2. Make the change they ask for: move dates, add or remove items, rename, change owners, progress or status.
+3. Keep every field and id you didn't mean to change, including colour, baseline, note, key, msAlign and the ids used by "after".
+4. Copy the &style=… part back exactly as it was, unless they asked for a design change.
+5. Give back the full new link, and say in one line what you changed.
 
 ## The plan format
 
     {
       "title": "Website relaunch",
+      "status": "green",
       "items": [ ...items, top to bottom... ]
     }
 
+"status" (optional) is the overall project status: "green", "amber" or "red".
+
 Each item can have:
 
-    name       Required. Keep it short, under about 40 characters.
-    start      First day, "YYYY-MM-DD".
-    end        Last day, "YYYY-MM-DD", inclusive (a one-day task has start equal to end).
-    days       Instead of end: the length in calendar days.
-    milestone  true for a one-day event such as a launch, sign-off or deadline. Give it "date": "YYYY-MM-DD".
-    items      The items inside this one.
-    owner      A person or team. Owners appear on the chart when any item has one.
-    progress   0 to 100, percent done. Progress shows when any item is above 0.
-    after      Names of the items this one waits for, e.g. ["Wireframes"]. Use the exact names. Dependency arrows show when any item has one.
-    status     "green" (on track), "amber" (at risk) or "red" (off track).
-    key        true marks a key milestone.
-    blocked    true, or a short reason as text, flags the item as blocked.
-    note       One short line of commentary, up to 120 characters, shown in the legend.
+    name        Required. Keep it short, under about 40 characters.
+    start, end  First and last day, "YYYY-MM-DD"; end is inclusive (a one-day task has start equal to end).
+    days        Instead of end: the length in calendar days.
+    milestone   true for a one-day event such as a launch, sign-off or deadline. Give it "date": "YYYY-MM-DD".
+    items       The items inside this one.
+    owner       A person or team.
+    progress    0 to 100, percent done. null means progress isn't tracked for this item.
+    status      "green" (on track), "amber" (at risk) or "red" (off track), unless the style part defines other statuses.
+    id          A short id, used by "after". Any number or text that is unique in the plan.
+    after       The items this one waits for, by id or by exact name, e.g. [3] or ["Wireframes"].
+    key         true marks a key milestone.
+    blocked     true, or a short reason as text, flags the item as blocked.
+    note        One short line of commentary, up to 120 characters, shown in the legend.
 
-Optional at the top level, next to "title":
+Slideline also writes these look-and-history fields. Keep them as they are when editing: color, baseline, changeNote, noteOff, msAlign, keepTask, newLine, blockedNote.
 
-    status     The overall project status: "green", "amber" or "red".
-    scale      "days", "weeks", "months" or "quarters". Leave it out and Slideline picks one.
-    today      true draws a line at today's date.
+Structure: use at most three levels. A top-level item with items inside is an area (a phase or workstream). An area's dates come from what is inside it, so an area has no dates. Inside an area go tasks and milestones, and a task can hold subtasks. Use real calendar dates. If the person gives no start date, start on the coming Monday.
 
-Structure: use at most three levels. A top-level item with items inside is an area (a phase or workstream). An area's dates come from what is inside it, so give an area no dates. Inside an area go tasks and milestones, and a task can hold subtasks. Use real calendar dates. If the person gives no start date, start on the coming Monday.
+## The style part
 
-## Encoding
+A comma-separated list of name:value pairs, for example:
 
-Write the JSON on one line with no extra spaces, then percent-encode it the way JavaScript's encodeURIComponent does. If you can run code, do exactly that:
+    &style=palette:vivid,font:Lora,assignees:true,progress:true,scale:months
 
-    JavaScript:  "https://slideline.co/#plan=" + encodeURIComponent(JSON.stringify(plan))
-    Python:      "https://slideline.co/#plan=" + urllib.parse.quote(json.dumps(plan, separators=(",", ":")), safe="")
+You rarely need to write it yourself. Without one, Slideline uses its default design, and it shows owners, progress and dependency arrows when the plan uses them. When a person asks for a design change, these are the common settings:
 
-If you cannot run code, encode by hand. At the very least replace every space with %20, every " with %22, every % with %25 and every # with %23, and leave no line breaks. Encoding { } [ ] : , too (as %7B %7D %5B %5D %3A %2C) is safest, because some chat apps cut a link short at those characters. A link that encodes only the minimum still opens.
+    palette     bold, spectrum, vivid, corporate, earth, pastel or candy
+    font        A Google Fonts family, with _ for spaces, e.g. Playfair_Display
+    scale       days, weeks, sprints, months or quarters
+    assignees   true or false: show owners
+    progress    true or false: show progress
+    deps        true or false: show dependency arrows
+    todayLine   true or false: draw a date marker; todayDate:YYYY-MM-DD fixes its date
+    execView    true or false: one bar per area, for executives
+    criticalPath true or false: highlight the critical path
 
-An agent that runs code may instead put the JSON base64url-encoded (no padding) after #plan= .
+Other settings may appear. Keep them unless asked to change them.
 
 ## Limits
 
-- Keep the whole link under about 6,000 characters, which is roughly 50 to 60 items with short names. Some chat apps, email clients and messengers cut longer links. For a bigger plan, drop the notes or give one link per phase.
+- Keep the whole link under about 6,000 characters, which is roughly 60 to 80 items with short names. Some chat apps, email clients and messengers cut longer links. For a bigger plan, drop the notes or give one link per phase.
 - Names over about 40 characters get cramped on the chart, though the full name is kept.
 - Dates must fall between 1990 and 2100.
 - A link is a snapshot. Changes made after opening it stay in that browser. To send a newer version, the person uses Share link in Slideline.
 
-## Worked example
+## Worked example: creating a plan
 
 The plan:
 
@@ -158,8 +174,18 @@ The plan:
 
 The link to give back:
 
-https://slideline.co/#plan=%7B%22title%22%3A%22Website%20relaunch%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Discovery%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Kickoff%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-01-04%22%7D%2C%7B%22name%22%3A%22Stakeholder%20interviews%22%2C%22start%22%3A%222027-01-04%22%2C%22end%22%3A%222027-01-15%22%2C%22owner%22%3A%22Priya%22%7D%2C%7B%22name%22%3A%22Research%20synthesis%22%2C%22start%22%3A%222027-01-18%22%2C%22end%22%3A%222027-01-22%22%2C%22owner%22%3A%22Sam%22%2C%22after%22%3A%5B%22Stakeholder%20interviews%22%5D%7D%5D%7D%2C%7B%22name%22%3A%22Design%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Wireframes%22%2C%22start%22%3A%222027-01-25%22%2C%22end%22%3A%222027-02-05%22%2C%22owner%22%3A%22Lena%22%2C%22after%22%3A%5B%22Research%20synthesis%22%5D%7D%2C%7B%22name%22%3A%22Visual%20design%22%2C%22start%22%3A%222027-02-08%22%2C%22end%22%3A%222027-02-19%22%2C%22owner%22%3A%22Marco%22%2C%22after%22%3A%5B%22Wireframes%22%5D%7D%2C%7B%22name%22%3A%22Design%20sign-off%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-02-19%22%2C%22key%22%3Atrue%7D%5D%7D%2C%7B%22name%22%3A%22Build%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Front-end%22%2C%22start%22%3A%222027-02-22%22%2C%22end%22%3A%222027-03-19%22%2C%22owner%22%3A%22Ana%22%2C%22after%22%3A%5B%22Visual%20design%22%5D%7D%2C%7B%22name%22%3A%22Content%20migration%22%2C%22start%22%3A%222027-03-01%22%2C%22end%22%3A%222027-03-19%22%2C%22owner%22%3A%22Sam%22%7D%2C%7B%22name%22%3A%22Go-live%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-03-26%22%2C%22key%22%3Atrue%2C%22after%22%3A%5B%22Front-end%22%2C%22Content%20migration%22%5D%7D%5D%7D%5D%7D
+https://slideline.co/#plan={'title':'Website_relaunch','items':[{'name':'Discovery','items':[{'name':'Kickoff','milestone':true,'date':'2027-01-04'},{'id':1,'name':'Stakeholder_interviews','start':'2027-01-04','end':'2027-01-15','owner':'Priya'},{'id':2,'name':'Research_synthesis','start':'2027-01-18','end':'2027-01-22','owner':'Sam','after':[1]}]},{'name':'Design','items':[{'id':3,'name':'Wireframes','start':'2027-01-25','end':'2027-02-05','owner':'Lena','after':[2]},{'id':4,'name':'Visual_design','start':'2027-02-08','end':'2027-02-19','owner':'Marco','after':[3]},{'name':'Design_sign-off','milestone':true,'date':'2027-02-19','key':true}]},{'name':'Build','items':[{'id':5,'name':'Front-end','start':'2027-02-22','end':'2027-03-19','owner':'Ana','after':[4]},{'id':6,'name':'Content_migration','start':'2027-03-01','end':'2027-03-19','owner':'Sam'},{'name':'Go-live','milestone':true,'date':'2027-03-26','key':true,'after':[5,6]}]}]}&style=deps:true,assignees:true,dateOrder:mdy
+
+## Worked example: editing a plan
+
+The person sends this link and says "Front-end will take a week longer; Jo is joining Ana on it, and it's 40% done":
+
+https://slideline.co/#plan={'title':'Website_relaunch','items':[{'name':'Discovery','items':[{'name':'Kickoff','milestone':true,'date':'2027-01-04'},{'id':1,'name':'Stakeholder_interviews','start':'2027-01-04','end':'2027-01-15','owner':'Priya'},{'id':2,'name':'Research_synthesis','start':'2027-01-18','end':'2027-01-22','owner':'Sam','after':[1]}]},{'name':'Design','items':[{'id':3,'name':'Wireframes','start':'2027-01-25','end':'2027-02-05','owner':'Lena','after':[2]},{'id':4,'name':'Visual_design','start':'2027-02-08','end':'2027-02-19','owner':'Marco','after':[3]},{'name':'Design_sign-off','milestone':true,'date':'2027-02-19','key':true}]},{'name':'Build','items':[{'id':5,'name':'Front-end','start':'2027-02-22','end':'2027-03-19','owner':'Ana','after':[4]},{'id':6,'name':'Content_migration','start':'2027-03-01','end':'2027-03-19','owner':'Sam'},{'name':'Go-live','milestone':true,'date':'2027-03-26','key':true,'after':[5,6]}]}]}&style=deps:true,assignees:true,dateOrder:dmy,progress:true,palette:vivid,font:Lora
+
+You give back this link. Front-end's end date, owner and progress changed, Go-live moved a week, and the style part was copied over unchanged:
+
+https://slideline.co/#plan={'title':'Website_relaunch','items':[{'name':'Discovery','items':[{'name':'Kickoff','milestone':true,'date':'2027-01-04'},{'id':1,'name':'Stakeholder_interviews','start':'2027-01-04','end':'2027-01-15','owner':'Priya'},{'id':2,'name':'Research_synthesis','start':'2027-01-18','end':'2027-01-22','owner':'Sam','after':[1]}]},{'name':'Design','items':[{'id':3,'name':'Wireframes','start':'2027-01-25','end':'2027-02-05','owner':'Lena','after':[2]},{'id':4,'name':'Visual_design','start':'2027-02-08','end':'2027-02-19','owner':'Marco','after':[3]},{'name':'Design_sign-off','milestone':true,'date':'2027-02-19','key':true}]},{'name':'Build','items':[{'id':5,'name':'Front-end','start':'2027-02-22','end':'2027-03-26','owner':'Ana_and_Jo','progress':40,'after':[4]},{'id':6,'name':'Content_migration','start':'2027-03-01','end':'2027-03-19','owner':'Sam'},{'name':'Go-live','milestone':true,'date':'2027-04-02','key':true,'after':[5,6]}]}]}&style=deps:true,assignees:true,dateOrder:dmy,progress:true,palette:vivid,font:Lora
 
 ## If it doesn't open
 
-Slideline says "That plan link couldn't be read" when the JSON is invalid or the link was cut short. Check that the JSON parses, that quotes and spaces are encoded, and that the person received the whole link.
+Slideline says "That plan link couldn't be read" when the JSON is invalid or the link was cut short. Check that the JSON parses, that every quote is closed, and that the person received the whole link.

@@ -1717,8 +1717,8 @@ async function exportPptx() {
 function exportJson() { commit(); download(new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' }), fileBase() + '.json'); toast('Project file saved'); }
 
 // ---------------------------------------------------------------- share link
-// The whole plan travels in the link's hash (#p=…): compressed JSON, never sent to a server. Row fields at their defaults
-// are left out, and ids are shortened, to keep the link small.
+// Links are written in the readable format of js/link.js (#plan=…&style=…). Links made before v131 carried compressed JSON
+// (#p=…); they are still read here.
 const b64u = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64u = s => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/')), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
 const pipeBytes = async (bytes, through) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(through)).arrayBuffer());
@@ -1740,69 +1740,6 @@ function unpackPlan(o) {
   const rows = o.r.filter(r => r && typeof r === 'object').map(r => Object.assign({}, r, { id: ids.get(String(r.id)), deps: (Array.isArray(r.deps) ? r.deps : []).map(d => ids.get(String(d))).filter(Boolean) }));
   return sanitize({ settings: Object.assign({}, DEFAULT_SETTINGS, o.s && typeof o.s === 'object' ? o.s : {}), rows });
 }
-/** The readable plan an AI writes into a link (#plan=…, documented in llms.txt): nested items with ISO dates, owners and
- *  dependencies by name. Lenient on purpose: an agent's small slips (a missing end, a date-time, deeper nesting) still open. */
-function aiPlanToState(o) {
-  if (!o || typeof o !== 'object') return null;
-  const list = Array.isArray(o.items) ? o.items : Array.isArray(o) ? o : null;
-  if (!list) return null;
-  const rows = [], named = [], base = mondayOf(todayDay());
-  const day = v => { const d = isoToDay(typeof v === 'string' ? v.trim() : ''); return d != null && plausibleDay(d) ? d : null; };
-  const walk = (items, level) => items.forEach(it => {
-    if (typeof it === 'string') it = { name: it };
-    if (!it || typeof it !== 'object') return;
-    const kids = Array.isArray(it.items) ? it.items : Array.isArray(it.children) ? it.children : [];
-    const ms = it.milestone === true || it.type === 'milestone';
-    let start = day(it.start), end = day(it.end);
-    const at = day(it.date);
-    if (ms && at != null) start = end = at;
-    if (start == null) start = end != null ? end : at != null ? at : base;
-    const days = Math.round(+it.days);
-    if (end == null) end = ms ? start : start + (days > 0 ? days - 1 : 4);
-    if (end < start) end = start;
-    const row = newRow({ level: Math.min(level, 2), name: String(it.name || it.title || '').slice(0, 200), type: ms ? 'milestone' : 'task', start, end: ms ? start : end, assignee: String(it.owner || it.assignee || '').slice(0, 60) });
-    const pr = +String(it.progress == null ? '' : it.progress).replace('%', '');
-    if (it.progress != null && Number.isFinite(pr)) row.progress = clamp(Math.round(pr), 0, 100);
-    if (typeof it.status === 'string') row.status = it.status.toLowerCase();
-    if (typeof it.note === 'string') row.note = it.note;
-    if (it.key === true) row.key = true;
-    if (it.blocked) { row.blocked = true; if (typeof it.blocked === 'string') row.blockedNote = it.blocked; }
-    const after = it.after == null ? [] : Array.isArray(it.after) ? it.after : [it.after];
-    rows.push(row); named.push([row, after.map(a => String(a).trim().toLowerCase()).filter(Boolean)]);
-    walk(kids, level + 1);
-  });
-  walk(list, 0);
-  if (!rows.length) return null;
-  const byName = new Map();
-  rows.forEach(r => { const k = r.name.trim().toLowerCase(); if (k && !byName.has(k)) byName.set(k, r.id); });
-  named.forEach(([r, after]) => { r.deps = [...new Set(after.map(a => byName.get(a)).filter(id => id && id !== r.id))]; });
-  const has = f => rows.some(f);
-  const settings = Object.assign({}, DEFAULT_SETTINGS, {
-    title: String(o.title || 'Project plan').slice(0, 120),
-    assignees: has(r => r.assignee), progress: has(r => r.progress > 0), deps: has(r => r.deps.length),
-  });
-  if (typeof o.status === 'string') settings.projectStatus = o.status.toLowerCase();
-  if (o.today === true) settings.todayLine = true;
-  if (['days', 'weeks', 'months', 'quarters'].includes(o.scale)) settings.scale = o.scale;
-  return sanitize({ settings, rows });
-}
-/** #plan= holds that JSON percent-encoded (or left raw, as some chat apps leave it), or base64url-encoded by an agent that runs code */
-function aiHashToPlan(v) {
-  const tries = [];
-  try { tries.push(decodeURIComponent(v)); } catch (e) { /* a stray % */ }
-  tries.push(v);
-  if (/^[A-Za-z0-9_-]+$/.test(v)) { try { tries.push(new TextDecoder().decode(unb64u(v))); } catch (e) { /* not base64 */ } }
-  for (const t of tries) {
-    const j = t.trim().replace(/^[^{[]+/, ''); // a stray quote or bracket from the chat
-    try { return aiPlanToState(JSON.parse(j)); } catch (e) { /* try the next reading */ }
-  }
-  return null;
-}
-async function planToHash(st) {
-  const bytes = new TextEncoder().encode(JSON.stringify(packPlan(st)));
-  if (typeof CompressionStream === 'function') { try { return 'z' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); } catch (e) { /* fall back to plain */ } }
-  return 'j' + b64u(bytes);
-}
 async function hashToPlan(h) {
   const bytes = unb64u(h.slice(1));
   const raw = h[0] === 'z' ? await pipeBytes(bytes, new DecompressionStream('deflate-raw')) : bytes;
@@ -1818,17 +1755,17 @@ function linkDialog(url) { // when the browser won't let the page write to the c
 }
 async function shareLink() {
   commit();
-  const url = location.origin + location.pathname + '#p=' + await planToHash(state);
+  const url = location.origin + location.pathname + '#' + planToLink(state);
   track('share-link');
   try { await navigator.clipboard.writeText(url); } catch (e) { linkDialog(url); return; }
-  toast(url.length > 8000 ? `Link copied — it is long (${url.length.toLocaleString()} characters) and some apps cut long links; for a plan this size the project file is safer` : 'Link copied — whoever opens it gets this plan as it is now');
+  toast(url.length > 6000 ? `Link copied — it is long (${url.length.toLocaleString()} characters) and some apps cut long links; for a plan this size the project file is safer` : 'Link copied — whoever opens it gets this plan as it is now');
 }
 async function openSharedLink() {
-  const m = /^#p=([zj][A-Za-z0-9_-]+)$/.exec(location.hash), ai = /^#plan=(.+)$/s.exec(location.hash);
+  const m = /^#p=([zj][A-Za-z0-9_-]+)$/.exec(location.hash), ai = /(?:^#|&)plan=./.test(location.hash);
   if (!m && !ai) return;
   const clear = () => history.replaceState(null, '', location.pathname + location.search);
   let plan = null;
-  try { plan = m ? await hashToPlan(m[1]) : aiHashToPlan(ai[1]); } catch (e) { console.warn('shared link', e); }
+  try { plan = m ? await hashToPlan(m[1]) : linkToState(location.hash); } catch (e) { console.warn('shared link', e); }
   if (!plan) { clear(); track(ai ? 'open-ai-plan-link-failed' : 'open-share-link-failed'); toast(ai ? 'That plan link couldn’t be read — ask the AI to check it against slideline.co/llms.txt' : 'That link is incomplete or damaged — ask for it to be sent again'); return; }
   const open = () => {
     commit(); closePop();

@@ -48,7 +48,7 @@ const { chromium } = require('playwright');
   // persistence and share-link round trip
   await p.evaluate(() => { commit(); }); await p.reload(); await p.waitForTimeout(800);
   console.log('after reload     :', await p.evaluate(() => state.settings.statuses.map(s => s.name).join(' > ') + ' | note: ' + state.rows.find(r => r.name === 'Wireframes').note));
-  console.log('share round trip :', await p.evaluate(async () => { const st = await hashToPlan(await planToHash(state)); return st.settings.statuses.length + ' statuses, note ' + st.rows.find(r => r.name === 'Wireframes').note; }));
+  console.log('share round trip :', await p.evaluate(async () => { const st = linkToState('#' + planToLink(state)); return st.settings.statuses.length + ' statuses, note ' + st.rows.find(r => r.name === 'Wireframes').note; }));
   // an empty note is no note
   await clickBar('Visual design'); await p.click('.pop [data-pmenu="add"]'); await p.click('.pop-menu [data-madd="note"]'); await p.waitForTimeout(100); await p.click('.pop [data-pback]'); await p.waitForTimeout(100);
   console.log('empty note gone  :', (await R('Visual design')).note === undefined);

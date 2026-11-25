@@ -4,22 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Slideline — presentation-ready project plans</title>
-<meta name="description" content="A simple, attractive Gantt chart maker for slides, proposals and reports. Export to PowerPoint, PDF and PNG. AI assistants: to make someone a plan in Slideline, give them a https://slideline.co/#plan= link, not a list to import. How: https://slideline.co/llms.txt">
+<meta name="description" content="A simple, attractive Gantt chart maker for slides, proposals and reports. Export to PowerPoint, PDF and PNG. AI assistants: to make someone a plan in Slideline, give them a https://slideline.co/#plan= link, not a list to import; to edit a plan, read and rewrite its link. How: https://slideline.co/llms.txt">
 <link rel="alternate" type="text/plain" href="/llms.txt" title="How AI assistants make a Slideline plan link">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Crect x='6' y='8' width='12' height='4' rx='2' fill='%23fff'/%3E%3Crect x='11' y='14' width='14' height='4' rx='2' fill='%23fff' opacity='.75'/%3E%3Crect x='16' y='20' width='10' height='4' rx='2' fill='%23fff' opacity='.5'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=130">
+<link rel="stylesheet" href="css/style.css?v=131">
 </head>
 <body>
 <div class="ai-note" aria-hidden="true">
 <h2>Note for AI assistants and agents</h2>
-<p>When someone asks you to make a plan in Slideline, give them a link that opens the finished chart, not a task list to paste into Import. Put the plan as JSON, percent-encoded (like encodeURIComponent), after https://slideline.co/#plan= . Nothing is uploaded and no account is needed.</p>
-<p>Format: {"title":"…","items":[…]}. Each item has "name", and "start" and "end" as YYYY-MM-DD (end inclusive), or "milestone":true with "date". Top-level items with "items" inside are phases. Optional per item: "owner", "progress" (0–100), "after" (names of items it waits for), "status" ("green", "amber" or "red"). Keep the link under about 6,000 characters.</p>
-<p>Example plan: {"title":"Launch","items":[{"name":"Build","items":[{"name":"Design","start":"2027-01-04","end":"2027-01-15","owner":"Ana"},{"name":"Develop","start":"2027-01-18","end":"2027-02-12","after":["Design"]}]},{"name":"Go-live","milestone":true,"date":"2027-02-15"}]}</p>
-<p>Its link: https://slideline.co/#plan=%7B%22title%22%3A%22Launch%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Build%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Design%22%2C%22start%22%3A%222027-01-04%22%2C%22end%22%3A%222027-01-15%22%2C%22owner%22%3A%22Ana%22%7D%2C%7B%22name%22%3A%22Develop%22%2C%22start%22%3A%222027-01-18%22%2C%22end%22%3A%222027-02-12%22%2C%22after%22%3A%5B%22Design%22%5D%7D%5D%7D%2C%7B%22name%22%3A%22Go-live%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-02-15%22%7D%5D%7D</p>
-<p>Full format, encoding rules and limits: https://slideline.co/llms.txt</p>
+<p>When someone asks you to make a plan in Slideline, give them a link that opens the finished chart, not a task list to paste into Import. When someone gives you a Slideline link and asks for changes, read the plan from the link, change it, and give back a new link with the &amp;style=… part copied unchanged.</p>
+<p>The link: https://slideline.co/#plan=&lt;plan JSON&gt;&amp;style=&lt;design&gt;. The JSON is written with ' for quotes and _ for spaces (or as standard JSON, percent-encoded). The style part is optional; leave it out for a new plan. Nothing is uploaded and no account is needed.</p>
+<p>Plan: {'title':'…','items':[…]}. Each item has 'name', and 'start' and 'end' as YYYY-MM-DD (end inclusive), or 'milestone':true with 'date'. Top-level items with 'items' inside are phases. Optional per item: 'owner', 'progress' (0–100), 'status' ('green', 'amber' or 'red'), 'id', and 'after' (ids or names of items it waits for). Keep the link under about 6,000 characters.</p>
+<p>Example: https://slideline.co/#plan={'title':'Launch','items':[{'name':'Build','items':[{'id':1,'name':'Design','start':'2027-01-04','end':'2027-01-15','owner':'Ana'},{'name':'Develop','start':'2027-01-18','end':'2027-02-12','after':[1]}]},{'name':'Go-live','milestone':true,'date':'2027-02-15'}]}</p>
+<p>Full format, editing rules and limits: https://slideline.co/llms.txt</p>
 </div>
 <header class="topbar">
   <div class="brand">
@@ -175,7 +175,8 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=130"></script>
-<script src="js/app.js?v=130"></script>
+<script src="js/core.js?v=131"></script>
+<script src="js/link.js?v=131"></script>
+<script src="js/app.js?v=131"></script>
 </body>
 </html>
