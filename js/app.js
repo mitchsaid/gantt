@@ -1894,12 +1894,12 @@ $('#btn-new').addEventListener('click', () => {
   sel = null;
   commit(); refresh();
   track('new-chart');
-  if (!ui.guideNewOff) showGuide('new');
+  showGuide('new');
   toast('New plan started — Undo brings the old one back');
 });
 /** Ways to start: a card above the chart on a first visit (over the example plan) and on a new plan, offering three starts —
  *  edit it here, paste a list, or ask an AI for a plan link. It goes as soon as the plan changes. Choosing on the first-visit
- *  card, or closing it, ends it for good (ui.guideFirst = 'done'); the new-plan card's ✕ turns it off for good (ui.guideNewOff). */
+ *  card, or closing it, ends it for good (ui.guideFirst = 'done'); the new-plan card comes back on every new plan; its ✕ closes it for that plan only. */
 const GUIDE_ICON = {
   edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
   paste: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>',
@@ -1911,7 +1911,7 @@ function showGuide(mode) {
   const opt = (act, icon, title, sub) => `<button class="guide-opt" type="button" data-guide="${act}">${GUIDE_ICON[icon]}<span class="guide-t">${title}</span><span class="guide-s">${sub}</span></button>`;
   const el = $('#guide');
   el.innerHTML = `<div class="guide-head"><b>${first ? 'This is an example plan. Make it yours:' : 'How do you want to start?'}</b>`
-    + `<button class="guide-x" type="button" data-guide="dismiss" title="${first ? 'Close' : 'Don’t show this again'}" aria-label="${first ? 'Close' : 'Don’t show this again'}">✕</button></div>`
+    + `<button class="guide-x" type="button" data-guide="dismiss" title="Close" aria-label="Close">✕</button></div>`
     + '<div class="guide-opts">'
     + opt('edit', 'edit', first ? 'Edit this example' : 'Type it in', first ? 'Rename, drag and add to it' : 'Rename tasks, add more')
     + opt('paste', 'paste', 'Paste a list', 'From a doc, email or sheet')
@@ -1934,7 +1934,6 @@ $('#guide').addEventListener('click', e => {
   if (!b) return;
   const act = b.dataset.guide, mode = guideMode;
   track('guide-' + (act === 'edit' && mode === 'first' ? 'edit-example' : act === 'edit' ? 'type-in' : act === 'ai' ? 'ask-ai' : act));
-  if (act === 'dismiss' && mode === 'new') { ui.guideNewOff = true; saveUi(); }
   hideGuide();
   if (act === 'paste') openModal();
   else if (act === 'ai') copyAiPrompt();

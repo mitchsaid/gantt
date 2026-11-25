@@ -1,4 +1,4 @@
-// Ways to start: the card shows on a first visit and on a new plan, its three choices work and are counted by name, it goes when the plan changes, and closing it keeps it gone
+// Ways to start: the card shows on a first visit and on a new plan, its three choices work and are counted by name, it goes when the plan changes, and closing the first-visit card keeps it gone while a new plan always offers it again
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch();
@@ -46,11 +46,11 @@ const { chromium } = require('playwright');
   await p.click('[data-guide="dismiss"]'); await p.waitForTimeout(150);
   await p.click('#btn-new'); await p.waitForTimeout(200);
   console.log('after ✕ on a new plan, next new plan:', await shown(p));
-  if (await shown(p)) throw new Error('the new-plan card came back after ✕');
+  if (!await shown(p)) throw new Error('the new-plan card should come back on the next new plan');
   const ev = await events(p);
   console.log('events:', ev);
   for (const want of ['guide-paste', 'guide-ask-ai', 'guide-dismiss']) if (!ev.includes(want)) throw new Error('missing event ' + want);
-  console.log('stored ui:', await p.evaluate(() => { const u = JSON.parse(localStorage.getItem('gantt:ui')); return u.guideFirst + ' ' + u.guideNewOff; }));
+  console.log('stored ui:', await p.evaluate(() => { const u = JSON.parse(localStorage.getItem('gantt:ui')); return u.guideFirst; }));
 
   // someone who already has a plan here never sees the first-visit card; a shared link doesn't show it either
   p = await fresh({ width: 1400, height: 900 });
