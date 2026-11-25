@@ -1585,6 +1585,10 @@ $('#imp-go').addEventListener('click', () => {
 function openModal() { modal.hidden = false; $('#imp-text').value = ''; previewImport(null); setTimeout(() => $('#imp-text').focus(), 30); }
 function closeModal() { modal.hidden = true; }
 $('#btn-import').addEventListener('click', openModal);
+$('#imp-ai-copy').addEventListener('click', async () => {
+  const text = $('#imp-ai-prompt').textContent + ' The plan: ';
+  try { await navigator.clipboard.writeText(text); toast('Prompt copied — paste it into your AI chat and describe the project'); } catch (e) { toast('Copy this into your AI chat: ' + text); }
+});
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
 $$('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
 
@@ -1698,6 +1702,64 @@ function unpackPlan(o) {
   const rows = o.r.filter(r => r && typeof r === 'object').map(r => Object.assign({}, r, { id: ids.get(String(r.id)), deps: (Array.isArray(r.deps) ? r.deps : []).map(d => ids.get(String(d))).filter(Boolean) }));
   return sanitize({ settings: Object.assign({}, DEFAULT_SETTINGS, o.s && typeof o.s === 'object' ? o.s : {}), rows });
 }
+/** The readable plan an AI writes into a link (#plan=…, documented in llms.txt): nested items with ISO dates, owners and
+ *  dependencies by name. Lenient on purpose: an agent's small slips (a missing end, a date-time, deeper nesting) still open. */
+function aiPlanToState(o) {
+  if (!o || typeof o !== 'object') return null;
+  const list = Array.isArray(o.items) ? o.items : Array.isArray(o) ? o : null;
+  if (!list) return null;
+  const rows = [], named = [], base = mondayOf(todayDay());
+  const day = v => { const d = isoToDay(typeof v === 'string' ? v.trim() : ''); return d != null && plausibleDay(d) ? d : null; };
+  const walk = (items, level) => items.forEach(it => {
+    if (typeof it === 'string') it = { name: it };
+    if (!it || typeof it !== 'object') return;
+    const kids = Array.isArray(it.items) ? it.items : Array.isArray(it.children) ? it.children : [];
+    const ms = it.milestone === true || it.type === 'milestone';
+    let start = day(it.start), end = day(it.end);
+    const at = day(it.date);
+    if (ms && at != null) start = end = at;
+    if (start == null) start = end != null ? end : at != null ? at : base;
+    const days = Math.round(+it.days);
+    if (end == null) end = ms ? start : start + (days > 0 ? days - 1 : 4);
+    if (end < start) end = start;
+    const row = newRow({ level: Math.min(level, 2), name: String(it.name || it.title || '').slice(0, 200), type: ms ? 'milestone' : 'task', start, end: ms ? start : end, assignee: String(it.owner || it.assignee || '').slice(0, 60) });
+    const pr = +String(it.progress == null ? '' : it.progress).replace('%', '');
+    if (it.progress != null && Number.isFinite(pr)) row.progress = clamp(Math.round(pr), 0, 100);
+    if (typeof it.status === 'string') row.status = it.status.toLowerCase();
+    if (typeof it.note === 'string') row.note = it.note;
+    if (it.key === true) row.key = true;
+    if (it.blocked) { row.blocked = true; if (typeof it.blocked === 'string') row.blockedNote = it.blocked; }
+    const after = it.after == null ? [] : Array.isArray(it.after) ? it.after : [it.after];
+    rows.push(row); named.push([row, after.map(a => String(a).trim().toLowerCase()).filter(Boolean)]);
+    walk(kids, level + 1);
+  });
+  walk(list, 0);
+  if (!rows.length) return null;
+  const byName = new Map();
+  rows.forEach(r => { const k = r.name.trim().toLowerCase(); if (k && !byName.has(k)) byName.set(k, r.id); });
+  named.forEach(([r, after]) => { r.deps = [...new Set(after.map(a => byName.get(a)).filter(id => id && id !== r.id))]; });
+  const has = f => rows.some(f);
+  const settings = Object.assign({}, DEFAULT_SETTINGS, {
+    title: String(o.title || 'Project plan').slice(0, 120),
+    assignees: has(r => r.assignee), progress: has(r => r.progress > 0), deps: has(r => r.deps.length),
+  });
+  if (typeof o.status === 'string') settings.projectStatus = o.status.toLowerCase();
+  if (o.today === true) settings.todayLine = true;
+  if (['days', 'weeks', 'months', 'quarters'].includes(o.scale)) settings.scale = o.scale;
+  return sanitize({ settings, rows });
+}
+/** #plan= holds that JSON percent-encoded (or left raw, as some chat apps leave it), or base64url-encoded by an agent that runs code */
+function aiHashToPlan(v) {
+  const tries = [];
+  try { tries.push(decodeURIComponent(v)); } catch (e) { /* a stray % */ }
+  tries.push(v);
+  if (/^[A-Za-z0-9_-]+$/.test(v)) { try { tries.push(new TextDecoder().decode(unb64u(v))); } catch (e) { /* not base64 */ } }
+  for (const t of tries) {
+    const j = t.trim().replace(/^[^{[]+/, ''); // a stray quote or bracket from the chat
+    try { return aiPlanToState(JSON.parse(j)); } catch (e) { /* try the next reading */ }
+  }
+  return null;
+}
 async function planToHash(st) {
   const bytes = new TextEncoder().encode(JSON.stringify(packPlan(st)));
   if (typeof CompressionStream === 'function') { try { return 'z' + b64u(await pipeBytes(bytes, new CompressionStream('deflate-raw'))); } catch (e) { /* fall back to plain */ } }
@@ -1723,12 +1785,12 @@ async function shareLink() {
   toast(url.length > 8000 ? `Link copied — it is long (${url.length.toLocaleString()} characters) and some apps cut long links; for a plan this size the project file is safer` : 'Link copied — whoever opens it gets this plan as it is now');
 }
 async function openSharedLink() {
-  const m = /^#p=([zj][A-Za-z0-9_-]+)$/.exec(location.hash);
-  if (!m) return;
+  const m = /^#p=([zj][A-Za-z0-9_-]+)$/.exec(location.hash), ai = /^#plan=(.+)$/s.exec(location.hash);
+  if (!m && !ai) return;
   const clear = () => history.replaceState(null, '', location.pathname + location.search);
   let plan = null;
-  try { plan = await hashToPlan(m[1]); } catch (e) { console.warn('shared link', e); }
-  if (!plan) { clear(); toast('That link is incomplete or damaged — ask for it to be sent again'); return; }
+  try { plan = m ? await hashToPlan(m[1]) : aiHashToPlan(ai[1]); } catch (e) { console.warn('shared link', e); }
+  if (!plan) { clear(); toast(ai ? 'That plan link couldn’t be read — ask the AI to check it against slideline.co/llms.txt' : 'That link is incomplete or damaged — ask for it to be sent again'); return; }
   const open = () => {
     commit(); closePop();
     state = plan; sel = null; multi = new Set(); detailId = null;

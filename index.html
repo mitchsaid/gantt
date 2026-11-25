@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="font-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="css/style.css?v=119">
+<link rel="stylesheet" href="css/style.css?v=120">
 </head>
 <body>
 <header class="topbar">
@@ -152,6 +152,7 @@
       <label class="file-btn btn ghost"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Upload a sheet</span><input type="file" id="imp-file" accept=".xlsx,.xls,.csv,.tsv,.txt,.md,.ods,.json" hidden></label>
       <span class="imp-file-note">.xlsx, .csv, .tsv, or a saved project (.json)</span>
     </div>
+    <div class="imp-ai"><span><b>Or ask an AI.</b> In ChatGPT, Claude, Gemini or Copilot (with web access on), ask: <q id="imp-ai-prompt">Read slideline.co/llms.txt and give me my project plan as a Slideline link.</q> <a href="llms.txt" target="_blank" rel="noopener">How it works</a></span><button class="btn ghost" id="imp-ai-copy" type="button">Copy prompt</button></div>
     <div id="imp-preview" class="imp-preview"></div>
     <div class="modal-foot">
       <label class="check"><input type="checkbox" id="imp-replace" checked> Replace current plan</label>
@@ -164,7 +165,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="js/core.js?v=119"></script>
-<script src="js/app.js?v=119"></script>
+<script src="js/core.js?v=120"></script>
+<script src="js/app.js?v=120"></script>
 </body>
 </html>

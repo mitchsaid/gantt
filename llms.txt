@@ -1,0 +1,165 @@
+# Slideline
+
+> Slideline (https://slideline.co) turns a project plan into a clean, slide-ready Gantt chart. A plan can be handed over as a single link: the whole plan travels inside the URL, nothing is uploaded, and no account or API key is needed.
+
+This file tells an AI assistant or agent how to write that link. When someone asks you for "a project plan as a Slideline link", "a Slideline chart" or "a Gantt chart link", follow it.
+
+## What to give back
+
+1. Work out the plan with the person as you normally would: phases, tasks, dates, owners.
+2. Write the plan as JSON in the format below.
+3. Percent-encode it, put it after https://slideline.co/#plan= and give the person that link.
+4. Tell them to open it, then edit, restyle and export it (PowerPoint, PDF, PNG) in Slideline.
+
+Always start the link with exactly https://slideline.co/#plan= . The plan sits after the #, so it never reaches a server.
+
+## The plan format
+
+    {
+      "title": "Website relaunch",
+      "items": [ ...items, top to bottom... ]
+    }
+
+Each item can have:
+
+    name       Required. Keep it short, under about 40 characters.
+    start      First day, "YYYY-MM-DD".
+    end        Last day, "YYYY-MM-DD", inclusive (a one-day task has start equal to end).
+    days       Instead of end: the length in calendar days.
+    milestone  true for a one-day event such as a launch, sign-off or deadline. Give it "date": "YYYY-MM-DD".
+    items      The items inside this one.
+    owner      A person or team. Owners appear on the chart when any item has one.
+    progress   0 to 100, percent done. Progress shows when any item is above 0.
+    after      Names of the items this one waits for, e.g. ["Wireframes"]. Use the exact names. Dependency arrows show when any item has one.
+    status     "green" (on track), "amber" (at risk) or "red" (off track).
+    key        true marks a key milestone.
+    blocked    true, or a short reason as text, flags the item as blocked.
+    note       One short line of commentary, up to 120 characters, shown in the legend.
+
+Optional at the top level, next to "title":
+
+    status     The overall project status: "green", "amber" or "red".
+    scale      "days", "weeks", "months" or "quarters". Leave it out and Slideline picks one.
+    today      true draws a line at today's date.
+
+Structure: use at most three levels. A top-level item with items inside is an area (a phase or workstream). An area's dates come from what is inside it, so give an area no dates. Inside an area go tasks and milestones, and a task can hold subtasks. Use real calendar dates. If the person gives no start date, start on the coming Monday.
+
+## Encoding
+
+Write the JSON on one line with no extra spaces, then percent-encode it the way JavaScript's encodeURIComponent does. If you can run code, do exactly that:
+
+    JavaScript:  "https://slideline.co/#plan=" + encodeURIComponent(JSON.stringify(plan))
+    Python:      "https://slideline.co/#plan=" + urllib.parse.quote(json.dumps(plan, separators=(",", ":")), safe="")
+
+If you cannot run code, encode by hand. At the very least replace every space with %20, every " with %22, every % with %25 and every # with %23, and leave no line breaks. Encoding { } [ ] : , too (as %7B %7D %5B %5D %3A %2C) is safest, because some chat apps cut a link short at those characters. A link that encodes only the minimum still opens.
+
+An agent that runs code may instead put the JSON base64url-encoded (no padding) after #plan= .
+
+## Limits
+
+- Keep the whole link under about 6,000 characters, which is roughly 50 to 60 items with short names. Some chat apps, email clients and messengers cut longer links. For a bigger plan, drop the notes or give one link per phase.
+- Names over about 40 characters get cramped on the chart, though the full name is kept.
+- Dates must fall between 1990 and 2100.
+- A link is a snapshot. Changes made after opening it stay in that browser. To send a newer version, the person uses Share link in Slideline.
+
+## Worked example
+
+The plan:
+
+    {
+      "title": "Website relaunch",
+      "items": [
+        {
+          "name": "Discovery",
+          "items": [
+            {
+              "name": "Kickoff",
+              "milestone": true,
+              "date": "2027-01-04"
+            },
+            {
+              "name": "Stakeholder interviews",
+              "start": "2027-01-04",
+              "end": "2027-01-15",
+              "owner": "Priya"
+            },
+            {
+              "name": "Research synthesis",
+              "start": "2027-01-18",
+              "end": "2027-01-22",
+              "owner": "Sam",
+              "after": [
+                "Stakeholder interviews"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Design",
+          "items": [
+            {
+              "name": "Wireframes",
+              "start": "2027-01-25",
+              "end": "2027-02-05",
+              "owner": "Lena",
+              "after": [
+                "Research synthesis"
+              ]
+            },
+            {
+              "name": "Visual design",
+              "start": "2027-02-08",
+              "end": "2027-02-19",
+              "owner": "Marco",
+              "after": [
+                "Wireframes"
+              ]
+            },
+            {
+              "name": "Design sign-off",
+              "milestone": true,
+              "date": "2027-02-19",
+              "key": true
+            }
+          ]
+        },
+        {
+          "name": "Build",
+          "items": [
+            {
+              "name": "Front-end",
+              "start": "2027-02-22",
+              "end": "2027-03-19",
+              "owner": "Ana",
+              "after": [
+                "Visual design"
+              ]
+            },
+            {
+              "name": "Content migration",
+              "start": "2027-03-01",
+              "end": "2027-03-19",
+              "owner": "Sam"
+            },
+            {
+              "name": "Go-live",
+              "milestone": true,
+              "date": "2027-03-26",
+              "key": true,
+              "after": [
+                "Front-end",
+                "Content migration"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+The link to give back:
+
+https://slideline.co/#plan=%7B%22title%22%3A%22Website%20relaunch%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Discovery%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Kickoff%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-01-04%22%7D%2C%7B%22name%22%3A%22Stakeholder%20interviews%22%2C%22start%22%3A%222027-01-04%22%2C%22end%22%3A%222027-01-15%22%2C%22owner%22%3A%22Priya%22%7D%2C%7B%22name%22%3A%22Research%20synthesis%22%2C%22start%22%3A%222027-01-18%22%2C%22end%22%3A%222027-01-22%22%2C%22owner%22%3A%22Sam%22%2C%22after%22%3A%5B%22Stakeholder%20interviews%22%5D%7D%5D%7D%2C%7B%22name%22%3A%22Design%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Wireframes%22%2C%22start%22%3A%222027-01-25%22%2C%22end%22%3A%222027-02-05%22%2C%22owner%22%3A%22Lena%22%2C%22after%22%3A%5B%22Research%20synthesis%22%5D%7D%2C%7B%22name%22%3A%22Visual%20design%22%2C%22start%22%3A%222027-02-08%22%2C%22end%22%3A%222027-02-19%22%2C%22owner%22%3A%22Marco%22%2C%22after%22%3A%5B%22Wireframes%22%5D%7D%2C%7B%22name%22%3A%22Design%20sign-off%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-02-19%22%2C%22key%22%3Atrue%7D%5D%7D%2C%7B%22name%22%3A%22Build%22%2C%22items%22%3A%5B%7B%22name%22%3A%22Front-end%22%2C%22start%22%3A%222027-02-22%22%2C%22end%22%3A%222027-03-19%22%2C%22owner%22%3A%22Ana%22%2C%22after%22%3A%5B%22Visual%20design%22%5D%7D%2C%7B%22name%22%3A%22Content%20migration%22%2C%22start%22%3A%222027-03-01%22%2C%22end%22%3A%222027-03-19%22%2C%22owner%22%3A%22Sam%22%7D%2C%7B%22name%22%3A%22Go-live%22%2C%22milestone%22%3Atrue%2C%22date%22%3A%222027-03-26%22%2C%22key%22%3Atrue%2C%22after%22%3A%5B%22Front-end%22%2C%22Content%20migration%22%5D%7D%5D%7D%5D%7D
+
+## If it doesn't open
+
+Slideline says "That plan link couldn't be read" when the JSON is invalid or the link was cut short. Check that the JSON parses, that quotes and spaces are encoded, and that the person received the whole link.
