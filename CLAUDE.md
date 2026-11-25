@@ -1,4 +1,4 @@
-# Gantt chart tool
+# Slideline (Gantt chart tool)
 
 A static, no-build web app for making slide- and report-ready Gantt / project-plan charts: areas → tasks → subtasks plus milestones,
 drag editing, palettes, assignees, progress, a date marker, baselines, and exports (PNG, PDF, PPTX, copy). Desktop-first.

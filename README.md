@@ -1,4 +1,4 @@
-# Gantt
+# Slideline
 
 A simple Gantt / project-plan chart maker built for charts you put on slides, proposals and reports.
 
