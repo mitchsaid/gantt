@@ -112,7 +112,9 @@ function sanitize(st) {
 function loadState() {
   try { return sanitize(JSON.parse(localStorage.getItem(STORE_KEY))); } catch (e) { return null; }
 }
-let state = loadState() || sampleState();
+const storedPlan = loadState(); // null on a first visit (or after storage was cleared)
+let state = storedPlan || sampleState();
+let guideMode = null; // 'first' or 'new' while the ways-to-start card shows (see showGuide)
 let sel = null;
 let multi = new Set(); // with `sel`, the rows picked by shift/ctrl-click
 const selIds = () => (multi.size > 1 && multi.has(sel) ? state.rows.filter(r => multi.has(r.id)).map(r => r.id) : sel ? [sel] : []);
@@ -139,6 +141,7 @@ function commit() {
   redoStack.length = 0;
   lastSnap = s;
   save(); syncUndo();
+  if (guideMode) hideGuide(); // the plan changed: whoever was being guided has started
 }
 function commitSoon() { clearTimeout(commitTimer); commitTimer = setTimeout(commit, 600); }
 function timeTravel(from, to) {
@@ -147,6 +150,7 @@ function timeTravel(from, to) {
   to.push(lastSnap);
   lastSnap = from.pop();
   state = JSON.parse(lastSnap);
+  if (guideMode) hideGuide();
   if (sel && !state.rows.some(r => r.id === sel)) sel = null;
   multi = new Set();
   save(); syncUndo(); ensureFont(); refresh();
@@ -1619,9 +1623,8 @@ function openModal() { impSrc = 'paste'; modal.hidden = false; $('#imp-text').va
 function closeModal() { modal.hidden = true; }
 $('#btn-import').addEventListener('click', openModal);
 $('#imp-ai-copy').addEventListener('click', async () => {
-  const text = $('#imp-ai-prompt').textContent + ' The plan: ';
   track('copy-ai-prompt');
-  try { await navigator.clipboard.writeText(text); toast('Prompt copied — paste it into your AI chat and describe the project'); } catch (e) { toast('Copy this into your AI chat: ' + text); }
+  copyAiPrompt();
 });
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
 $$('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
@@ -1891,7 +1894,54 @@ $('#btn-new').addEventListener('click', () => {
   sel = null;
   commit(); refresh();
   track('new-chart');
+  if (!ui.guideNewOff) showGuide('new');
   toast('New plan started — Undo brings the old one back');
+});
+/** Ways to start: a card above the chart on a first visit (over the example plan) and on a new plan, offering three starts —
+ *  edit it here, paste a list, or ask an AI for a plan link. It goes as soon as the plan changes. Choosing on the first-visit
+ *  card, or closing it, ends it for good (ui.guideFirst = 'done'); the new-plan card's ✕ turns it off for good (ui.guideNewOff). */
+const GUIDE_ICON = {
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+  paste: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>',
+  ai: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>',
+};
+function showGuide(mode) {
+  guideMode = mode;
+  const first = mode === 'first';
+  const opt = (act, icon, title, sub) => `<button class="guide-opt" type="button" data-guide="${act}">${GUIDE_ICON[icon]}<span class="guide-t">${title}</span><span class="guide-s">${sub}</span></button>`;
+  const el = $('#guide');
+  el.innerHTML = `<div class="guide-head"><b>${first ? 'This is an example plan. Make it yours:' : 'How do you want to start?'}</b>`
+    + `<button class="guide-x" type="button" data-guide="dismiss" title="${first ? 'Close' : 'Don’t show this again'}" aria-label="${first ? 'Close' : 'Don’t show this again'}">✕</button></div>`
+    + '<div class="guide-opts">'
+    + opt('edit', 'edit', first ? 'Edit this example' : 'Type it in', first ? 'Rename, drag and add to it' : 'Rename tasks, add more')
+    + opt('paste', 'paste', 'Paste a list', 'From a doc, email or sheet')
+    + opt('ai', 'ai', 'Ask an AI', 'Copy a prompt for ChatGPT etc.')
+    + '</div>';
+  el.hidden = false;
+  if (first) { ui.guideFirst = 'shown'; saveUi(); }
+}
+function hideGuide(done) {
+  if (guideMode === 'first' || done === 'first') { ui.guideFirst = 'done'; saveUi(); }
+  guideMode = null;
+  $('#guide').hidden = true;
+}
+async function copyAiPrompt() {
+  const text = $('#imp-ai-prompt').textContent + ' The plan: ';
+  try { await navigator.clipboard.writeText(text); toast('Prompt copied — paste it into your AI chat, describe the project, and open the link it gives you'); } catch (e) { toast('Copy this into your AI chat: ' + text); }
+}
+$('#guide').addEventListener('click', e => {
+  const b = e.target.closest('[data-guide]');
+  if (!b) return;
+  const act = b.dataset.guide, mode = guideMode;
+  track('guide-' + (act === 'edit' && mode === 'first' ? 'edit-example' : act === 'edit' ? 'type-in' : act === 'ai' ? 'ask-ai' : act));
+  if (act === 'dismiss' && mode === 'new') { ui.guideNewOff = true; saveUi(); }
+  hideGuide();
+  if (act === 'paste') openModal();
+  else if (act === 'ai') copyAiPrompt();
+  else if (act === 'edit') {
+    const r = state.rows.find(x => x.type !== 'milestone' && blockEnd(state.rows, rowIndex(x.id)) === rowIndex(x.id) + 1) || state.rows[0];
+    if (r) { sel = r.id; refresh(); editOnChart(r.id); }
+  }
 });
 function syncTabs() { $$('[data-sheet]').forEach(b => b.classList.toggle('on', $('#' + b.dataset.sheet).classList.contains('open'))); }
 function openSheet(id) { $$('.panel').forEach(p => { const on = p.id === id && !p.classList.contains('open'); p.classList.toggle('open', on); if (!on) p.classList.remove('full'); }); syncTabs(); }
@@ -3738,4 +3788,6 @@ buildDesign();
 syncUndo();
 ensureFont();
 refresh();
+// a first visit (nothing saved here, no shared link being opened) starts on the example plan with the ways to start above it
+if (ui.guideFirst !== 'done' && (!storedPlan || ui.guideFirst === 'shown') && !/^#(p|plan)=/.test(location.hash)) showGuide('first');
 openSharedLink();
