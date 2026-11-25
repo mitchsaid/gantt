@@ -502,9 +502,14 @@ body.resizing * { cursor: col-resize !important; }
   .themes { grid-template-columns: repeat(8, 1fr); }
   #version-num { display: none; } /* phones: just the Beta tag */
   .top-actions { gap: 4px; }
-  input:not([type="checkbox"]):not([type="color"]), select, textarea, .design-search input { font-size: 16px; } /* below 16px iOS zooms the page on focus */
   .srch-kbd { display: none; }
 }
+/* phones and tablets: below 16px iOS zooms the whole page into a field on focus; the chart's inline editor follows in app.js */
+@media (max-width: 860px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="color"]):not([type="range"]), select, textarea, .design-search input { font-size: 16px; }
+}
+/* touch screens: the page never pinch- or double-tap-zooms; two fingers on the chart zoom the chart instead (app.js) */
+html { touch-action: pan-x pan-y; }
 @media (min-width: 600px) and (max-width: 860px) { /* tablets: a sheet as wide as a phone reads better than one stretched across the screen */
   #panel-plan, #panel-design { left: 50%; right: auto; width: 620px; margin-left: -310px; }
 }

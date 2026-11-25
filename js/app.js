@@ -243,6 +243,7 @@ function drawScene(sc, scale) {
 }
 
 const coarse = matchMedia('(pointer: coarse)');
+const noZoomType = matchMedia('(max-width: 860px), (pointer: coarse)'); // where text fields are 16px+ (style.css)
 function renderChart() {
   const sw = svg.getBoundingClientRect().width;
   // handles are sized in screen pixels (k = chart units per pixel), and bigger for a finger
@@ -2391,7 +2392,8 @@ function inlineEdit(rect, value, fontPx, weight, onInput, opt = {}) {
   const inp = document.createElement('input');
   inp.className = 'inline-edit';
   inp.value = value;
-  const place = (r, px) => Object.assign(inp.style, { left: r.left + 'px', top: r.top + 'px', width: Math.max(r.width, 180) + 'px', height: r.height + 'px', fontSize: px + 'px' });
+  // phones and tablets: iOS zooms the whole page into a field typed in below 16px, so the field never goes smaller there
+  const place = (r, px) => { if (noZoomType.matches) px = Math.max(16, px); Object.assign(inp.style, { left: r.left + 'px', top: r.top + 'px', width: Math.max(r.width, 180) + 'px', height: Math.max(r.height, px + 6) + 'px', fontSize: px + 'px' }); };
   place(rect, fontPx);
   Object.assign(inp.style, { fontWeight: weight, fontFamily: `'${state.settings.font}', system-ui, sans-serif` });
   document.body.appendChild(inp);
@@ -2542,6 +2544,10 @@ stage.addEventListener('touchstart', e => {
   pinch = { gap: touchGap(e.touches), z: zoom, mid: touchMid(e.touches) };
 }, { passive: false }); // not passive: the touch's moves must be cancellable
 addEventListener('resize', applyZoom);
+// Phones: only the chart zooms. html's touch-action stops pinch and double-tap zoom on the page; older iOS Safari needs its gesture
+// events cancelled as well (the stage's own handlers above still zoom the chart first).
+document.addEventListener('gesturestart', e => { if (coarse.matches) e.preventDefault(); }, { passive: false }); // a Mac trackpad keeps its page zoom
+document.addEventListener('gesturechange', e => { if (coarse.matches) e.preventDefault(); }, { passive: false });
 $('#zoom-in').addEventListener('click', () => setZoom(zoom * 1.25));
 $('#zoom-out').addEventListener('click', () => setZoom(zoom / 1.25));
 $('#zoom-val').addEventListener('click', () => setZoom(1));
