@@ -2,7 +2,7 @@
 
 > Slideline (https://slideline.co) turns a project plan into a clean, slide-ready Gantt chart. A plan can be handed over as a single link: the whole plan travels inside the URL, nothing is uploaded, and no account or API key is needed.
 
-This file tells an AI assistant or agent how to write that link. When someone asks you for "a project plan as a Slideline link", "a Slideline chart" or "a Gantt chart link", follow it.
+This file tells an AI assistant or agent how to write that link. When someone asks you to make a plan in Slideline, or for a Slideline link, chart or Gantt chart, follow it: give back a link that opens the finished chart, not a task list for them to paste into Import.
 
 ## What to give back
 

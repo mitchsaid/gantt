@@ -38,6 +38,13 @@ const fs = require('fs'), path = require('path');
   const cut = await open(example.slice(0, 400));
   console.log('cut link:', await cut.evaluate(() => JSON.stringify({ toast: document.querySelector('#toast').textContent, hash: location.hash, title: state.settings.title })));
 
+  // the note on the homepage for AI tools that read it as text: off screen for people, in the page text, and its example opens
+  const home = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const noteLink = home.match(/<div class="ai-note"[\s\S]*?(https:\/\/slideline\.co\/#plan=\S+?)<\/p>/)[1].replace('https://slideline.co/', 'http://localhost:8765/');
+  const np = await open(noteLink);
+  console.log('note example rows:', await np.evaluate(() => state.rows.map(r => r.name).join(', ')), '| note in page text', await np.evaluate(() => document.body.innerText.includes('Note for AI assistants')), '| on screen', await np.evaluate(() => { const r = document.querySelector('.ai-note').getBoundingClientRect(); return r.right > 0 && r.width > 1; }));
+  if (await np.evaluate(() => state.rows.length) !== 4) throw new Error('homepage note example did not open');
+
   // the Import dialog's pointer
   const ip = await open('http://localhost:8765/');
   await ip.click('#btn-import'); await ip.waitForTimeout(300);

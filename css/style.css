@@ -319,6 +319,8 @@ input[type='range'] { width: 100%; accent-color: var(--accent); margin: 0; }
 .modal { background: #fff; width: min(680px, 100%); max-height: 100%; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3); overflow: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; }
 .modal-head h2 { margin: 0; font-size: 17px; }
+/* read by AI tools that fetch the page as text; kept off screen for people */
+.ai-note { position: absolute; left: -10000px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 .modal-sub { margin: 0; color: var(--muted); }
 .imp-ai { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .imp-ai span { flex: 1; }
