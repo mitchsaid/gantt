@@ -66,6 +66,7 @@ function sanitize(st) {
   if (!['left', 'center', 'right'].includes(st.settings.barAlign)) st.settings.barAlign = 'left';
   st.settings.barDates = !!st.settings.barDates;
   if (st.settings.barDateKind !== 'duration') st.settings.barDateKind = 'dates';
+  if (st.settings.barDatesPos !== 'beside') st.settings.barDatesPos = 'in';
   st.settings.daysOff = (Array.isArray(st.settings.daysOff) ? st.settings.daysOff : []).filter(r => r && Number.isFinite(+r.from)).slice(0, 60).map(r => { const f = Math.round(+r.from); return { from: f, to: Math.max(f, Number.isFinite(+r.to) ? Math.round(+r.to) : f), label: String(r.label || '').slice(0, 40) }; });
   if (old.overflow === 'wrap') { st.settings.wrapNames = true; st.settings.overflow = 'shrink'; } // wrap used to be one of the choices, and shrank when two lines weren't enough
   if (old.todayLabel === '' && old.markerLabelOn == null) { st.settings.markerLabelOn = false; st.settings.todayLabel = 'Today'; } // an empty label used to mean none
@@ -267,7 +268,21 @@ function renderChart() {
     if (out.length) co.innerHTML = `⚠ ${out.length} ${out.length === 1 ? 'item is' : 'items are'} outside the timeline <button class="link-btn" data-act="pull">Fit them in…</button>`;
   }
   const warn = $('#chart-warn');
-  if (warn) { warn.hidden = !(scene.fixedPx && !scene.fits); warn.textContent = state.settings.density === 'roomy' ? '⚠ Doesn’t fit the canvas with Roomy rows — Auto row height fits it in as far as it can' : '⚠ Too tall for the canvas, even with the tightest rows — see Design → Canvas'; }
+  if (warn) {
+    warn.hidden = !(scene.fixedPx && !scene.fits);
+    if (!warn.hidden) { const h = fitWarnHtml(); if (warn.innerHTML !== h) warn.innerHTML = h; }
+  }
+}
+/** the plan is taller than its fixed canvas even squeezed: say why, and offer what would make room, gentlest first */
+function fitWarnHtml() {
+  const S = state.settings, fixes = [];
+  const datesIn = S.barDates && (S.pack || S.taskLabels === 'bars') && S.barDatesPos !== 'beside';
+  if (S.density === 'roomy') fixes.push(['density', 'Auto row height']);
+  if (datesIn) fixes.push(['dates', 'Dates after the bars']);
+  if (S.textAuto === false) fixes.push(['text', 'Automatic text size']);
+  fixes.push(['fit', 'Height follows the plan']);
+  const why = S.density === 'roomy' ? 'Roomy rows don’t fit the canvas' : S.textAuto === false ? `Too tall for the canvas at ${S.textPt} pt text` : 'Too tall for the canvas, even with the smallest rows and text';
+  return `⚠ ${why} — try ${fixes.map(([k, l]) => `<button class="link-btn warn-fix" data-fix="${k}">${l}</button>`).join('<span class="warn-or"> or </span>')}`;
 }
 function refresh() { renderChart(); renderOutline(); syncDesign(); syncPop(); syncAddNote(); }
 function syncAddNote() {
@@ -278,6 +293,14 @@ function syncAddNote() {
 
 $('#chart-spread').addEventListener('click', fitPlan);
 $('#chart-out').addEventListener('click', e => { if (e.target.closest('[data-act="pull"]')) outsideDialog(); });
+$('#chart-warn').addEventListener('click', e => {
+  const b = e.target.closest('[data-fix]');
+  if (!b) return;
+  const f = b.dataset.fix;
+  const [k, v, said] = { density: ['density', 'auto', 'Row height set to Auto'], dates: ['barDatesPos', 'beside', 'Dates moved after the bars'], text: ['textAuto', true, 'Text size set to automatic'], fit: ['fit', 'content', 'The canvas height now follows the plan'] }[f];
+  setSetting(k, v);
+  toast(`${said}${scene.fixedPx && !scene.fits ? ', but it still doesn’t fit' : ''} — Undo puts it back`);
+});
 
 // ---------------------------------------------------------------- fonts
 let fontToken = 0;
@@ -1101,8 +1124,9 @@ const DESIGN = [
     { k: 'taskLabels', type: 'seg', label: 'Task names', kw: 'labels left side on bars inside', opts: [['left', 'On the left'], ['bars', 'On the bars']] },
     { k: '_packNote', type: 'note', label: 'Task names sit on the bars while Row layout is “In sequence”, because a row can hold several tasks. Switch it to “One per task” to put them on the left.', when: s => s.pack },
     { k: 'barAlign', type: 'seg', label: 'Text on bars', sub: true, kw: 'align alignment centre center right left justify name position', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', opts: [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], when: s => s.pack || s.taskLabels === 'bars' },
-    { k: 'barDates', type: 'toggle', label: 'Dates or duration under names', sub: true, kw: 'start end date range show dates duration length days weeks on bars', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', when: s => s.pack || s.taskLabels === 'bars' },
-    { k: 'barDateKind', type: 'seg', label: 'Show', sub: true, kw: 'dates duration length days weeks start end', why: 'Shown with Tasks → Dates or duration under names.', opts: [['dates', 'Dates'], ['duration', 'Duration']], when: s => (s.pack || s.taskLabels === 'bars') && s.barDates },
+    { k: 'barDates', type: 'toggle', label: 'Dates or duration on the bars', sub: true, kw: 'start end date range show dates duration length days weeks on bars', why: 'Shown when names sit on the bars (Tasks → Task names → On the bars).', when: s => s.pack || s.taskLabels === 'bars' },
+    { k: 'barDateKind', type: 'seg', label: 'Show', sub: true, kw: 'dates duration length days weeks start end', why: 'Shown with Tasks → Dates or duration on the bars.', opts: [['dates', 'Dates'], ['duration', 'Duration']], when: s => (s.pack || s.taskLabels === 'bars') && s.barDates },
+    { k: 'barDatesPos', type: 'seg', label: 'Where', sub: true, kw: 'dates beside outside after bar under name slim thin two lines', why: 'Shown with Tasks → Dates or duration on the bars.', opts: [['in', 'Under the name'], ['beside', 'After the bar']], when: s => (s.pack || s.taskLabels === 'bars') && s.barDates },
     { k: '_barDurNote', type: 'note', label: 'The timeline counts periods (“Week 1”) rather than dates, so bars show each task’s duration.', when: s => (s.pack || s.taskLabels === 'bars') && s.barDates && s.dateMode === 'relative' && s.barDateKind !== 'duration' },
     { k: 'areaLabels', type: 'seg', label: 'Area names', kw: 'labels headings group phase side', why: 'Appears once the plan has an area.', opts: [['row', 'As headings'], ['side', 'At the side']], when: () => derive(state.rows).some(n => n.isArea) },
     { type: 'head', label: 'Assignees' },
@@ -1383,7 +1407,7 @@ function syncDesign() {
   if (scene) { // sizes in real units, and a warning when a fixed canvas can't hold the plan
     const cv = scene.canvas, f = x => (Math.round(x * 100) / 100).toString();
     const ci = $('#canvas-info'), ti = $('#text-info');
-    if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. ${state.settings.density === 'roomy' ? 'Use Auto row height, “Fit content”' : 'Rows and text are already as small as they go: use “Fit content”'}, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
+    if (ci) { ci.textContent = scene.fixedPx && !scene.fits ? `⚠ Doesn't fit: the plan needs ${f(scene.needH / PX_PER_IN)} in of ${f(cv.h)} in. The options under the chart can make room — or use “Fit content”, remove rows, or pick a taller canvas.` : `${f(cv.w)} × ${f(cv.h)} in${scene.fixedPx ? '' : ' wide — height follows the plan'}`; ci.classList.toggle('warn', !!(scene.fixedPx && !scene.fits)); }
     syncDaysOff();
     const de = $('#date-ex');
     if (de) de.textContent = `Example: ${fmtDate(toDay(2026, 11, 9), { f: S.dateFormat || 'text', o: S.dateOrder || 'dmy' })} — also used for milestone dates, the legend and the panels.`;
@@ -3459,6 +3483,7 @@ const LB_ICON = {
   alC: '<svg viewBox="0 0 16 16"><path d="M3 4h10M5 8h6M4 12h8"/></svg>',
   alR: '<svg viewBox="0 0 16 16"><path d="M3 4h10M7 8h6M5 12h8"/></svg>',
   dates: '<svg viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M4 6.5h6M4 9.5h4"/></svg>',
+  datesAfter: '<svg viewBox="0 0 16 16"><rect x="1.5" y="5" width="8" height="6" rx="1.5"/><path d="M3.5 8h3M11.5 8h3"/></svg>',
   smaller: '<svg viewBox="0 0 16 16"><path d="M2 12l3-8 3 8M3 9.5h4M10.5 9h4"/></svg>',
   larger: '<svg viewBox="0 0 16 16"><path d="M2 12l3-8 3 8M3 9.5h4M10.5 9h4M12.5 7v4"/></svg>',
   cSq: '<svg viewBox="0 0 16 16"><rect x="2" y="4.5" width="12" height="7"/></svg>',
@@ -3545,7 +3570,8 @@ function lookHtml(c) {
     h += scope('All tasks') + set('taskLabels', 'left', LB_ICON.nLeft, S.pack ? 'Names on the left (not while tasks share rows)' : 'Names to the left of the bars', 'task', S.pack)
       + ib('data-lb="set" data-k="taskLabels" data-v="bars"', LB_ICON.nBar, 'Names on the bars', onBars, 'task');
     if (onBars) h += sep + set('barAlign', 'left', LB_ICON.alL, 'Names on the left of each bar', 'task') + set('barAlign', 'center', LB_ICON.alC, 'Names centred on the bars', 'task') + set('barAlign', 'right', LB_ICON.alR, 'Names on the right of each bar', 'task')
-      + ib('data-lb="toggle" data-k="barDates"', LB_ICON.dates, 'Dates or duration under the names', !!S.barDates, 'task');
+      + ib('data-lb="toggle" data-k="barDates"', LB_ICON.dates, 'Dates or duration on the bars', !!S.barDates, 'task')
+      + (S.barDates ? ib(`data-lb="set" data-k="barDatesPos" data-v="${S.barDatesPos === 'beside' ? 'in' : 'beside'}"`, LB_ICON.datesAfter, 'Dates after the bar, on one line (slimmer bars)', S.barDatesPos === 'beside', 'task') : '');
     h += sep + size + sep + set('corners', 'square', LB_ICON.cSq, 'Square corners', 'task') + set('corners', 'rounded', LB_ICON.cRd, 'Rounded corners', 'task') + set('corners', 'pill', LB_ICON.cPill, 'Pill-shaped bars', 'task') + more('tasks');
   } else if (c.kind === 'ms') {
     h += scope('All milestones') + ib('data-lb="toggle" data-k="msLines"', LB_ICON.guide, 'Guide lines down from each milestone', !!S.msLines, 'ms')

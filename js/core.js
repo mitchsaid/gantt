@@ -1,6 +1,6 @@
 'use strict';
 // Shown in the top bar so it is obvious which build is loaded. Bump with every release, together with the ?v= in index.html.
-const APP_VERSION = 'v117 · 25 Nov';
+const APP_VERSION = 'v118 · 25 Nov';
 /* Core: dates, colours, import parsing and chart layout. No DOM side effects. */
 
 // ---------------------------------------------------------------- dates
@@ -307,7 +307,7 @@ function canvasOf(S) {
 const DEFAULT_STATUSES = [{ id: 'green', name: 'On track', color: '#1f9d55' }, { id: 'amber', name: 'At risk', color: '#d97706' }, { id: 'red', name: 'Off track', color: '#d92d20' }];
 const DEFAULT_SETTINGS = {
   title: 'Project plan', showTitle: true, titleAuto: false, execView: false, canvas: 'slide169', canvasW: 13.333, canvasH: 7.5, fit: 'content', textAuto: true, textPt: 12, titleScale: 1, overflow: 'outside', wrapNames: false, msAlign: 'auto',
-  taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, barDateKind: 'dates', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
+  taskLabels: 'left', areaLabels: 'row', barText: 'auto', barAlign: 'left', barDates: false, barDateKind: 'dates', barDatesPos: 'in', pack: false, scale: 'weeks', sprintWeeks: 2, datePos: 'top', dateMode: 'calendar',
   deps: false, assignees: false, assigneeLevel: 'tasks', assigneeAreas: true, assigneePos: 'under', assigneeNames: false,
   textCase: 'default', periodMonths: 'full', periodYear: 'change', dateFormat: 'text', dateOrder: typeof navigator !== 'undefined' && /^en-(US|CA|PH)/.test(navigator.language || '') ? 'mdy' : 'dmy', // month first where the browser is set to US-style dates
   daysLeft: false, planDaysLeft: false, daysLeftWeekdays: false, daysOff: [], colorBy: 'group', markerAuto: false, showChanges: false, changesLegend: true, blockedWaiting: true, blockedLegend: true, keyStrip: false, showDaysOff: true, showStatus: true, projectStatus: '', criticalPath: false, slipChip: true, progress: false, progressSource: 'manual', todayLine: false, todayDate: null, todayLabel: 'Today', markerLabelOn: true, markerStyle: 'solid', markerWidth: 2, markerColor: null, msLines: true,
@@ -994,28 +994,23 @@ function gripItems(o, color, opacity, k, touch) {
 }
 /**
  * The plan as a flat list of drawable items. On a fixed canvas, Auto (and Compact, a step under it) promise to fit the plan in:
- * when it is taller than the canvas, the rows are built again tighter — and with automatic text, the text a little smaller,
- * down to about 8 pt — until it fits, or until nothing gets any smaller. Roomy asked for space, so it is left as it is.
+ * when it is taller than the canvas, it is built again with the rows and (when the text size is automatic) the text scaled by k,
+ * text down to about 8 pt, and k is halved in on until the rows are as tall as the canvas allows. If even the smallest doesn't
+ * fit, that is what is shown, with the warning. Roomy asked for space, so it is left as it is.
  */
+const SQUEEZE_MIN = 0.3; // small enough that every row and every text size is at its floor
 function buildScene(state, opts) {
-  let s = buildSceneAt(state, opts, null);
+  const s = buildSceneAt(state, opts, null);
   if (!s.fixedPx || s.fits || state.settings.density === 'roomy') return s;
   const at = k => buildSceneAt(state, opts, { k, fsMin: 11 });
-  let over = 1, k = 1;
-  for (let i = 0; i < 6 && !s.fits; i++) {
-    k *= Math.max(0.6, Math.min(s.fixedPx / s.needH, 1 - 1.5 / s.rowH)); // at least a pixel a step; the title, dates and legend shrink less than the rows, so it can take a few
-    const t = at(k);
-    const stuck = i > 0 && t.rowH >= s.rowH && t.fs >= s.fs; // as tight as it goes: it can't fit
-    if (!t.fits) over = k;
-    s = t;
-    if (stuck) return s;
+  let best = at(SQUEEZE_MIN);
+  if (!best.fits) return best;
+  let lo = SQUEEZE_MIN, hi = 1; // lo fits, hi doesn't
+  for (let i = 0; i < 6; i++) { // about a pixel of row height apart at the end
+    const m = (lo + hi) / 2, t = at(m);
+    if (t.fits) { best = t; lo = m; } else hi = m;
   }
-  // it fits: a few halvings between the last size that didn't and this one, so the rows are as tall as the canvas allows
-  for (let i = 0; i < 4 && s.fits && over - k > 0.01; i++) {
-    const m = (k + over) / 2, t = at(m);
-    if (t.fits) { s = t; k = m; } else over = m;
-  }
-  return s;
+  return best;
 }
 function buildSceneAt(state, opts, sq) {
   opts = opts || {};
@@ -1138,7 +1133,7 @@ function buildSceneAt(state, opts, sq) {
   // metrics — sizes are px at 96 per inch, so text is in true points on the output
   const textPt = !S.textAuto && +S.textPt > 0 ? clamp(+S.textPt, 5, 48) : null;
   const fsMin = sq ? sq.fsMin : 14.5; // squeezed to fit a fixed canvas, automatic text may go a little smaller
-  const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(rh * 0.42, fsMin, 20) * 2) / 2);
+  const fsOf = rh => (textPt ? Math.round(textPt * 96 / 72 * 2) / 2 : Math.round(clamp(Math.min(rh * 0.42, sq ? 20 * sq.k : 20), fsMin, 20) * 2) / 2); // squeezed, the text shrinks with it even where the rows follow the text (names with dates under them)
   const tierOf = f => Math.round(26 * f / 14);
   const avOn = S.assigneeAvatar !== false || S.assigneePos === 'bars'; // (on the bars the avatar is the point, so it is always on)
   // the little initials circle beside an owner's name
@@ -1186,12 +1181,13 @@ function buildSceneAt(state, opts, sq) {
   rowH = Math.max(rowH, Math.ceil(fs * (sq ? 2 : 2.2))); // and no row is too tight for its text
   // dates under the names on the bars: the bars must hold two lines
   const barDates = !!S.barDates && (pack || S.taskLabels === 'bars');
+  const datesIn = barDates && S.barDatesPos !== 'beside'; // under the name, on the bar — or after the bar, on one line, so bars stay slim
   const dateGap = sz => Math.round(sz * 0.2); // a little air between a name and the dates under it
   // a bar holding a name and its dates: the two lines as drawn, with padding above and below in proportion to the text, so it never feels cramped
   const twoLineH = sz => Math.ceil(sz * 1.15 + dateGap(sz) + dateSizeOf(sz) * 1.12 + 2 * Math.max(6, Math.round(sz * 0.5)));
-  if (barDates) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
+  if (datesIn) rowH = Math.max(rowH, Math.ceil(twoLineH(fs) / 0.64));
   const barH = Math.max(Math.round(rowH * 0.64), sq ? Math.ceil(fs * 1.35) : 0); // squeezed rows keep bars tall enough for their names
-  const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), barDates ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
+  const subH = Math.max(Math.round(rowH * 0.36), Math.ceil((fs - 1.5) * 1.4), datesIn ? twoLineH(fs - 1.5) : 0); // subtasks: thinner bars in tighter rows, so they read as detail under their task
   const subRow = Math.max(Math.round(rowH * 0.6), Math.ceil((fs - 1.5) * 2.1), subH + 6);
   const msCap = Math.round(38 * 0.64); // milestone diamonds stop growing at their size in a regular row
   const barMid = rowH / 2, subMid = subRow / 2; // bars sit in the top part of the row; the owner line, if any, goes beneath
@@ -1472,7 +1468,7 @@ function buildSceneAt(state, opts, sq) {
         const ip = padFor(h); n.ip = ip;
         // dates under the name: on the bar when it is tall and wide enough, otherwise beside it
         const dtxt = barDates ? itemDates(n) : '', dsz = dateSizeOf(size), dw = dtxt ? M(dtxt, dsz, 500) : 0;
-        const dIn = !!dtxt && !n.milestone && h >= twoLineH(size) - 1 && dw + 2 * ip <= bwL;
+        const dIn = datesIn && !!dtxt && !n.milestone && h >= twoLineH(size) - 1 && dw + 2 * ip <= bwL;
         // keep the name on the bar (wrapped, shrunk or shortened) — or, if "move outside" is chosen and it can't be shown whole, put it beside the bar
         const lf = !n.milestone && w + 2 * ip > bwL && (overflow !== 'outside' || wrapOn) ? labelFit(name, Math.max(0, bwL - 2 * ip), size, 500, !dIn && h >= size * 2 + 4) : null;
         if (!n.milestone && w + 2 * ip <= bwL) n.inside = true;

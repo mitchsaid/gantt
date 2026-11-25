@@ -369,6 +369,9 @@ body.resizing * { cursor: col-resize !important; }
 .ctl-note.warn { color: #b45309; }
 .chart-warn { color: #b45309; font-size: 12px; font-weight: 600; margin-left: 6px; }
 .ca-notes .chart-warn { margin-left: 0; }
+.chart-warn .warn-fix { color: #b45309; font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; padding: 2px 3px; }
+.chart-warn .warn-fix:hover { color: #7c2d12; }
+.chart-warn .warn-or { font-weight: 500; white-space: pre; }
 .design-search { position: relative; margin: 0 12px 6px; display: flex; align-items: center; }
 .design-search svg { position: absolute; left: 10px; width: 15px; height: 15px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
 .design-search input { width: 100%; height: 32px; padding: 0 56px 0 32px; border: 1px solid var(--line-strong); border-radius: 8px; background: #f8f9fb; font: inherit; font-size: 13px; color: inherit; outline: none; }
