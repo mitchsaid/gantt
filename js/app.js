@@ -605,9 +605,19 @@ function addBtnsHtml(n) {
   const below = n.sub ? '+ Subtask below' : '+ Task below';
   return `<div class="pop-adds">${canHoldSub(n) ? '<button class="chip-btn" data-act="sub-add" title="Add a subtask inside it (Shift+Enter)">+ Subtask</button>' : ''}<button class="chip-btn" data-act="next-add" title="Add an item after it (Enter)">${below}</button></div>`;
 }
-/** the popover's footer: move out / in on the left, duplicate and delete on the right (it wraps rather than being cut off) */
+/** the popover's footer: the add pills, then one quiet row of icon buttons (outdent, indent | select more, duplicate … delete) */
+const PF_ICON = {
+  out: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6H10M20 12h-7M20 18H10M7 9l-3 3 3 3"/></svg>',
+  in: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6H10M20 12h-7M20 18H10M4 9l3 3-3 3"/></svg>',
+  pick: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.3 2.8 2.8L16.2 9"/></svg>',
+};
 function popFootHtml(n, rows) {
-  return `<div class="pop-foot">${addBtnsHtml(n)}<span class="pf-l"><button data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>←</button><button data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>→</button><button data-act="pick" class="pf-pick" title="Keeps this one selected; then ${tapWord()} other items to add them (with a keyboard: Shift or Ctrl/⌘-click)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.3 2.8 2.8L16.2 9"/></svg>Select more</button></span><span class="pf-r"><button data-act="dup">Duplicate</button><button data-act="del" class="danger">Delete</button></span></div>`;
+  return `<div class="pop-foot">${addBtnsHtml(n)}<div class="pf-bar">`
+    + `<button class="pf-ic" data-act="outdent" title="Outdent (Shift+Tab)" aria-label="Outdent" ${n.level === 0 ? 'disabled' : ''}>${PF_ICON.out}</button>`
+    + `<button class="pf-ic" data-act="indent" title="Indent (Tab)" aria-label="Indent" ${canIndent(rows, n.i) ? '' : 'disabled'}>${PF_ICON.in}</button><span class="pf-sep"></span>`
+    + `<button class="pf-ic pf-pick" data-act="pick" aria-label="Select more" title="Select more: keeps this one selected; then ${tapWord()} other items to add them (with a keyboard: Shift or Ctrl/⌘-click)">${PF_ICON.pick}</button>`
+    + `<button class="pf-ic" data-act="dup" title="Duplicate (Ctrl/⌘+D)" aria-label="Duplicate">${SB_ICON.dup}</button><span class="pf-gap"></span>`
+    + `<button class="pf-ic danger" data-act="del" title="Delete (Delete key)" aria-label="Delete">${SB_ICON.del}</button></div></div>`;
 }
 function setRowStatus(ids, v) {
   commit();

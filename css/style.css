@@ -145,7 +145,7 @@ svg { display: block; }
 .pop-adds { display: flex; flex-wrap: wrap; gap: 6px; }
 .pop-adds .chip-btn { height: 28px; font-size: 12px; }
 .detail .pop-adds { margin-bottom: 6px; }
-.pop-foot .pop-adds { flex: 1 0 100%; padding-bottom: 2px; }
+.pop-foot .pop-adds { padding-bottom: 2px; }
 .pop-foot .pop-adds .chip-btn { border-style: dashed; border-radius: 999px; padding: 0 11px; font-weight: 600; }
 .drop-line { position: absolute; left: 8px; right: 0; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 5; }
 .detail { margin: 2px 0 8px 22px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; display: grid; gap: 10px; }
@@ -172,12 +172,16 @@ svg { display: block; }
 .acc.open .acc-b { display: grid; }
 .acc-b > .field > span:first-child { display: none; } /* the section title says it already */
 .dotc { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); flex: none; }
-.pop-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
-.pop-foot .pf-l, .pop-foot .pf-r { display: inline-flex; gap: 4px; }
-.pop-foot button { height: 28px; min-width: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-strong); background: #fff; font-size: 12px; font-weight: 500; }
-.pop-foot button:hover { background: #f6f7fa; }
-.pop-foot button.danger { color: #c0262d; }
-.pop-foot button:disabled { opacity: 0.4; cursor: default; }
+.pop-foot { display: flex; flex-direction: column; align-items: stretch; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.pop-foot .pf-bar { display: flex; align-items: center; gap: 2px; margin: 0 -4px; }
+.pop-foot .pf-gap { flex: 1; }
+.pop-foot .pf-sep { width: 1px; height: 18px; background: var(--line); margin: 0 5px; }
+.pop-foot .pf-ic { width: 32px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: none; color: #4a5263; }
+.pop-foot .pf-ic svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pop-foot .pf-ic:hover:not(:disabled) { background: #f0f1f5; color: var(--text); }
+.pop-foot .pf-ic.danger { color: #c0262d; }
+.pop-foot .pf-ic.danger:hover:not(:disabled) { background: #fdecec; color: #c0262d; }
+.pop-foot .pf-ic:disabled { opacity: 0.35; cursor: default; }
 .pop .row-actions { gap: 3px; flex-wrap: nowrap; }
 .pop .row-actions button { padding: 0 6px; font-size: 11.5px; white-space: nowrap; }
 .row-actions button.danger { color: #c0262d; margin-left: auto; }
@@ -644,9 +648,7 @@ body.selecting .outline .orow { cursor: pointer; }
 .plan-selbar .selbar-btn { padding: 0 8px; }
 .plan-selbar .selbar-btn.ib { width: 30px; padding: 0; }
 .plan-selbar::after { display: none; }
-.pop-foot .pf-pick { padding: 0 9px 0 7px; display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; }
-.pop-foot .pf-pick:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.pop-foot .pf-pick svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pop-foot .pf-pick:hover { color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 860px) {
   .sb-long, .sb-hint { display: none; } /* a phone has no room for the hint beside the buttons */
   .sb-short { display: inline; }
