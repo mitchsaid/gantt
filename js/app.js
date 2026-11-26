@@ -3078,13 +3078,22 @@ const tapWord = () => (matchMedia('(hover: hover) and (pointer: fine)').matches 
 const SB_ICON = {
   dup: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  even: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="12" height="4" rx="1.5"/><rect x="9" y="14" width="12" height="4" rx="1.5"/></svg>',
+  status: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+  who: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>',
+  clear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5 7 17a3 3 0 0 1-4.2-4.2L5.3 10.3M14.5 9.5 17 7a3 3 0 0 0-4.2-4.2l-2.5 2.5M4 4l16 16M14 18.5V21M18.5 14H21"/></svg>',
 };
 function selBarHtml(n, countId, inPanel) { // the Plan panel's copy leaves out Done: the Select button in its head says it
   const many = n >= 2, none = n ? '' : ' disabled';
   const tw = tapWord(), say = !n ? `${tw[0].toUpperCase() + tw.slice(1)} items to select` : n === 1 && selecting && !inPanel ? `1 selected<span class="sb-hint"> — ${tw} more to add</span>` : `${n} selected`;
   return `<span class="selbar-count"${countId ? ` id="${countId}"` : ''}>${say}</span>`
-    + `<button class="selbar-btn" data-sel="even"${many ? '' : ' disabled'} title="Give every selected task the same length (the average of their lengths)">Same length</button>`
+    + `<button class="selbar-btn" data-sel="even"${many ? '' : ' disabled'} title="Give every selected task the same length (the average of their lengths)" aria-label="Same length"><span class="sb-even-t">Same length</span><span class="sb-even-ic">${SB_ICON.even}</span></button>`
     + `<button class="selbar-btn primary" data-sel="group"${many ? '' : ' disabled'} title="Group them into a new area (Ctrl/⌘+G)"><span class="sb-long">Add to new area</span><span class="sb-short">Group</span></button>`
+    + `<span class="sb-sep"></span>`
+    + `<button class="selbar-btn ib" data-sel="status"${none} title="Set the status of every selected item" aria-label="Status" aria-haspopup="menu" aria-expanded="false">${SB_ICON.status}</button>`
+    + `<button class="selbar-btn ib" data-sel="who"${none} title="Add or remove assignees on every selected item" aria-label="Assignees" aria-haspopup="menu" aria-expanded="false">${SB_ICON.who}</button>`
+    + `<button class="selbar-btn ib" data-sel="clear"${none} title="Clear dependencies or blockers from the selection" aria-label="Clear dependencies or blockers" aria-haspopup="menu" aria-expanded="false">${SB_ICON.clear}</button>`
+    + `<span class="sb-sep"></span>`
     + `<button class="selbar-btn ib" data-sel="dup"${none} title="Duplicate (Ctrl/⌘+D)" aria-label="Duplicate">${SB_ICON.dup}</button>`
     + `<button class="selbar-btn ib danger" data-sel="del"${none} title="Delete (Delete key)" aria-label="Delete">${SB_ICON.del}</button>`
     + (inPanel ? '' : selecting ? '<button class="selbar-btn done" data-sel="done" title="Stop selecting (Esc)">Done</button>' : '<button class="selbar-btn" data-sel="clear" aria-label="Clear selection" title="Clear selection">✕</button>');
@@ -3194,6 +3203,7 @@ window.addEventListener('resize', queueSelBar);
   else if (a === 'even') evenLengths();
   else if (a === 'dup') { commit(); duplicateSelection(); }
   else if (a === 'del') askDeleteSel();
+  else if (a === 'status' || a === 'who' || a === 'clear') toggleMenu('b' + a, b);
   else if (a === 'done') setSelecting(false);
   else if (a === 'clear') select(null);
 }));
@@ -3524,6 +3534,48 @@ function closeMenu() {
   if (menuFor) menuFor.setAttribute('aria-expanded', 'false');
   menuFor = null; menuKind = null;
 }
+/** the selected rows themselves (status, assignees), and with everything inside selected areas (dependencies, blockers) */
+const selRows = () => selIds().map(id => state.rows[rowIndex(id)]).filter(Boolean);
+function selBlockRows() {
+  const seen = new Set(), out = [];
+  selIds().forEach(id => { const i = rowIndex(id); if (i >= 0) state.rows.slice(i, blockEnd(state.rows, i)).forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); out.push(r); } }); });
+  return out;
+}
+const hasName = (r, nm) => splitNames(r.assignee).some(x => x.toLowerCase() === nm.toLowerCase());
+/** add a name to, or take it off, every selected item (or clear them all); `how(rows)` says which */
+function bulkAssign(how, names) {
+  const rows = selRows(), list = [].concat(names || []), mode = how(rows);
+  if (!rows.length) return;
+  commit();
+  rows.forEach(r => {
+    let cur = splitNames(r.assignee);
+    if (mode === 'clear') cur = [];
+    else if (mode === 'remove') cur = cur.filter(x => !list.some(nm => nm.toLowerCase() === x.toLowerCase()));
+    else cur = splitNames(cur.concat(list).join(', '));
+    r.assignee = cur.join(', ');
+  });
+  if (mode === 'add') rows.forEach(r => ensureAssigneeShown(r));
+  commit(); refresh();
+}
+function bulkClear(what) {
+  const rows = selBlockRows(), d = what !== 'block', bl = what !== 'deps';
+  const nd = d ? rows.filter(r => r.deps && r.deps.length).length : 0, nb = bl ? rows.filter(r => r.blocked).length : 0;
+  if (!nd && !nb) return;
+  commit();
+  rows.forEach(r => { if (d) r.deps = []; if (bl) { delete r.blocked; delete r.blockedNote; } });
+  commit(); refresh();
+  const its = k => `${k} ${k === 1 ? 'item' : 'items'}`;
+  toast([nd ? `Dependencies cleared from ${its(nd)}` : '', nb ? `${nd ? 'blockers' : 'Blockers'} cleared from ${its(nb)}` : ''].filter(Boolean).join(', ') + ' — Undo reverts');
+}
+/** rebuild an open menu in place (its checks follow the change) and keep focus on what was used */
+function refreshMenu(focusSel) {
+  if (menuEl.hidden || !menuKind) return;
+  const html = menuHtml(menuKind);
+  if (!html) { closeMenu(); return; }
+  menuEl.innerHTML = html;
+  const f = focusSel && $(focusSel, menuEl);
+  if (f) f.focus({ preventScroll: true });
+}
 function menuHtml(kind) {
   const S = state.settings;
   if (kind === 'status' && pop && pop.kind === 'row') {
@@ -3531,6 +3583,29 @@ function menuHtml(kind) {
     return `<button class="mi" role="menuitemradio" aria-checked="${!cur}" data-mstatus=""><span class="dotc none"></span>Not set${!cur ? '<b class="ck">✓</b>' : ''}</button>`
       + S.statuses.map(x => `<button class="mi" role="menuitemradio" aria-checked="${cur === x.id}" data-mstatus="${esc(x.id)}"><span class="dotc" style="background:${x.color}"></span>${esc(x.name)}${cur === x.id ? '<b class="ck">✓</b>' : ''}</button>`).join('')
       + '<div class="msep" role="separator"></div><button class="mi" role="menuitem" data-mpage="statuses">Edit statuses…</button>';
+  }
+  if (kind === 'bstatus') {
+    const rows = selRows(), cur = rows.length && rows.every(r => (r.status || '') === (rows[0].status || '')) ? rows[0].status || '' : null;
+    const mi = (v, dot, label) => `<button class="mi" role="menuitemradio" aria-checked="${cur === v}" data-bstatus="${esc(v)}">${dot}${label}${cur === v ? '<b class="ck">✓</b>' : ''}</button>`;
+    return `<div class="m-head">Status of ${rows.length} ${rows.length === 1 ? 'item' : 'items'}</div>`
+      + mi('', '<span class="dotc none"></span>', 'Not set') + S.statuses.map(x => mi(x.id, `<span class="dotc" style="background:${x.color}"></span>`, esc(x.name))).join('');
+  }
+  if (kind === 'bwho') {
+    const rows = selRows(), has = rows.map(r => new Set(splitNames(r.assignee).map(x => x.toLowerCase())));
+    const people = Array.from(new Set(state.rows.flatMap(r => splitNames(r.assignee))));
+    const any = has.some(h => h.size);
+    return `<div class="m-head">Assignees of ${rows.length} ${rows.length === 1 ? 'item' : 'items'}</div>`
+      + people.map(nm => { const k = has.filter(h => h.has(nm.toLowerCase())).length, st = k === rows.length ? 'true' : k ? 'mixed' : 'false';
+        return `<button class="mi" role="menuitemcheckbox" aria-checked="${st}" data-bwho="${esc(nm)}" title="${st === 'true' ? 'Remove from all of them' : 'Add to all of them'}">${avatarsHtml([nm])}${esc(nm)}${st === 'true' ? '<b class="ck">✓</b>' : st === 'mixed' ? `<b class="ck part">${k}/${rows.length}</b>` : ''}</button>`; }).join('')
+      + `<div class="m-in"><input class="inp" data-bwho-in placeholder="${people.length ? 'Add someone else' : 'Add a person'} and press Enter" autocomplete="off" aria-label="Add an assignee to every selected item"></div>`
+      + `<div class="msep" role="separator"></div><button class="mi danger" role="menuitem" data-bwho-clear${any ? '' : ' disabled'}>Remove all assignees</button>`;
+  }
+  if (kind === 'bclear') {
+    const rows = selBlockRows(), deps = rows.filter(r => r.deps && r.deps.length).length, blocked = rows.filter(r => r.blocked).length;
+    const cnt = k => `<small>${k ? `${k} ${k === 1 ? 'item has' : 'items have'} one` : 'None in the selection'}</small>`;
+    return `<button class="mi two-line" role="menuitem" data-bclear="deps"${deps ? '' : ' disabled'}><span>Clear all dependencies${cnt(deps)}</span></button>`
+      + `<button class="mi two-line" role="menuitem" data-bclear="block"${blocked ? '' : ' disabled'}><span>Clear all blockers${cnt(blocked)}</span></button>`
+      + (deps && blocked ? '<div class="msep" role="separator"></div><button class="mi" role="menuitem" data-bclear="both">Clear both</button>' : '');
   }
   if (kind === 'add' && pop && pop.kind === 'row') {
     const n = derive(state.rows).find(x => x.row.id === pop.id);
@@ -3565,6 +3640,10 @@ menuEl.addEventListener('click', e => {
   if (!b || b.disabled) return;
   if (b.dataset.mstatus != null && pop && pop.kind === 'row') { const v = b.dataset.mstatus, a = menuFor; closeMenu(); setRowStatus([pop.id], v); const row = $('[data-prow="status"]', popEl); if (row) row.focus(); else if (a) a.focus(); return; }
   if (b.dataset.mpage) { closeMenu(); setPopPage(b.dataset.mpage); return; }
+  if (b.dataset.bstatus != null) { const ids = selRows().map(r => r.id), v = b.dataset.bstatus, a = menuFor; closeMenu(); setRowStatus(ids, v); if (a && document.contains(a)) a.focus(); toast(`${v ? `${ids.length === 1 ? '1 item' : ids.length + ' items'} set to “${STATUS[v][0]}”` : `Status cleared from ${ids.length === 1 ? '1 item' : ids.length + ' items'}`} — Undo reverts`); return; }
+  if (b.dataset.bwho != null) { const nm = b.dataset.bwho; bulkAssign(rows => rows.every(r => hasName(r, nm)) ? 'remove' : 'add', nm); refreshMenu(`[data-bwho="${CSS.escape(nm)}"]`); return; }
+  if (b.dataset.bwhoClear != null) { bulkAssign(() => 'clear'); const a = menuFor; closeMenu(); if (a && document.contains(a)) a.focus(); toast('Assignees removed — Undo reverts'); return; }
+  if (b.dataset.bclear) { bulkClear(b.dataset.bclear); const a = menuFor; closeMenu(); if (a && document.contains(a)) a.focus(); return; }
   if (b.dataset.madd) { closeMenu(); addExtra(b.dataset.madd); return; }
   if (b.dataset.mcolor != null) {
     const ids = selIds();
@@ -3582,6 +3661,12 @@ menuEl.addEventListener('input', e => {
   renderChart(); renderOutline(); commitSoon();
 });
 menuEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.dataset.bwhoIn != null) {
+    e.preventDefault();
+    const names = splitNames(e.target.value);
+    if (names.length) { bulkAssign(() => 'add', names); refreshMenu('[data-bwho-in]'); }
+    return;
+  }
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const a = menuFor; closeMenu(); if (a && document.contains(a)) a.focus(); }
   else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     const bs = $$('button:not([disabled])', menuEl), i = bs.indexOf(document.activeElement);

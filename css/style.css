@@ -617,6 +617,13 @@ html { touch-action: pan-x pan-y; }
 .pop-menu .two-line span { display: grid; gap: 1px; }
 .pop-menu .two-line small { font-size: 11.5px; color: var(--muted); font-weight: 400; }
 .pop-menu .msep { height: 1px; background: var(--line); margin: 4px 3px; }
+.pop-menu .m-head { padding: 6px 9px 4px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.pop-menu .ck.part { font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pop-menu .mi[aria-checked="mixed"] { font-weight: 500; }
+.pop-menu .m-in { padding: 4px 4px 2px; }
+.pop-menu .m-in .inp { width: 100%; height: 32px; font-size: 13px; }
+.pop-menu .mi.danger { color: #c0262d; }
+.pop-menu .mi:disabled { opacity: 0.45; cursor: default; background: none; }
 .pop-menu .m-sw { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; max-width: 250px; }
 @media (prefers-reduced-motion: reduce) { .pop-page { animation: none; } }
 
@@ -647,6 +654,9 @@ body.selecting .outline .orow { cursor: pointer; }
 .selbar-btn.done:hover { background: #1f2430; filter: brightness(1.25); }
 .selbar-count { color: var(--muted); padding-right: 6px; font-variant-numeric: tabular-nums; }
 .sb-short { display: none; }
+.sb-even-ic { display: none; }
+.sb-even-ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.sb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 3px; flex: none; }
 .plan-selbar { position: static; margin: 2px 12px 8px; padding: 4px 4px 4px 10px; gap: 2px; box-shadow: none; border-color: var(--line-strong); flex-wrap: wrap; white-space: normal; }
 .plan-selbar .sb-long { display: none; }
 .plan-selbar .sb-short { display: inline; }
@@ -662,6 +672,10 @@ body.selecting .outline .orow { cursor: pointer; }
   .selbar-btn.ib { width: 32px; }
   .selbar:not(.plan-selbar) { padding: 3px 3px 3px 9px; gap: 1px; }
   .selbar:not(.plan-selbar) .selbar-btn:not(.ib) { padding: 0 8px; }
+  .selbar:not(.plan-selbar) .sb-sep { margin: 0 1px; }
+  .selbar:not(.plan-selbar) [data-sel="even"] { width: 32px; padding: 0; display: inline-grid; place-items: center; }
+  .selbar:not(.plan-selbar) .sb-even-t { display: none; }
+  .selbar:not(.plan-selbar) .sb-even-ic { display: block; }
 }
 .pick-btn + .collapse-btn { margin-left: 0; }
 .lb-tip { z-index: 96; max-width: 260px; }
