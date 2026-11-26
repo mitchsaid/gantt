@@ -34,7 +34,7 @@ const out = __dirname;
   await p.evaluate(() => { state.rows.find(r => r.name === 'Run strategy workshop').progress = null; refresh(); });
   console.log('a bar with progress off stays plain in either style:', await p.evaluate(() => { const n = scene.info.find(x => x.row.name === 'Run strategy workshop'); return scene.items.filter(i => i.t === 'rect' && !i.ui && !i.hit && Math.abs(i.y - (n.cy - n.bh / 2)) < 0.5 && i.x >= n.bx - 0.1 && i.x <= n.bx + n.bw).length + ' rect'; }));
   await p.click('#btn-export');
-  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), p.click('[data-export="pptx"]')]);
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), p.click('[data-export="pptx"]').then(() => p.click('#exp-go'))]);
   console.log('PPTX export:', dl.suggestedFilename());
   console.log(errs.join('\n') || 'no errors');
   await b.close();

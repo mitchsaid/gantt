@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
   const us = await (await b.newContext({ viewport: { width: 1200, height: 800 }, locale: 'en-US' })).newPage();
   await us.goto('http://localhost:8765/'); await us.waitForTimeout(800); await us.evaluate(() => localStorage.clear()); await us.reload(); await us.waitForTimeout(800);
   console.log('en-US default order:', await us.evaluate(() => state.settings.dateOrder), '| a saved plan keeps its choice:', await us.evaluate(() => { const s = sanitize({ rows: [], settings: { dateOrder: 'dmy' } }); return s.settings.dateOrder; }));
-  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`)]); return d.suggestedFilename(); };
+  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`).then(() => ['png', 'pdf', 'pptx', 'copy'].includes(kind) && p.click('#exp-go'))]); return d.suggestedFilename(); };
   console.log('exports:', await dl('png'), await dl('pptx'));
   console.log(errs.join('\n') || 'no errors');
   await b.close();

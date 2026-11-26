@@ -23,7 +23,7 @@ const { chromium } = require('playwright');
   console.log('beside (unchanged)  :', await count());
   // exports
   await p.evaluate(() => { setSetting('assigneePos', 'bars'); setSetting('assigneeNames', true); });
-  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`)]); return d.suggestedFilename(); };
+  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`).then(() => ['png', 'pdf', 'pptx', 'copy'].includes(kind) && p.click('#exp-go'))]); return d.suggestedFilename(); };
   console.log('exports:', await dl('png'), await dl('pdf'), await dl('pptx'));
   // narrow bars fall back outside
   await p.evaluate(() => { state.rows.forEach(r => { if (r.level > 0 && !r.assignee) r.assignee = 'Zed Quinn'; }); setSetting('assigneeNames', false); const r = state.rows.find(r => r.name === 'Site map & flows'); r.end = r.start; commit(); refresh(); });

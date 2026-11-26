@@ -741,3 +741,18 @@ body.selecting .outline .orow { cursor: pointer; }
   .guide-steps { grid-template-columns: 1fr; gap: 6px; }
   .guide-steps li { padding: 9px 10px; }
 }
+
+/* ---------- export options (opens after picking PNG, Copy image, PDF or PowerPoint) */
+.exp-modal { width: min(460px, 100%); gap: 10px; }
+.exp-modal .modal-head { margin: -6px -8px 0 0; }
+.exp-thumb { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px; display: grid; place-items: center; max-height: 240px; overflow: hidden; }
+.exp-thumb canvas { display: block; max-width: 100%; max-height: 218px; height: auto; box-shadow: 0 1px 3px rgba(20, 24, 40, 0.12); }
+.exp-thumb.transparent { background: repeating-conic-gradient(#e9ebf0 0% 25%, #fff 0% 50%) 0 0 / 14px 14px; }
+.exp-thumb.transparent canvas { box-shadow: none; }
+.exp-thumb.transparent.dark { background: repeating-conic-gradient(#232733 0% 25%, #181b24 0% 50%) 0 0 / 14px 14px; }
+.exp-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 4px; font-weight: 600; font-size: 13px; cursor: default; }
+label.exp-row { cursor: pointer; }
+.exp-row .seg { flex: 0 1 230px; }
+.exp-note { margin: -4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.exp-note:empty { display: none; }
+@media (max-width: 440px) { .exp-row { flex-wrap: wrap; } .exp-row .seg { flex: 1 1 100%; } }

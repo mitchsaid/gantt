@@ -16,7 +16,7 @@ const fs = require('fs'), path = require('path');
   await p.keyboard.type('Secret task name'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
   await p.evaluate(() => document.querySelector('[data-add="milestone"]').click()); await p.waitForTimeout(150);
   await p.click('#btn-share'); await p.waitForTimeout(300);
-  await p.click('#btn-export'); await p.click('[data-export="png"]'); await p.waitForTimeout(800);
+  await p.click('#btn-export'); await p.click('[data-export="png"]'); await p.click('#exp-go'); await p.waitForTimeout(800);
   await p.click('#btn-export'); await p.click('[data-export="link"]'); await p.waitForTimeout(300);
   await p.click('#btn-import'); await p.waitForTimeout(100);
   await p.evaluate(() => document.querySelector('#imp-ai-copy').click()); await p.waitForTimeout(100);

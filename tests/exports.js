@@ -13,7 +13,7 @@ const { chromium } = require('playwright');
   for (const fmt of ['png', 'pdf', 'pptx', 'copy']) {
     const dl = fmt === 'copy' ? null : p.waitForEvent('download', { timeout: 20000 }).catch(e => null);
     await p.click('#btn-export').catch(async () => { await p.click('text=Export'); });
-    await p.click(`[data-export="${fmt}"]`); const d = dl ? await dl : null;
+    await p.click(`[data-export="${fmt}"]`); await p.click('#exp-go'); const d = dl ? await dl : null;
     console.log(fmt.padEnd(5), d ? 'downloaded ' + d.suggestedFilename() : '(no download expected)'); await p.waitForTimeout(500);
     await p.keyboard.press('Escape');
   }

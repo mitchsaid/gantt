@@ -50,12 +50,17 @@ function blankState(settings) {
     rows: [0, 1, 2].map(i => newRow({ level: 0, name: 'Task ' + (i + 1), start: s + i * 7, end: s + i * 7 + 4 })),
   };
 }
+// Transparent background used to be a Design setting; it is now chosen when exporting. A plan saved with it on hands it to the
+// export options once (exportOpts), and the chart itself always shows its background colour.
+let legacyTransparent = false;
 function sanitize(st) {
   if (!st || !Array.isArray(st.rows)) return null;
   const had = validPalette(st.settings && st.settings.palette), old = st.settings || {};
   // plans saved before automatic row height existed move from the old default to it
   if (st.settings && !st.settings.v && (st.settings.density || 'regular') === 'regular') st.settings.density = 'auto';
   st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings || {});
+  if (st.settings.bgTransparent === true) legacyTransparent = true;
+  st.settings.bgTransparent = false;
   { // the plan's statuses: names and colours, best to worst
     const seen = new Set(), list = Array.isArray(st.settings.statuses) ? st.settings.statuses : DEFAULT_STATUSES;
     st.settings.statuses = list.filter(x => x && typeof x.id === 'string' && x.id && !seen.has(x.id) && seen.add(x.id)).slice(0, 10)
@@ -1226,8 +1231,8 @@ const DESIGN = [
     { k: 'colorBy', type: 'seg', label: 'Share a colour by', kw: 'palette area row group', opts: [['group', 'Area'], ['row', 'Row']] },
     { k: '_colorByNote', type: 'note', label: 'Area: an area and everything in it share a colour. Row: each line takes the next colour, and tasks sharing a line (Tasks → Row layout → In sequence) match.', when: s => s.colorBy === 'row' || s.pack },
     { type: 'head', label: 'Background' },
-    { k: 'bgTransparent', type: 'toggle', label: 'Transparent background', kw: 'png alpha see-through clear' },
-    { k: 'bg', type: 'color', label: 'Background colour', kw: 'fill white canvas', dep: 'bgTransparent', when: s => !s.bgTransparent },
+    { k: 'bg', type: 'color', label: 'Background colour', kw: 'fill white canvas' },
+    { k: '_bgNote', type: 'note', label: 'For no background at all, turn on Transparent background when you export (PNG, Copy image or PowerPoint).', kw: 'transparent png alpha see-through clear' },
     { type: 'head', label: 'Text colour' },
     { k: 'textMode', type: 'seg', label: 'Text', kw: 'font colour dark light contrast', opts: [['auto', 'Auto'], ['dark', 'Dark'], ['light', 'Light']] },
     { k: 'barText', type: 'seg', label: 'Text on bars', sub: true, kw: 'label colour white dark contrast', why: 'Shown when names sit on the bars (Tasks → Task names, or Row layout “In sequence”).', opts: [['auto', 'Auto'], ['light', 'White'], ['dark', 'Dark']], when: s => s.pack || s.taskLabels === 'bars' },
@@ -1315,7 +1320,7 @@ function designSummary(id, S) {
   if (id === 'milestones') return [S.keyStrip ? 'key strip' : '', S.msLines ? 'guide lines' : '', S.msAlign && S.msAlign !== 'auto' ? 'at ' + ({ start: 'day start', middle: 'middle', end: 'day end' }[S.msAlign] || S.msAlign) : ''].filter(Boolean).join(' · ') || 'diamonds only';
   if (id === 'progress') return [S.todayLine ? 'date marker' : '', S.progress ? (S.progressSource === 'marker' ? 'progress to marker' : 'progress per bar') : '', S.daysLeft || S.planDaysLeft ? 'days left' : ''].filter(Boolean).join(' · ') || 'nothing on';
   if (id === 'status') return [S.showStatus ? 'status dots' : '', S.blockedWaiting || S.blockedLegend ? 'blocked' : '', S.showChanges ? 'baseline' : ''].filter(Boolean).join(' · ') || 'nothing on';
-  if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>${S.bgTransparent ? 'transparent' : ''}`;
+  if (id === 'colour') return `<span class="gdots">${paletteOf(S).colors.slice(0, 7).map(c => `<i style="background:${c}"></i>`).join('')}</span>`;
   if (id === 'text') return [S.font, S.textAuto === false ? S.textPt + ' pt' : '', { upper: 'UPPER', title: 'Title Case' }[S.textCase] || ''].filter(Boolean).join(' · ');
   return '';
 }
@@ -1643,33 +1648,38 @@ function download(blob, name) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-async function exportScene() {
+// the state an export draws: the plan as it is, with the background left out when the export options ask for that
+const exportState = o => (o && o.transparent ? Object.assign({}, state, { settings: Object.assign({}, state.settings, { bgTransparent: true }) }) : state);
+async function exportScene(o) {
   commit();
   const f = state.settings.font;
   try { await Promise.all([400, 500, 600, 700].map(w => document.fonts.load(`${w} 14px "${f}"`))); } catch (e) { /* offline: fall back */ }
-  return buildScene(state, {});
+  return buildScene(exportState(o), {});
 }
 const canvasBlob = c => new Promise(res => c.toBlob(res, 'image/png'));
 
-async function exportPng() { const sc = await exportScene(); download(await canvasBlob(drawScene(sc, 3)), fileBase() + '.png'); toast('PNG downloaded'); }
-async function exportCopy() {
+async function exportPng(o) { o = o || exportOpts('png'); const sc = await exportScene(o); download(await canvasBlob(drawScene(sc, o.scale)), fileBase() + '.png'); toast(o.transparent ? 'PNG downloaded with a transparent background' : 'PNG downloaded'); }
+async function exportCopy(o) {
+  o = o || exportOpts('copy');
   if (!navigator.clipboard || !window.ClipboardItem) { toast('Copying images isn’t supported in this browser — use PNG instead'); return; }
   // build synchronously so the clipboard write stays inside the user gesture
-  const blob = canvasBlob(drawScene(buildScene(state, {}), 2));
+  const blob = canvasBlob(drawScene(buildScene(exportState(o), {}), o.scale));
   try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('Chart copied — paste it into your slide'); }
   catch (e) { console.error(e); toast('Couldn’t copy — try the PNG export instead'); }
 }
-async function exportPdf() {
+async function exportPdf(o) {
+  o = o || exportOpts('pdf');
   const sc = await exportScene();
   await loadScript('vendor/jspdf.umd.min.js');
   const w = sc.w * 0.75, h = sc.h * 0.75;
   const doc = new window.jspdf.jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'pt', format: [w, h], compress: true });
-  doc.addImage(drawScene(sc, 3), 'PNG', 0, 0, w, h, undefined, 'FAST');
+  doc.addImage(drawScene(sc, o.scale), 'PNG', 0, 0, w, h, undefined, 'FAST');
   doc.save(fileBase() + '.pdf');
   toast('PDF downloaded');
 }
-async function exportPptx() {
-  const sc = await exportScene();
+async function exportPptx(o) {
+  o = o || exportOpts('pptx');
+  const sc = await exportScene(o);
   await loadScript('vendor/pptxgen.bundle.js');
   const pptx = new PptxGenJS();
   const cv = sc.canvas;
@@ -1714,6 +1724,79 @@ async function exportPptx() {
   await pptx.writeFile({ fileName: fileBase() + '.pptx' });
   toast('PowerPoint downloaded — every bar is an editable shape');
 }
+// ---------------------------------------------------------------- export options
+// Picking PNG, Copy image, PDF or PowerPoint opens a small sheet of options for that format (remembered per format in gantt:ui).
+const EXPORT_FORMATS = {
+  png: { title: 'PNG image', go: 'Download PNG', fn: exportPng, def: { scale: 3, transparent: false }, scales: [[1, '1×'], [2, '2×'], [3, '3×'], [4, '4×']], transparent: 'The image has no background fill, so it sits on any slide, page or colour.' },
+  copy: { title: 'Copy image', go: 'Copy image', fn: exportCopy, def: { scale: 2, transparent: false }, scales: [[1, '1×'], [2, '2×'], [3, '3×']], transparent: 'The copied image has no background fill, so it sits on any slide or page.' },
+  pdf: { title: 'PDF', go: 'Download PDF', fn: exportPdf, def: { scale: 3 }, scales: [[2, 'Standard'], [3, 'High'], [4, 'Best']], scaleLabel: 'Quality', scaleNote: o => ({ 2: 'Smallest file.', 3: 'Sharp on screen and in print.', 4: 'For large prints — a bigger file.' })[o.scale] },
+  pptx: { title: 'PowerPoint', go: 'Download PowerPoint', fn: exportPptx, def: { transparent: false }, transparent: 'The slide gets no background fill, so it takes the deck’s own background when you paste or import it.' },
+};
+function exportOpts(fmt) {
+  if (!ui.exportOpts || typeof ui.exportOpts !== 'object') ui.exportOpts = {};
+  if (legacyTransparent) { // a plan saved when transparency was a Design setting keeps exporting without a background
+    legacyTransparent = false;
+    ['png', 'copy', 'pptx'].forEach(f => { ui.exportOpts[f] = Object.assign({}, ui.exportOpts[f], { transparent: true }); });
+    saveUi();
+  }
+  const F = EXPORT_FORMATS[fmt], o = Object.assign({}, F.def, ui.exportOpts[fmt]);
+  if (F.scales && !F.scales.some(x => x[0] === o.scale)) o.scale = F.def.scale;
+  o.transparent = !!o.transparent;
+  return o;
+}
+function openExportOptions(fmt) {
+  const F = EXPORT_FORMATS[fmt], o = exportOpts(fmt);
+  commit();
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal dialog exp-modal" role="dialog" aria-modal="true" aria-labelledby="exp-title">
+    <div class="modal-head"><h2 id="exp-title">Export ${esc(F.title)}</h2><button class="icon-btn exp-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="exp-thumb"></div>
+    ${F.scales ? `<div class="exp-row"><span class="exp-lbl">${esc(F.scaleLabel || 'Resolution')}</span><div class="seg" data-o="scale">${F.scales.map(x => `<button data-v="${x[0]}">${esc(x[1])}</button>`).join('')}</div></div><p class="exp-note" data-note="scale"></p>` : ''}
+    ${F.transparent ? `<label class="exp-row"><span class="exp-lbl">Transparent background</span><span class="switch"><input type="checkbox" data-o="transparent"><i></i></span></label><p class="exp-note">${esc(F.transparent)}</p>` : ''}
+    <div class="dialog-btns"><button class="btn ghost" data-act="cancel">Cancel</button><button class="btn primary" data-act="go" id="exp-go">${esc(F.go)}</button></div></div>`;
+  const sync = () => {
+    const sc = buildScene(exportState(o), {});
+    back.querySelectorAll('.seg[data-o] button').forEach(b => b.classList.toggle('on', +b.dataset.v === o[b.parentNode.dataset.o]));
+    const t = back.querySelector('[data-o="transparent"]'); if (t) t.checked = o.transparent;
+    const note = back.querySelector('[data-note="scale"]');
+    if (note) {
+      const px = `${Math.round(sc.w * o.scale).toLocaleString()} × ${Math.round(sc.h * o.scale).toLocaleString()} px`;
+      note.textContent = F.scaleNote ? `${F.scaleNote(o)} The chart is drawn at ${px}.` : px;
+    }
+    const th = back.querySelector('.exp-thumb'), box = Math.min(th.clientWidth || 400, 400);
+    const cv = drawScene(sc, Math.min(2, box * (window.devicePixelRatio || 1) / sc.w));
+    th.classList.toggle('transparent', o.transparent);
+    th.classList.toggle('dark', o.transparent && sc.lightText);
+    th.replaceChildren(cv);
+  };
+  const remember = () => { const keep = {}; Object.keys(F.def).forEach(k => { keep[k] = o[k]; }); ui.exportOpts[fmt] = keep; saveUi(); };
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const go = () => {
+    remember(); close();
+    track('export-' + fmt);
+    Promise.resolve().then(() => F.fn(o)).catch(err => { console.error(err); toast('Export failed — ' + (err && err.message ? err.message : 'please try again')); });
+  };
+  // the options sheet takes the keyboard, so the chart's shortcuts (Delete, arrows, letters) can't act behind it
+  const onKey = e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter' && !e.target.closest('button, input')) { e.preventDefault(); go(); }
+    e.stopPropagation();
+  };
+  back.addEventListener('click', e => {
+    const s = e.target.closest('.seg[data-o] button');
+    if (s) { o[s.parentNode.dataset.o] = +s.dataset.v; sync(); return; }
+    const a = e.target.closest('[data-act]');
+    if (a) { if (a.dataset.act === 'go') go(); else close(); return; }
+    if (e.target === back || e.target.closest('.exp-x')) close();
+  });
+  back.addEventListener('change', e => { if (e.target.dataset.o === 'transparent') { o.transparent = e.target.checked; sync(); } });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(back);
+  sync();
+  back.querySelector('#exp-go').focus();
+}
+
 function exportJson() { commit(); download(new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' }), fileBase() + '.json'); toast('Project file saved'); }
 
 // ---------------------------------------------------------------- share link
@@ -1794,7 +1877,8 @@ exportMenu.addEventListener('click', e => {
   const b = e.target.closest('[data-export]');
   if (!b) return;
   exportMenu.hidden = true;
-  const fn = { png: exportPng, copy: exportCopy, pdf: exportPdf, pptx: exportPptx, json: exportJson, link: shareLink }[b.dataset.export];
+  if (EXPORT_FORMATS[b.dataset.export]) { openExportOptions(b.dataset.export); return; } // PNG, Copy image, PDF and PowerPoint ask for their options first
+  const fn = { json: exportJson, link: shareLink }[b.dataset.export];
   if (b.dataset.export !== 'link') track('export-' + b.dataset.export);
   Promise.resolve().then(fn).catch(err => { console.error(err); toast('Export failed — ' + (err && err.message ? err.message : 'please try again')); });
 });

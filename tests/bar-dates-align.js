@@ -29,7 +29,7 @@ const os = require('os'), path = require('path'), fs = require('fs');
   await p.evaluate(() => setSetting('dateMode', 'relative')); console.log('relative     ', await look());
   await p.evaluate(() => { setSetting('dateMode', 'calendar'); setSetting('pack', true); }); console.log('in sequence  ', await look());
   await p.locator('#canvas-wrap').screenshot({ path: path.join(out, 'dates-pack.png') });
-  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`)]); return d.suggestedFilename(); };
+  const dl = async kind => { await p.click('#btn-export'); const [d] = await Promise.all([p.waitForEvent('download', { timeout: 30000 }), p.click(`[data-export="${kind}"]`).then(() => ['png', 'pdf', 'pptx', 'copy'].includes(kind) && p.click('#exp-go'))]); return d.suggestedFilename(); };
   console.log('exports:', await dl('png'), await dl('pptx'));
   console.log('stored after reload:', await p.evaluate(() => { const s = sanitize(JSON.parse(localStorage.getItem('gantt:v1'))).settings; return s.barAlign + ' ' + s.barDates; }));
   console.log(errs.join('\n') || 'no errors');

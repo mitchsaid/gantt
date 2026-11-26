@@ -32,7 +32,7 @@ const { chromium } = require('playwright');
   console.log('exec view, two key milestones:', await p.evaluate(() => scene.items.filter(i => i.t === 'diamond').length + ' diamonds'));
   for (const fmt of ['png', 'pptx']) {
     const dl = p.waitForEvent('download', { timeout: 20000 }).catch(() => null);
-    await p.click('#btn-export'); await p.click(`[data-export="${fmt}"]`);
+    await p.click('#btn-export'); await p.click(`[data-export="${fmt}"]`); await p.click("#exp-go");
     const d = await dl; console.log('exec export', fmt, d ? d.suggestedFilename() : 'NO DOWNLOAD — Error: export failed'); await p.waitForTimeout(400);
   }
 
