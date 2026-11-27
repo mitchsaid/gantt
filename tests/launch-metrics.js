@@ -1,5 +1,5 @@
 // Launch metrics: plan created / exported-or-shared once per plan with the ?ref= channel, design used once, share links
-// marked via=share and told apart from the maker's own opens, the 14-day return, and the feedback card's fixed-choice answers
+// marked via=share and told apart from the maker's own opens, the 14-day return
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch();
@@ -19,24 +19,13 @@ const { chromium } = require('playwright');
   await p.evaluate(() => document.querySelectorAll('#design [data-palette]')[2].click()); await p.waitForTimeout(100);
   await p.evaluate(() => document.querySelectorAll('#design [data-palette]')[3].click()); await p.waitForTimeout(100);
   must(await count('design-used') === 1, 'design-used once per visit');
-  // export: conversion, then the feedback card
+  // export: conversion
   await p.click('#btn-export'); await p.click('[data-export="png"]'); await p.click('#exp-go'); await p.waitForTimeout(3800);
   must(await count('plan-exported-or-shared') === 1 && await count('plan-exported-or-shared-ref-li') === 1, 'conversion should fire once, tagged li');
-  must(await p.isVisible('.fb-card'), 'feedback card should show after an export');
-  await p.screenshot({ path: 'launch-feedback-desk.png' });
-  must(await p.isDisabled('[data-fb="send"]'), 'Send waits for an answer');
-  await p.click('.fb-opt:has(input[value="proposal"])');
-  await p.click('.fb-opt:has(input[value="nothing"])');
-  await p.click('.fb-opt:has(input[value="branding"])'); // replaces "Not really"
-  must(!(await p.isChecked('input[value="nothing"]')), '"Not really" and a paid option exclude each other');
-  await p.click('[data-fb="send"]'); await p.waitForTimeout(100);
-  for (const e of ['fb-shown', 'fb-sent', 'fb-for-proposal', 'fb-pay-branding', 'fb-pay-yes']) must(await count(e) === 1, 'missing ' + e);
-  must(await count('fb-pay-no') === 0, 'no fb-pay-no with a paid choice');
-  await p.waitForTimeout(2000);
+  must(!(await p.isVisible('.fb-card')), 'no feedback card after an export');
   // share: the link is marked, the second delivery of the same plan doesn't count again, and the card doesn't return
   await p.click('#btn-share'); await p.waitForTimeout(3800);
   must(await count('plan-exported-or-shared') === 1, 'conversion counts once per plan');
-  must(!(await p.isVisible('.fb-card')), 'the card is not asked again once answered');
   const link = await p.evaluate(() => navigator.clipboard.readText());
   must(/#via=share&plan=/.test(link), 'share link should carry via=share: ' + link.slice(0, 60));
   console.log('link starts:', link.slice(link.indexOf('#'), link.indexOf('#') + 30));
@@ -59,11 +48,6 @@ const { chromium } = require('playwright');
   await q.evaluate(() => shareLink()); await q.waitForTimeout(3800);
   ev = await q.evaluate(() => window.__gc.map(c => c.path));
   must(ev.includes('plan-exported-or-shared-ref-none'), 'recipient conversion tagged none: ' + ev);
-  await q.screenshot({ path: 'launch-feedback-mob.png' });
-  must(await q.isVisible('.fb-card'), 'card on mobile');
-  await q.click('[data-fb="later"]'); await q.waitForTimeout(100);
-  must(!(await q.isVisible('.fb-card')) && ev.length >= 0, 'Not now closes it');
-  must((await q.evaluate(() => window.__gc.map(c => c.path))).includes('fb-not-now'), 'fb-not-now');
   // return within 14 days: pretend the first plan was made 3 days ago, then edit
   await q.evaluate(() => { const m = JSON.parse(localStorage.getItem('gantt:metrics')); m.firstPlanDay = todayDay() - 3; localStorage.setItem('gantt:metrics', JSON.stringify(m)); });
   await q.reload(); await q.waitForTimeout(900);

@@ -756,21 +756,3 @@ label.exp-row { cursor: pointer; }
 .exp-note { margin: -4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .exp-note:empty { display: none; }
 @media (max-width: 440px) { .exp-row { flex-wrap: wrap; } .exp-row .seg { flex: 1 1 100%; } }
-
-/* ---------- feedback card after an export (optional, non-blocking) */
-.fb-card { position: fixed; right: 20px; bottom: 20px; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 40px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 40px rgba(16, 20, 40, 0.18); padding: 16px 16px 14px; z-index: 190; }
-.fb-card h2 { font-size: 15px; margin: 0 28px 8px 0; }
-.fb-x { position: absolute; top: 10px; right: 10px; }
-.fb-q { margin: 10px 0 6px; font-weight: 600; }
-.fb-opt-tag { font-weight: 500; color: var(--muted); font-size: 12px; margin-left: 4px; }
-.fb-opts { display: flex; flex-direction: column; gap: 2px; }
-.fb-opt { display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; border-radius: 7px; cursor: pointer; }
-.fb-opt:hover { background: #f6f7fa; }
-.fb-opt input { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
-.fb-note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
-.fb-card .dialog-btns { margin-top: 12px; }
-.fb-thanks { margin: 4px 28px 4px 0; font-weight: 600; }
-@media (max-width: 860px) {
-  .fb-card { left: 12px; right: 12px; width: auto; max-width: none; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); max-height: calc(100vh - 140px); }
-  .fb-opt { padding: 8px 6px; }
-}

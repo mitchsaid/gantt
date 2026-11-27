@@ -536,7 +536,6 @@ function track(name) {
  *  - return-within-14d: once per visitor, an edit on a later day within 14 days of their first plan
  *  - open-share-link / open-own-share-link: a share link opened by someone else / in the browser that made it (spread)
  *  - design-used: a Design setting changed, once per visit
- *  - fb-…: the optional feedback card shown after an export (fixed choices only, never typed text)
  *  The state lives in its own localStorage key; nothing in it leaves the browser. */
 const METRICS_KEY = 'gantt:metrics';
 const REF_TAGS = ['li', 'dm', 'reddit', 'hn', 'ph', 'ai'];
@@ -558,13 +557,12 @@ function metricsCreated() {
   saveMetrics();
   track('plan-created'); track('plan-created-ref-' + metrics.ref);
 }
-/** an export or share link: the plan's value moment, and the moment to offer the feedback card */
+/** an export or share link: the plan's value moment */
 function metricsDelivered() {
   if (!metrics.delivered) {
     metrics.delivered = true; saveMetrics();
     track('plan-exported-or-shared'); track('plan-exported-or-shared-ref-' + metrics.ref);
   }
-  setTimeout(maybeFeedback, 3400); // once the export's own toast has gone
 }
 function metricsEdited() { // from commit(): any change to the plan or its design
   const d = metrics.firstPlanDay, t = todayDay();
@@ -591,57 +589,6 @@ function rememberLink(hash) {
 }
 const isOwnLink = hash => Array.isArray(metrics.links) && metrics.links.includes(linkPrint(hash));
 
-/** The feedback card: an optional, non-blocking card after an export or share. Asked once; "Not now" asks once more after
- *  14 days, then never. Answers are fixed choices sent as event names, so no typed text ever leaves the browser. */
-const FB_FOR = [['proposal', 'A client proposal or pitch'], ['client-update', 'A client update'], ['internal', 'An internal or exec report'], ['personal', 'Personal or study'], ['other', 'Something else']];
-const FB_PAY = [['branding', 'My own branding (logo, fonts, colours)'], ['live-links', 'Links that stay up to date for clients'], ['many-plans', 'Saving and switching between plans'], ['other', 'Something else'], ['nothing', 'Not really']];
-function maybeFeedback() {
-  if (metrics.fb === 'done' || document.querySelector('.fb-card') || document.querySelector('.modal-back:not([hidden])')) return;
-  const now = Date.now();
-  if (metrics.fb === 'later' && (metrics.fbLaterCount >= 2 || now - (metrics.fbAt || 0) < 14 * 864e5)) return;
-  showFeedback();
-}
-function showFeedback() {
-  const card = document.createElement('section');
-  card.className = 'fb-card';
-  card.setAttribute('role', 'dialog'); card.setAttribute('aria-labelledby', 'fb-title');
-  const opts = (list, name, multi) => list.map(([v, t]) => `<label class="fb-opt"><input type="${multi ? 'checkbox' : 'radio'}" name="${name}" value="${v}"><span>${esc(t)}</span></label>`).join('');
-  card.innerHTML = `<button class="icon-btn fb-x" type="button" aria-label="Not now"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    <h2 id="fb-title">Two quick questions</h2>
-    <p class="fb-q">What were you making this for?</p><div class="fb-opts" data-q="for">${opts(FB_FOR, 'fb-for')}</div>
-    <p class="fb-q">Is there anything here you’d pay for? <span class="fb-opt-tag">Optional</span></p><div class="fb-opts" data-q="pay">${opts(FB_PAY, 'fb-pay', true)}</div>
-    <p class="fb-note">Your answers are counted anonymously. Nothing from your plan is sent.</p>
-    <div class="dialog-btns"><button class="btn ghost" type="button" data-fb="later">Not now</button><button class="btn primary" type="button" data-fb="send" disabled>Send</button></div>`;
-  const send = card.querySelector('[data-fb="send"]');
-  const close = () => { card.remove(); document.removeEventListener('keydown', onKey, true); };
-  const later = () => {
-    metrics.fb = 'later'; metrics.fbAt = Date.now(); metrics.fbLaterCount = (metrics.fbLaterCount || 0) + 1; saveMetrics();
-    track('fb-not-now'); close();
-  };
-  const onKey = e => { if (e.key === 'Escape' && card.contains(document.activeElement)) { e.stopPropagation(); later(); } };
-  card.addEventListener('change', e => {
-    const box = e.target;
-    if (box.name === 'fb-pay' && box.checked) { // "Not really" and the paid options exclude each other
-      card.querySelectorAll('[name="fb-pay"]').forEach(o => { if (o !== box && (box.value === 'nothing' || o.value === 'nothing')) o.checked = false; });
-    }
-    send.disabled = !card.querySelector('input:checked');
-  });
-  card.addEventListener('click', e => {
-    if (e.target.closest('.fb-x') || e.target.closest('[data-fb="later"]')) { later(); return; }
-    if (!e.target.closest('[data-fb="send"]')) return;
-    const forV = card.querySelector('[name="fb-for"]:checked'), pay = [...card.querySelectorAll('[name="fb-pay"]:checked')].map(o => o.value);
-    track('fb-sent');
-    if (forV) track('fb-for-' + forV.value);
-    pay.forEach(v => track('fb-pay-' + v));
-    if (pay.length) track(pay.includes('nothing') ? 'fb-pay-no' : 'fb-pay-yes');
-    metrics.fb = 'done'; saveMetrics();
-    card.innerHTML = '<p class="fb-thanks">Thank you, that really helps.</p>';
-    setTimeout(close, 1800);
-  });
-  document.addEventListener('keydown', onKey, true);
-  document.body.appendChild(card);
-  track('fb-shown');
-}
 function addRow(kind, afterId, asSibling, onChart, asChild) {
   const show = id => (onChart ? editOnChart(id) : focusName(id, true));
   const rows = state.rows;
