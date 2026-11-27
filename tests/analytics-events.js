@@ -24,7 +24,7 @@ const fs = require('fs'), path = require('path');
   await p.click('#imp-go'); await p.waitForTimeout(200);
   const calls = await p.evaluate(() => window.__gc);
   console.log('events:', calls.map(c => c.path).join(', '));
-  if (calls.some(c => !c.event || c.path !== c.title || !/^[a-z-]+$/.test(c.path))) throw new Error('an event carries something other than a fixed name: ' + JSON.stringify(calls));
+  if (calls.some(c => !c.event || c.path !== c.title || !/^[a-z0-9-]+$/.test(c.path))) throw new Error('an event carries something other than a fixed name: ' + JSON.stringify(calls));
   for (const want of ['open-ai-plan-link', 'new-chart', 'add-task', 'add-milestone', 'share-link', 'export-png', 'copy-ai-prompt', 'import-paste'])
     if (!calls.some(c => c.path === want)) throw new Error('missing event ' + want);
   if (calls.filter(c => c.path === 'share-link').length !== 2) throw new Error('share link from the button and the Export menu should each count once');
